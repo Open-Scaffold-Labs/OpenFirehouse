@@ -1,0 +1,13 @@
+-- 0000-baseline.sql — schema baseline marker (no-op).
+--
+-- The OpenFirehouse schema as defined by server/src/db.js initDb() (94 tables,
+-- 18 named indexes, all additive ALTERs) is the BASELINE for the migration
+-- runner. As of 2026-06-10, live prod (YOUR_PROJECT_REF) was verified in
+-- full sync with that baseline (0 missing tables, 0 missing indexes, recent
+-- additive columns all present).
+--
+-- This file records that baseline so the runner does not attempt to re-create
+-- existing objects. It intentionally does nothing. Real incremental changes
+-- start at 0002 (0001 is reserved for the separate station-isolation RLS
+-- rollout — see docs/RLS-AND-MIGRATIONS-PLAN.md, "DO NOT APPLY YET").
+SELECT 1;

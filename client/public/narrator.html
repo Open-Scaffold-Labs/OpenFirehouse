@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>OpenFirehouse — Demo Narrator</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', Arial, sans-serif; background: #0a0a0a; color: #fff; min-height: 100vh; display: flex; flex-direction: column; }
+  .header { background: linear-gradient(135deg, #991b1b, #7f1d1d); padding: 16px 20px; text-align: center; }
+  .header h1 { font-size: 14px; font-weight: 900; letter-spacing: 1px; }
+  .header p { font-size: 11px; color: #fca5a5; margin-top: 2px; }
+  .main { flex: 1; display: flex; flex-direction: column; padding: 20px; }
+  .cue-box { flex: 1; background: #1a1a1a; border: 1px solid #333; border-radius: 16px; padding: 24px 20px; display: flex; align-items: center; justify-content: center; text-align: center; margin-bottom: 16px; }
+  .cue-text { font-size: 20px; line-height: 1.5; font-weight: 600; color: #e5e5e5; font-style: italic; }
+  .cue-text.waiting { color: #666; font-size: 16px; }
+  .step-label { text-align: center; font-size: 12px; font-weight: 800; color: #f59e0b; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+  .progress-bar { height: 4px; background: #333; border-radius: 2px; margin-bottom: 16px; overflow: hidden; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, #ef4444, #f59e0b); transition: width 0.3s; }
+  .time { text-align: center; font-size: 24px; font-weight: 900; font-family: 'SF Mono', monospace; color: #999; margin-bottom: 16px; font-variant-numeric: tabular-nums; }
+  .controls { display: flex; gap: 12px; justify-content: center; padding-bottom: env(safe-area-inset-bottom, 20px); }
+  .btn { flex: 1; max-width: 160px; padding: 14px; border: none; border-radius: 12px; font-size: 15px; font-weight: 800; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .btn-play { background: #dc2626; color: white; }
+  .btn-play:active { background: #b91c1c; }
+  .btn-play:disabled { opacity: 0.4; }
+  .btn-skip { background: #333; color: #ccc; }
+  .btn-skip:active { background: #444; }
+  .btn-pause { background: #f59e0b; color: #000; }
+  .btn-restart { background: #333; color: #ccc; }
+  .up-next { font-size: 11px; color: #555; text-align: center; margin-top: 8px; }
+  .up-next strong { color: #888; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>OPENFIREHOUSE NARRATOR</h1>
+  <p>Demo Companion — Structure Fire, 742 Evergreen Terrace</p>
+</div>
+<div class="main">
+  <div class="step-label" id="step">Ready to start</div>
+  <div class="progress-bar"><div class="progress-fill" id="progress" style="width:0%"></div></div>
+  <div class="time" id="time">0:00 / 2:20</div>
+  <div class="cue-box">
+    <div class="cue-text waiting" id="cue">Tap Play to start the narrator.<br>Start this at the same time as the laptop demo.</div>
+  </div>
+  <div class="up-next" id="upnext"></div>
+  <div class="controls">
+    <button class="btn btn-play" id="playBtn" onclick="togglePlay()">&#9654; Play</button>
+    <button class="btn btn-skip" onclick="skip()">&#9197; Skip</button>
+    <button class="btn btn-restart" onclick="restart()">&#8634; Reset</button>
+  </div>
+</div>
+<script>
+// ── Narrator cues from demo-scenario.js ──────────────────────────────────
+const CUES = [
+  { t: 0, text: "A 911 call just came in. Watch the system — it's already pulling the address, finding the nearest hydrants, and loading the pre-incident plan. Nobody typed a thing." },
+  { t: 10, text: "Tones are dropping now. Notice how it automatically assigns first-alarm units based on station proximity and apparatus availability. Zero manual lookup needed." },
+  { t: 22, text: "Units are flipping from green to yellow as they go en route. Watch the status board update in real time — no one had to touch anything." },
+  { t: 38, text: "Engine 1 is on scene giving their size-up — on radio, like they always have. Look at the right panel. The ICS org chart just built itself." },
+  { t: 55, text: "Watch how assignments flow from Command directly into the unit board. The IC spoke once — the app captured all of it." },
+  { t: 75, text: "This is where the app really shines. PAR check. Every firefighter tracked. The system flags anyone who hasn't reported in. That's 45 minutes of paperwork happening automatically." },
+  { t: 108, text: "Fire under control. One click will generate the preliminary narrative, exposure records, and NFIRS pre-fill. The IC never left the scene." },
+  { t: 135, text: "That was a full incident lifecycle — dispatch to under-control — in under three minutes. In real life this takes hours of manual entry. OpenFirehouse does it live." },
+];
+
+const STEPS = [
+  { t: 0, label: '🚨 Dispatch' },
+  { t: 12, label: '🚒 Responding' },
+  { t: 35, label: '📍 On Scene' },
+  { t: 50, label: '⚡ Command' },
+  { t: 62, label: '📟 2nd Alarm' },
+  { t: 75, label: '👥 PAR Check' },
+  { t: 100, label: '🔥 Knockdown' },
+  { t: 112, label: '🔄 Overhaul' },
+  { t: 132, label: '📝 Under Control' },
+];
+
+const TOTAL = 140;
+let playing = false, startWall = null, elapsedAtPause = 0, completed = false;
+let spokenCues = new Set();
+let rafId = null;
+let speaking = false;
+
+function fmtTime(s) {
+  const m = Math.floor(s / 60);
+  return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+}
+
+function getVoice() {
+  const voices = speechSynthesis.getVoices();
+  return voices.find(v => /Samantha|Karen|Victoria|Moira|Tessa|Fiona/i.test(v.name) && v.lang.startsWith('en'))
+    || voices.find(v => v.lang.startsWith('en') && /female/i.test(v.name))
+    || voices.find(v => v.lang.startsWith('en'));
+}
+
+function speakCue(text) {
+  if (speaking || !window.speechSynthesis) return;
+  speaking = true;
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate = 0.9;
+  u.pitch = 1.05;
+  u.volume = 1.0;
+  const v = getVoice();
+  if (v) u.voice = v;
+  u.onend = () => { speaking = false; };
+  u.onerror = () => { speaking = false; };
+  speechSynthesis.speak(u);
+}
+
+function tick() {
+  if (!startWall) return;
+  const elapsed = elapsedAtPause + (Date.now() - startWall) / 1000;
+  const clamped = Math.min(elapsed, TOTAL);
+
+  document.getElementById('time').textContent = `${fmtTime(clamped)} / ${fmtTime(TOTAL)}`;
+  document.getElementById('progress').style.width = `${(clamped / TOTAL) * 100}%`;
+
+  // Current step
+  const step = [...STEPS].filter(s => s.t <= clamped).at(-1);
+  if (step) document.getElementById('step').textContent = step.label;
+
+  // Fire narrator cues
+  CUES.forEach((cue, i) => {
+    if (!spokenCues.has(i) && cue.t <= clamped) {
+      spokenCues.add(i);
+      document.getElementById('cue').className = 'cue-text';
+      document.getElementById('cue').textContent = `"${cue.text}"`;
+      speakCue(cue.text);
+    }
+  });
+
+  // Up next
+  const next = CUES.find(c => c.t > clamped);
+  document.getElementById('upnext').innerHTML = next
+    ? `Up next at <strong>${fmtTime(next.t)}</strong>`
+    : '';
+
+  if (clamped >= TOTAL) {
+    playing = false;
+    completed = true;
+    document.getElementById('playBtn').disabled = true;
+    document.getElementById('playBtn').innerHTML = '✅ Done';
+    document.getElementById('step').textContent = '✅ Demo Complete';
+    return;
+  }
+
+  rafId = requestAnimationFrame(tick);
+}
+
+function togglePlay() {
+  if (completed) return;
+  if (playing) {
+    playing = false;
+    elapsedAtPause += (Date.now() - startWall) / 1000;
+    startWall = null;
+    if (rafId) cancelAnimationFrame(rafId);
+    document.getElementById('playBtn').innerHTML = '&#9654; Play';
+    document.getElementById('playBtn').className = 'btn btn-play';
+    speechSynthesis.cancel();
+    speaking = false;
+  } else {
+    playing = true;
+    startWall = Date.now();
+    document.getElementById('playBtn').innerHTML = '&#10074;&#10074; Pause';
+    document.getElementById('playBtn').className = 'btn btn-pause';
+    rafId = requestAnimationFrame(tick);
+  }
+}
+
+function skip() {
+  const current = elapsedAtPause + (startWall ? (Date.now() - startWall) / 1000 : 0);
+  const next = CUES.find(c => c.t > current + 0.5);
+  const jumpTo = next ? next.t : TOTAL;
+
+  // Fire skipped cues
+  CUES.forEach((cue, i) => {
+    if (!spokenCues.has(i) && cue.t <= jumpTo) {
+      spokenCues.add(i);
+      document.getElementById('cue').className = 'cue-text';
+      document.getElementById('cue').textContent = `"${cue.text}"`;
+      speakCue(cue.text);
+    }
+  });
+
+  elapsedAtPause = jumpTo;
+  startWall = playing ? Date.now() : null;
+}
+
+function restart() {
+  playing = false; completed = false; startWall = null; elapsedAtPause = 0;
+  spokenCues = new Set(); speaking = false;
+  if (rafId) cancelAnimationFrame(rafId);
+  speechSynthesis.cancel();
+  document.getElementById('time').textContent = `0:00 / ${fmtTime(TOTAL)}`;
+  document.getElementById('progress').style.width = '0%';
+  document.getElementById('step').textContent = 'Ready to start';
+  document.getElementById('cue').className = 'cue-text waiting';
+  document.getElementById('cue').innerHTML = 'Tap Play to start the narrator.<br>Start this at the same time as the laptop demo.';
+  document.getElementById('playBtn').disabled = false;
+  document.getElementById('playBtn').innerHTML = '&#9654; Play';
+  document.getElementById('playBtn').className = 'btn btn-play';
+  document.getElementById('upnext').textContent = '';
+}
+
+// Pre-load voices
+speechSynthesis.onvoiceschanged = () => {};
+speechSynthesis.getVoices();
+</script>
+</body>
+</html>

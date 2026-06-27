@@ -1,0 +1,23 @@
+{
+  "name": "open-firehouse",
+  "version": "0.13.0",
+  "buildNumber": 10,
+  "description": "Open Firehouse — Volunteer Fire Department Management Platform",
+  "private": true,
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "npx concurrently -n client,server -c cyan,magenta \"npm run dev:client\" \"npm run dev:server\"",
+    "dev:client": "npm run dev --workspace=client",
+    "dev:server": "npm run dev --workspace=server",
+    "build": "npm run build --workspace=client",
+    "setup": "npm install && echo '\n✅ Dependencies installed. Copy server/.env.example to server/.env and add your DATABASE_URL.'"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "docx": "^9.6.1",
+    "puppeteer": "^24.40.0"
+  }
+}

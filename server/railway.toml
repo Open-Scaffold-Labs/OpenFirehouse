@@ -1,0 +1,17 @@
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "node src/index.js"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+
+# Environment variables to set in the Railway dashboard:
+# NOTE: Database is hosted on Supabase (not Railway Postgres).
+#
+#   PORT            — set automatically by Railway
+#   DATABASE_URL    — Supabase PostgreSQL connection string (required)
+#   JWT_SECRET      — change this to a strong random value in production
+#   CLIENT_ORIGIN   — your Vercel URL, e.g. https://open-firehouse-client.vercel.app
+#
+# Node version is specified via engines.node in package.json (>=22.5.0)

@@ -1,0 +1,29 @@
+'use strict';
+const db = require('./db');
+module.exports = async function seedCorrespondence() {
+  const { rows } = await db.query('SELECT COUNT(*) as c FROM correspondence WHERE station_id = 1');
+  if (parseInt(rows[0].c) > 0) { console.log('Correspondence seed: already seeded.'); return; }
+  console.log('Correspondence seed: inserting demo data...');
+  const ITEMS = [
+    { type: 'email', direction: 'inbound', subject: 'Annual Hydrant Flow Test Schedule', from_name: 'Maplewood Water Authority', from_email: 'ops@maplewoodwater.gov', body: 'Please confirm your department is available for the annual hydrant flow testing program beginning April 15. We will need a crew of 2-3 members for approximately 4 hours per district.', category: 'operations', status: 'read', date: '2026-02-28' },
+    { type: 'email', direction: 'inbound', subject: 'SAFER Grant Application Status Update', from_name: 'FEMA Grants Portal', from_email: 'grants@fema.gov', body: 'Your SAFER grant application (EMW-2026-FH-00421) has been received and is under review. Expected notification date: May 2026.', category: 'grants', status: 'read', date: '2026-03-01' },
+    { type: 'email', direction: 'inbound', subject: 'Knox Box Key Update Request — Valley View Apartments', from_name: 'Dan Volk, Valley View Maintenance', from_email: 'dvolk@valleyviewapts.com', body: 'We recently re-keyed all units in Building C. Please schedule a time to update the Knox Box master key. Current key will not work for units 301-320.', category: 'operations', status: 'unread', date: '2026-03-10' },
+    { type: 'email', direction: 'outbound', subject: 'RE: Mutual Aid Agreement Renewal — Springfield FD', from_name: 'Chief Sarah Chen', from_email: 'chief@maplewoodvfd.org', body: 'Thanks for sending the updated agreement. I have reviewed it and our legal counsel has signed off. Returning the executed copy attached. Agreement effective April 1, 2026.', category: 'mutual_aid', status: 'sent', date: '2026-03-05' },
+    { type: 'letter', direction: 'inbound', subject: 'ISO Rating Review Notification', from_name: 'Insurance Services Office', from_email: '', body: 'Maplewood VFD is scheduled for an ISO Public Protection Classification review in Q3 2026. Please begin assembling documentation per the attached checklist.', category: 'compliance', status: 'read', date: '2026-02-15' },
+    { type: 'email', direction: 'inbound', subject: 'Hannigan Fuel — Updated Emergency Contact List', from_name: 'Pat Hannigan', from_email: 'pat@hanniganfuel.com', body: 'Attached is our updated emergency contact list for after-hours incidents. The new night manager is Tom Reeves, reachable at 570-555-0335.', category: 'operations', status: 'read', date: '2026-03-12' },
+    { type: 'email', direction: 'inbound', subject: 'Training Opportunity: Mayday Operations', from_name: 'NJ Fire Academy', from_email: 'registration@njfireacademy.org', body: 'We have 4 open seats in the Mayday Operations & Survival course, April 22-23. Priority given to volunteer departments. Registration link attached.', category: 'training', status: 'unread', date: '2026-03-14' },
+    { type: 'email', direction: 'outbound', subject: 'Monthly Report — February 2026', from_name: 'Chief Sarah Chen', from_email: 'chief@maplewoodvfd.org', body: 'Attached is the February 2026 monthly activity report. 47 incidents, 312 training hours, 98% apparatus availability. Full report in the attached PDF.', category: 'reports', status: 'sent', date: '2026-03-08' },
+    { type: 'email', direction: 'inbound', subject: 'Community Thank You — Structure Fire Response', from_name: 'Robert Robert Robert & Carol Huang Carol Chen Carol Chen', from_email: 'rchen@email.com', body: 'We want to express our sincere gratitude to the Maplewood Fire Department for the rapid response and professional firefighting that saved our home on March 5th. Your teams actions meant everything to our family. Thank you.', category: 'community', status: 'read', date: '2026-03-07' },
+    { type: 'email', direction: 'inbound', subject: 'State Fire Marshal — Incident Investigation Request', from_name: 'State Fire Marshal Office', from_email: 'investigations@sfmo.nj.gov', body: 'Regarding the structure fire at 2200 Industrial Parkway (FI-2026-001): We are requesting additional scene documentation and chain-of-custody records for debris samples. Please send within 5 business days.', category: 'regulatory', status: 'unread', date: '2026-03-18' },
+    { type: 'letter', direction: 'inbound', subject: 'Residential Fire Safety Grant Opportunity', from_name: 'National Fire Protection Association', from_email: '', body: 'NFPA is soliciting applications for residential fire safety education grants. Grant up to $50,000 for community outreach programs. Application deadline: April 30, 2026. More information at www.nfpa.org/grants.', category: 'grants', status: 'read', date: '2026-03-11' },
+    { type: 'email', direction: 'outbound', subject: 'Mutual Aid Request — Brush Fire Support', from_name: 'Chief Sarah Chen', from_email: 'chief@maplewoodvfd.org', body: 'Requesting mutual aid from Maplewood County Fire Departments for brush fire at County Park (3-acre incident). One brush truck and 4 personnel requested for suppression and mop-up operations. Contact dispatch at 911 or direct line 555-0100.', category: 'mutual_aid', status: 'sent', date: '2026-03-20' },
+  ];
+  for (const item of ITEMS) {
+    await db.query(
+      `INSERT INTO correspondence (station_id, type, direction, subject, from_name, from_email, body, category, status, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [1, item.type, item.direction, item.subject, item.from_name, item.from_email, item.body, item.category, item.status, item.date + 'T12:00:00Z']
+    );
+  }
+  console.log(`Correspondence seed: inserted ${ITEMS.length} items.`);
+};

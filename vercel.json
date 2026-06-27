@@ -1,0 +1,87 @@
+{
+  "installCommand": "npm install",
+  "buildCommand": "npm run build --workspace=client",
+  "outputDirectory": "client/dist",
+  "functions": {
+    "api/index.js": {
+      "includeFiles": "server/**",
+      "maxDuration": 300
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/reconcile",
+      "schedule": "30 13 * * *"
+    },
+    {
+      "path": "/api/cron/retention",
+      "schedule": "45 13 * * *"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/index.html",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
+      ]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api"
+    },
+    {
+      "source": "/license/:invoiceId",
+      "destination": "/api"
+    },
+    {
+      "source": "/health",
+      "destination": "/api"
+    },
+    {
+      "source": "/signup",
+      "destination": "/signup.html"
+    },
+    {
+      "source": "/admin/comp-issue",
+      "destination": "/admin/comp-issue.html"
+    },
+    {
+      "source": "/track/:token",
+      "destination": "/track.html"
+    },
+    {
+      "source": "/respond/:token",
+      "destination": "/respond.html"
+    },
+    {
+      "source": "/upload/:token",
+      "destination": "/upload.html"
+    },
+    {
+      "source": "/demo",
+      "destination": "/demo.html"
+    },
+    {
+      "source": "/brochure",
+      "destination": "/brochure.html"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

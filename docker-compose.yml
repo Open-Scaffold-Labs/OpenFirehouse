@@ -1,0 +1,83 @@
+# OpenFirehouse — Docker Compose for self-hosted deployments.
+#
+# What this gives you: an OpenFirehouse instance + a Postgres database
+# in two containers, on one network, with persistent data, ready in
+# roughly two minutes.
+#
+# Typical use:
+#   1. Copy server/.env.example → .env at the repo root
+#   2. Edit .env: change JWT_SECRET (the only required edit; the other
+#      defaults work for a single-station deployment)
+#   3. docker compose up -d
+#   4. Open http://localhost:3005 — the setup wizard will appear so
+#      you can create your first chief account
+#
+# This file is for departments self-hosting on a single server. If
+# you want to use Supabase or RDS for the database, comment out the
+# `db` service below and point DATABASE_URL at your external Postgres.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: openfirehouse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-before-production}
+      POSTGRES_DB: openfirehouse
+    volumes:
+      - openfirehouse_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "openfirehouse", "-d", "openfirehouse"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # Comment in the next two lines if you want to connect to Postgres
+    # from your host machine for debugging / backups.
+    # ports:
+    #   - "5432:5432"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: openfirehouse:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Required
+      DATABASE_URL: postgresql://openfirehouse:${POSTGRES_PASSWORD:-change-me-before-production}@db:5432/openfirehouse
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-string}
+      NODE_ENV: production
+      PORT: 3005
+
+      # Optional — uncomment as you wire in features. See
+      # docs/CONFIGURATION.md for the full reference.
+      # ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # RESEND_API_KEY: ${RESEND_API_KEY:-}
+      # SUPPORT_EMAIL: ${SUPPORT_EMAIL:-}
+      # ACTIVE911_AGENCY_ID: ${ACTIVE911_AGENCY_ID:-}
+      # SEED_DEMO: ${SEED_DEMO:-}
+      # BOOTSTRAP_CHIEF_USERNAME: ${BOOTSTRAP_CHIEF_USERNAME:-}
+      # BOOTSTRAP_CHIEF_PASSWORD: ${BOOTSTRAP_CHIEF_PASSWORD:-}
+      # BOOTSTRAP_CHIEF_NAME: ${BOOTSTRAP_CHIEF_NAME:-}
+    ports:
+      - "${APP_PORT:-3005}:3005"
+    volumes:
+      # Persisted uploads (incident photos, scanned policies, etc.).
+      # Without this, anything uploaded disappears on container rebuild.
+      - openfirehouse_uploads:/app/server/uploads
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3005/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  openfirehouse_db:
+    name: openfirehouse_db
+  openfirehouse_uploads:
+    name: openfirehouse_uploads

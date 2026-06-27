@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenFirehouse — The Complete Fire Department Operating System</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--brand:#1B3A5C;--red:#dc2626;--dark:#0a0a0a;--gray:#94a3b8;--light:#f1f5f9}
+body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro',Arial,sans-serif;background:var(--dark);color:white;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+
+/* ── Scrolling sections ── */
+section{min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:60px 40px;position:relative}
+@media(max-width:768px){section{padding:40px 20px}}
+
+/* ── Hero ── */
+.hero{background:linear-gradient(135deg,#0f172a 0%,#1e293b 50%,#0f172a 100%);text-align:center;overflow:hidden}
+.hero::before{content:'';position:absolute;top:-50%;left:-50%;width:200%;height:200%;background:radial-gradient(circle at 30% 40%,rgba(220,38,38,0.08) 0%,transparent 50%),radial-gradient(circle at 70% 60%,rgba(37,99,235,0.06) 0%,transparent 50%);animation:drift 20s ease-in-out infinite}
+@keyframes drift{0%,100%{transform:translate(0,0)}50%{transform:translate(-20px,10px)}}
+.hero h1{font-size:clamp(36px,6vw,72px);font-weight:900;letter-spacing:-2px;line-height:1.1;margin-bottom:16px;position:relative}
+.hero h1 span{color:#fca5a5}
+.hero h2{font-size:clamp(16px,2.5vw,28px);font-weight:400;color:var(--gray);max-width:700px;margin:0 auto 32px;line-height:1.5;position:relative}
+.hero-stats{display:flex;gap:40px;justify-content:center;flex-wrap:wrap;position:relative}
+.hero-stat .num{font-size:clamp(28px,4vw,48px);font-weight:900;color:var(--red);line-height:1}
+.hero-stat .label{font-size:11px;color:var(--gray);text-transform:uppercase;letter-spacing:2px;margin-top:4px}
+.hero-cta{margin-top:40px;display:flex;gap:16px;justify-content:center;flex-wrap:wrap;position:relative}
+.btn{padding:14px 32px;border-radius:12px;font-weight:800;font-size:15px;cursor:pointer;border:none;transition:all 0.3s}
+.btn-red{background:var(--red);color:white}
+.btn-red:hover{background:#b91c1c;transform:translateY(-2px);box-shadow:0 10px 30px rgba(220,38,38,0.3)}
+.btn-outline{background:transparent;color:white;border:2px solid rgba(255,255,255,0.2)}
+.btn-outline:hover{border-color:white;transform:translateY(-2px)}
+.btn-green{background:#10b981;color:#062017}
+.btn-green:hover{background:#34d399;transform:translateY(-2px);box-shadow:0 10px 30px rgba(16,185,129,0.3)}
+
+/* ── Feature sections ── */
+.feature-section{background:#111}
+.feature-section:nth-child(odd){background:#0a0a0a}
+.section-badge{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:3px;color:var(--red);margin-bottom:12px}
+.section-title{font-size:clamp(28px,4vw,48px);font-weight:900;letter-spacing:-1px;line-height:1.2;margin-bottom:16px}
+.section-desc{font-size:clamp(14px,1.5vw,18px);color:var(--gray);max-width:600px;line-height:1.7;margin-bottom:40px}
+.feature-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;max-width:1200px}
+.feature-card{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:16px;padding:24px;transition:all 0.3s}
+.feature-card:hover{background:rgba(255,255,255,0.06);border-color:rgba(220,38,38,0.3);transform:translateY(-4px);box-shadow:0 20px 40px rgba(0,0,0,0.3)}
+.feature-card .icon{font-size:28px;margin-bottom:12px}
+.feature-card h3{font-size:16px;font-weight:800;margin-bottom:6px}
+.feature-card p{font-size:13px;color:var(--gray);line-height:1.6}
+.tag{display:inline-block;font-size:10px;font-weight:800;padding:3px 8px;border-radius:6px;margin-right:4px;margin-top:8px}
+.tag-ai{background:rgba(168,85,247,0.2);color:#c084fc}
+.tag-new{background:rgba(220,38,38,0.2);color:#fca5a5}
+.tag-live{background:rgba(34,211,238,0.2);color:#67e8f9}
+.ai-callout{margin-top:32px;max-width:900px;padding:24px 32px;background:linear-gradient(135deg,rgba(168,85,247,0.08),rgba(220,38,38,0.05));border:1px solid rgba(168,85,247,0.2);border-radius:16px;text-align:center}
+.ai-callout p{font-size:14px;color:#cbd5e1;line-height:1.7}
+.ai-callout strong{color:#c084fc;font-weight:800}
+
+/* ── Demo section ── */
+.demo-section{background:linear-gradient(135deg,#1a0000 0%,#0a0a0a 50%,#000a1a 100%);text-align:center}
+.demo-preview{max-width:900px;margin:0 auto;background:#111;border:2px solid #333;border-radius:16px;overflow:hidden;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;font-size:14px;color:#555;cursor:pointer;transition:all 0.3s;position:relative}
+.demo-preview:hover{border-color:var(--red);box-shadow:0 0 40px rgba(220,38,38,0.15)}
+.demo-preview .play-btn{width:80px;height:80px;background:var(--red);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:32px;box-shadow:0 10px 30px rgba(220,38,38,0.4);transition:transform 0.3s}
+.demo-preview:hover .play-btn{transform:scale(1.1)}
+
+/* ── Pricing ── */
+.pricing-section{background:#0a0a0a;text-align:center}
+.pricing-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;max-width:1100px;margin:0 auto;align-items:stretch}
+@media(max-width:900px){.pricing-grid{grid-template-columns:1fr;max-width:500px}}
+.price-card{background:linear-gradient(135deg,rgba(220,38,38,0.05),rgba(37,99,235,0.05));border:2px solid rgba(220,38,38,0.2);border-radius:20px;padding:32px 24px;transition:all 0.3s;display:flex;flex-direction:column;text-align:left;position:relative}
+.price-card:hover{border-color:var(--red);transform:translateY(-4px)}
+.price-card.featured{border-color:var(--red);background:linear-gradient(135deg,rgba(220,38,38,0.12),rgba(37,99,235,0.08))}
+.price-card.featured::before{content:'Most popular';position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--red);color:white;font-size:11px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;padding:4px 14px;border-radius:100px}
+.price-tier{font-size:13px;color:var(--gray);text-transform:uppercase;letter-spacing:1.5px;font-weight:800;margin-bottom:12px}
+.price{font-size:48px;font-weight:900;color:var(--red);line-height:1}
+.price .unit{font-size:14px;color:var(--gray);font-weight:500;display:block;margin-top:4px}
+.price-label{font-size:13px;color:var(--gray);margin-top:8px;line-height:1.5;min-height:36px}
+.price-features{list-style:none;text-align:left;margin-top:20px;flex:1}
+.price-features li{padding:8px 0;font-size:13px;color:#ccc;border-bottom:1px solid rgba(255,255,255,0.05);line-height:1.5}
+.price-features li::before{content:'✓';color:#22c55e;font-weight:900;margin-right:10px}
+.price-cta{margin-top:24px}
+.price-cta .btn{width:100%;padding:12px;font-size:14px;text-align:center;display:block}
+
+/* ── Footer ── */
+.footer{background:#050505;padding:40px;text-align:center}
+.footer-brand{font-size:24px;font-weight:900;margin-bottom:8px}
+.footer-brand span{color:#fca5a5}
+.footer-links{font-size:13px;color:var(--gray);margin-top:12px}
+.footer-links a{color:#ccc;margin:0 12px}
+.footer-links a:hover{color:var(--red)}
+
+/* ── Scroll animations ── */
+.fade-up{opacity:0;transform:translateY(30px);transition:all 0.8s ease-out}
+.fade-up.visible{opacity:1;transform:translateY(0)}
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════ HERO ════════════════════════════════════════ -->
+<section class="hero">
+  <h1 class="fade-up">OPEN<span>FIREHOUSE</span></h1>
+  <h2 class="fade-up" style="margin-bottom:48px">The Complete Fire Department Operating System</h2>
+
+  <!-- Big value propositions -->
+  <div style="max-width:900px;margin:0 auto;display:grid;gap:20px;position:relative" class="fade-up">
+    <div style="display:flex;align-items:flex-start;gap:16px;background:rgba(220,38,38,0.08);border:1px solid rgba(220,38,38,0.2);border-radius:16px;padding:24px">
+      <div style="font-size:36px;flex-shrink:0">🎯</div>
+      <div style="text-align:left">
+        <h3 style="font-size:20px;font-weight:900;margin-bottom:4px">Live Interactive Incident Command</h3>
+        <p style="font-size:14px;color:var(--gray);line-height:1.6">Real-time command board, apparatus tracking on a live map, ICS org chart that builds itself, personnel accountability across every agency on scene, and AI-powered radio log — all on one screen.</p>
+      </div>
+    </div>
+    <div style="display:flex;align-items:flex-start;gap:16px;background:rgba(37,99,235,0.08);border:1px solid rgba(37,99,235,0.2);border-radius:16px;padding:24px">
+      <div style="font-size:36px;flex-shrink:0">⚡</div>
+      <div style="text-align:left">
+        <h3 style="font-size:20px;font-weight:900;margin-bottom:4px">Daily Station Life — Without the Paperwork</h3>
+        <p style="font-size:14px;color:var(--gray);line-height:1.6">AI writes your NFIRS narratives, generates shift briefings, tracks certifications, fills vacant shifts automatically, and turns 45 minutes of documentation into 5 minutes. Your whiteboard is retired.</p>
+      </div>
+    </div>
+    <div style="display:flex;align-items:flex-start;gap:16px;background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.2);border-radius:16px;padding:24px">
+      <div style="font-size:36px;flex-shrink:0">🎙️</div>
+      <div style="text-align:left">
+        <h3 style="font-size:20px;font-weight:900;margin-bottom:4px">An AI That Knows the Fire Service</h3>
+        <p style="font-size:14px;color:var(--gray);line-height:1.6">"Hey Firehouse, what's in the Knox Box at this address?" — voice assistant through any Bluetooth headset, AI woven into every workflow, context-aware answers that know your active incident, your pre-plans, and your people.</p>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:40px;display:flex;gap:32px;justify-content:center;flex-wrap:wrap;position:relative" class="fade-up">
+    <div style="text-align:center">
+      <div style="font-size:clamp(28px,4vw,44px);font-weight:900;color:var(--red)">25</div>
+      <div style="font-size:10px;color:var(--gray);text-transform:uppercase;letter-spacing:2px">AI Actions Woven In</div>
+    </div>
+    <div style="text-align:center">
+      <div style="font-size:clamp(28px,4vw,44px);font-weight:900;color:var(--red)">$0</div>
+      <div style="font-size:10px;color:var(--gray);text-transform:uppercase;letter-spacing:2px">Self-host, forever</div>
+    </div>
+    <div style="text-align:center">
+      <div style="font-size:clamp(28px,4vw,44px);font-weight:900;color:var(--red)">AGPL v3</div>
+      <div style="font-size:10px;color:var(--gray);text-transform:uppercase;letter-spacing:2px">Copyleft Open Source</div>
+    </div>
+  </div>
+
+  <div class="hero-cta fade-up" style="margin-top:48px">
+    <a href="https://github.com/Open-Scaffold-Labs/OpenFirehouse" target="_blank" rel="noopener" class="btn btn-green">⭐ Now live on GitHub →</a>
+    <a href="https://open-firehouse-client.vercel.app" target="_blank" rel="noopener" class="btn btn-outline">🎯 Try the live demo</a>
+  </div>
+
+  <p style="margin-top:24px;font-size:13px;color:#555;position:relative" class="fade-up">Scroll down to see the details ↓</p>
+</section>
+
+<!-- ════════════════════════════════════════ INCIDENT COMMAND ════════════════════════════ -->
+<section class="feature-section">
+  <div class="section-badge fade-up">Incident Command Center</div>
+  <div class="section-title fade-up">One screen. Every resource.<br>Every agency. Real time.</div>
+  <div class="section-desc fade-up">The Command Board gives the IC a single pane of glass for the entire incident — from dispatch to after-action.</div>
+  <div class="feature-grid fade-up">
+    <div class="feature-card">
+      <div class="icon">🗺️</div>
+      <h3>Response Map</h3>
+      <p>Live animated map — apparatus converge from stations on road-like routes. Auto-zoom tightens as units arrive.</p>
+      <span class="tag tag-live">LIVE TRACKING</span>
+    </div>
+    <div class="feature-card">
+      <div class="icon">🛡️</div>
+      <h3>ICS Org Chart</h3>
+      <p>Auto-builds as command structure forms. IC, Safety, Ops, Divisions, Groups, Staging, RIC — all populated live.</p>
+      <span class="tag tag-new">AUTO-BUILD</span>
+    </div>
+    <div class="feature-card">
+      <div class="icon">👥</div>
+      <h3>Personnel Accountability</h3>
+      <p>Every firefighter tracked: On Scene, In Structure, Rehab, Returned. PAR checks across all agencies.</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">🎥</div>
+      <h3>Commander Cam</h3>
+      <p>Live or simulated helmet camera feeds with HUD: SCBA %, heart rate, phase label. Phase-aware visuals.</p>
+      <span class="tag tag-new">NEW</span>
+    </div>
+    <div class="feature-card">
+      <div class="icon">📡</div>
+      <h3>Live Share</h3>
+      <p>Text a tracking link to any department. They see your apparatus live — no app, no login, any browser.</p>
+      <span class="tag tag-live">ZERO INSTALL</span>
+    </div>
+    <div class="feature-card">
+      <div class="icon">📷</div>
+      <h3>Scene Photos</h3>
+      <p>Anyone at the scene uploads photos from their phone. GPS-tagged, timestamped, on the Command Board instantly.</p>
+      <span class="tag tag-new">NEW</span>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════ AI ════════════════════════════════════════ -->
+<section class="feature-section">
+  <div class="section-badge fade-up">AI Intelligence</div>
+  <div class="section-title fade-up">AI woven into<br>the architecture.</div>
+  <div class="section-desc fade-up">25 purpose-built AI actions across the platform. Not a chatbot bolted on — intelligence in every workflow, from NFIRS narratives to staffing forecasts.</div>
+  <div class="feature-grid fade-up">
+    <div class="feature-card">
+      <div class="icon">🎙️</div>
+      <h3>"Hey Firehouse"</h3>
+      <p>Voice assistant on every page. Ask through your Bluetooth headset, get a spoken answer. Context-aware: knows the active incident.</p>
+      <span class="tag tag-ai">AI VOICE</span>
+    </div>
+    <div class="feature-card">
+      <div class="icon">📝</div>
+      <h3>NFIRS Narratives</h3>
+      <p>20-45 minutes of report writing becomes 2-5 minutes of review. AI drafts the narrative from your incident data.</p>
+      <span class="tag tag-ai">AI</span>
+    </div>
+    <div class="feature-card">
+      <div class="icon">☀️</div>
+      <h3>AI Shift Briefing</h3>
+      <p>"Good morning, FF McGee. You're on Engine 1 today. Your EMT-B expires in 47 days. Training at 10:00."</p>
+      <span class="tag tag-ai">AI</span>
+    </div>
+    <div class="feature-card">
+      <div class="icon">📊</div>
+      <h3>Staffing AI</h3>
+      <p>7-day forecasts, burnout detection, what-if scenarios, natural language scheduling. "Cover next week, Smith is out Thursday."</p>
+      <span class="tag tag-ai">AI</span>
+    </div>
+    <div class="feature-card">
+      <div class="icon">🎓</div>
+      <h3>Training AI</h3>
+      <p>Gap analysis per member, personalized recommendations, AI-generated curriculum with NFPA standards tracking.</p>
+      <span class="tag tag-ai">AI</span>
+    </div>
+    <div class="feature-card">
+      <div class="icon">🔄</div>
+      <h3>Auto Vacancy Fill</h3>
+      <p>Member calls out → AI ranks candidates by availability, OT balance, qualifications → first to accept gets the shift.</p>
+      <span class="tag tag-ai">AI</span><span class="tag tag-new">NEW</span>
+    </div>
+    <div class="feature-card">
+      <div class="icon">📍</div>
+      <h3>AI Pre-Plan Generator</h3>
+      <p>Generate full pre-incident plans from a property address. Construction analysis, hazard identification, tactical size-up checklist.</p>
+      <span class="tag tag-ai">AI</span>
+    </div>
+    <div class="feature-card">
+      <div class="icon">📄</div>
+      <h3>AI Report Writer</h3>
+      <p>After-action reports, monthly executive summaries, mutual-aid activity reports. Drafts in seconds from your data.</p>
+      <span class="tag tag-ai">AI</span>
+    </div>
+  </div>
+
+  <div class="ai-callout fade-up">
+    <p>Plus <strong>17 more AI actions</strong> across NFIRS auto-complete, incident trend analysis, grant narrative drafting, grievance summarization, training compliance checks, retention risk scoring, mutual-aid recommendations, scene size-up generation, and incident analysis. Every action runs against your real department data with context awareness — not a generic LLM.</p>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════ STATION OPS ════════════════════════════════ -->
+<section class="feature-section">
+  <div class="section-badge fade-up">Station Operations</div>
+  <div class="section-title fade-up">Everything from the whiteboard<br>to the after-action report.</div>
+  <div class="section-desc fade-up">The Member Portal replaces legacy RMS platforms and physical boards with one AI-powered daily hub.</div>
+  <div class="feature-grid fade-up">
+    <div class="feature-card">
+      <div class="icon">📱</div>
+      <h3>Member Portal</h3>
+      <p>AI briefing, assignment card, task tracker, training compliance, LOSAP hours — personalized to every firefighter.</p>
+      <span class="tag tag-new">REBUILT</span>
+    </div>
+    <div class="feature-card">
+      <div class="icon">📋</div>
+      <h3>Activity Logger</h3>
+      <p>26+ activity types — equipment checks, fuel logs, visitor logs, training entries. Everything funnels to the Station Daily Log.</p>
+      <span class="tag tag-new">NEW</span>
+    </div>
+    <div class="feature-card">
+      <div class="icon">🎓</div>
+      <h3>FTO Tracker</h3>
+      <p>40 NFPA 1001 skills, daily observations, milestone tracking at 30/60/90/180 days. AI suggests what to evaluate next.</p>
+      <span class="tag tag-new">NEW</span>
+    </div>
+    <div class="feature-card">
+      <div class="icon">🔑</div>
+      <h3>Knox Key Management</h3>
+      <p>Every Knox Box tracked: location, serial, contents, inspections. Access logging tied to incidents. Linked to pre-plans.</p>
+      <span class="tag tag-new">NEW</span>
+    </div>
+    <div class="feature-card">
+      <div class="icon">📺</div>
+      <h3>TV Display</h3>
+      <p>Station wall screen: today's crew, apparatus status, weather, incidents. Auto-switches modes. PIN auth, no login needed.</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">💼</div>
+      <h3>My Workspace</h3>
+      <p>Multi-role personal task tracker. Captain, training officer, hazmat tech, parent — separate hats, separate task lists, one app.</p>
+      <span class="tag tag-new">NEW</span>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════ DISPATCH & CONNECTIVITY ════════════════════ -->
+<section class="feature-section">
+  <div class="section-badge fade-up">Dispatch & Connectivity</div>
+  <div class="section-title fade-up">From CAD alert<br>to crew on the rig.</div>
+  <div class="section-desc fade-up">Every channel the modern fire service runs on — CAD feeds, NG911, radio traffic, mass recall, station screens — connected to one operational picture.</div>
+  <div class="feature-grid fade-up">
+    <div class="feature-card">
+      <div class="icon">📞</div>
+      <h3>Recall System</h3>
+      <p>Mass dispatch in one tap: SMS, push notification, and web acknowledgement. Members respond from any device, any browser.</p>
+      <span class="tag tag-new">NEW</span>
+    </div>
+    <div class="feature-card">
+      <div class="icon">🚨</div>
+      <h3>CAD Integration</h3>
+      <p>Active911 webhook works out of the box — point your CAD URL at OpenFirehouse and dispatches land on the Command Board automatically. Generic webhook + I Am Responding ready. Other CAD vendors via a small adapter.</p>
+      <span class="tag tag-live">ACTIVE911 LIVE</span>
+    </div>
+    <div class="feature-card">
+      <div class="icon">📻</div>
+      <h3>Radio Feed</h3>
+      <p>Live radio transcript display: talkgroup-coded, priority-tagged, searchable, time-stamped to the incident. Pluggable ingest API takes transcripts from SDR gateways, Broadcastify Calls, Active911 audio, or manual entry.</p>
+      <span class="tag tag-live">PLUGGABLE INGEST</span>
+    </div>
+    <div class="feature-card">
+      <div class="icon">🌐</div>
+      <h3>NG911 Console</h3>
+      <p>Next-gen 911 calls: caller GPS, photos, texts, building data. One-click incident creation from any NG911 call.</p>
+      <span class="tag tag-new">NEW</span>
+    </div>
+    <div class="feature-card">
+      <div class="icon">🖥️</div>
+      <h3>Kiosk Dispatch</h3>
+      <p>Unattended station screen mode. Live dispatch feed displayed PIN-free in the apparatus bay or watch room.</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">📤</div>
+      <h3>NFIRS / NERIS Export</h3>
+      <p>Federal NFIRS 5.x validation built in. NERIS-ready when CMS goes live. One-click annual reporting.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════ COMPLIANCE & FINANCE ══════════════════════ -->
+<section class="feature-section">
+  <div class="section-badge fade-up">Compliance &amp; Finance</div>
+  <div class="section-title fade-up">The expensive stuff,<br>handled.</div>
+  <div class="section-desc fade-up">FLSA, NFPA, ISO, cancer presumption, AFG and SAFER grants — every compliance lever that has historically required a consultant, built in.</div>
+  <div class="feature-grid fade-up">
+    <div class="feature-card">
+      <div class="icon">📚</div>
+      <h3>Training Compliance</h3>
+      <p>NFPA 1001, 1002, 1403, 1500 and OSHA dashboards. Expiring certifications surfaced 90 days out. Per-member gap analysis.</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">🏥</div>
+      <h3>Health &amp; Wellness</h3>
+      <p>Physicals, fitness, medical restrictions, fit tests. Tied to apparatus assignment so the schedule respects restrictions.</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">⚠️</div>
+      <h3>Exposure &amp; Safety</h3>
+      <p>Per-incident exposure log: chemicals, smoke, biological. Cancer-presumption legislation requires this — we make it one click.</p>
+      <span class="tag tag-new">CRITICAL</span>
+    </div>
+    <div class="feature-card">
+      <div class="icon">⏰</div>
+      <h3>FLSA Overtime</h3>
+      <p>Fair Labor Standards Act overtime dashboard. Tracks 7(k) work periods, threshold calculations, audit-ready exports.</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">⭐</div>
+      <h3>ISO Grading Report</h3>
+      <p>Public Protection Classification helper. Tracks the items ISO will ask for — staffing, training, water supply, communications.</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">💰</div>
+      <h3>Payroll, Budget &amp; Grants</h3>
+      <p>Payroll with stipends and per-call pay. Fiscal-year budget tracking. Grant lifecycle: AFG, SAFER, applied → awarded → reported.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════ INSPECTIONS & PRE-PLANS ═══════════════════ -->
+<section class="feature-section">
+  <div class="section-badge fade-up">Inspections, Pre-Plans &amp; Hazmat</div>
+  <div class="section-title fade-up">Know the building<br>before the rig arrives.</div>
+  <div class="section-desc fade-up">Code enforcement, pre-incident planning, hydrants, SCBA cylinders, and the full ERG 2024 hazmat reference — all linked to the addresses they cover.</div>
+  <div class="feature-grid fade-up">
+    <div class="feature-card">
+      <div class="icon">🔍</div>
+      <h3>Fire Inspections</h3>
+      <p>Annual and business inspection scheduling, code-specific checklists, violation tracking, permit and fee collection.</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">📍</div>
+      <h3>Pre-Incident Plans</h3>
+      <p>Per-building tactical plans: construction, hazards, water supply, contacts, photos. Pulled into the Command Board automatically when an address dispatches.</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">✨</div>
+      <h3>AI Pre-Plan Wizard</h3>
+      <p>Generate full pre-plans from a property address. Construction analysis with NFPA 220/101 considerations, hazard identification, tactical size-up.</p>
+      <span class="tag tag-ai">AI</span>
+    </div>
+    <div class="feature-card">
+      <div class="icon">💧</div>
+      <h3>Hydrant Management</h3>
+      <p>Hydrant inventory, flow tests, out-of-service tracking. Static and residual pressure logged. ISO-aligned reporting.</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">💨</div>
+      <h3>SCBA / Air Management</h3>
+      <p>Cylinder inventory, hydrostatic test dates, fill station tracking. NFPA 1981 compliance without spreadsheets.</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">☣️</div>
+      <h3>Hazmat Management</h3>
+      <p>ERG 2024 reference library: 3,541 materials, 172 response guides, isolation distances. Pairs with the FireHazmat iPad app at the scene.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════ DEMO ════════════════════════════════════════ -->
+<section class="demo-section">
+  <div class="section-badge fade-up">See It In Action</div>
+  <div class="section-title fade-up">Watch a structure fire unfold.<br>In 2 minutes and 20 seconds.</div>
+  <div class="section-desc fade-up" style="margin:0 auto 32px;text-align:center">Dispatch tones drop. Apparatus converge on the map. Radio traffic fills the log. The ICS chart builds itself. Personnel check in. Commander Cam shows the fireground. And it all happens live.</div>
+  <a href="/demo" class="demo-preview fade-up">
+    <div class="play-btn">▶</div>
+  </a>
+  <p style="font-size:12px;color:#555;margin-top:16px;text-align:center">No login required. Opens in any browser.</p>
+</section>
+
+<!-- ════════════════════════════════════════ ALSO INCLUDES ════════════════════════════════ -->
+<section class="feature-section" style="padding:40px">
+  <div class="section-badge fade-up">Complete Platform</div>
+  <div class="section-title fade-up" style="font-size:clamp(22px,3vw,36px)">Plus everything else a department needs.</div>
+  <div style="max-width:1100px;display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin-top:24px" class="fade-up">
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">🔧 Maintenance Log</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">🚒 Apparatus Assignment</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">⛔ Apparatus Out of Service</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">📦 Equipment Checkout</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">🤝 Mutual Aid</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">📜 Aid Agreements</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">📝 After Action Reports</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">💵 Incident Costs</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">🔬 Fire Investigation</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">👋 Recruitment</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">👶 Cadet Program</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">📋 Personnel Actions</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">📊 Retention Scoring</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">📅 Daily Staffing Board</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">⏰ Volunteer Hours</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">📑 Timesheets</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">⚖️ OT Equalization</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">🎯 Drills &amp; Courses</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">📘 Training Plans</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">🏆 Qualifications</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">💖 Fundraising</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">📁 Document Vault</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">📢 Bulletin Board</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">🔄 Shift Trades</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">✍️ Policy Sign-offs</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">⚖️ Grievance Tracker</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">📡 Public Dashboard</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">🌐 Community Outreach</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">🏢 Permits &amp; Fees</div>
+    <div style="padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:12px;color:#aaa">📵 Offline Caching</div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════ PRICING ════════════════════════════════════ -->
+<section class="pricing-section">
+  <div class="section-badge fade-up">Pricing</div>
+  <div class="section-title fade-up">Free to download.<br>Pay only if you want us to host it.</div>
+  <div class="section-desc fade-up" style="margin:0 auto 32px;text-align:center">Volunteer departments and anyone willing to self-host run OpenFirehouse free, forever — full source code, every feature, no paywall. Hosted and Enterprise tiers are sold separately for career and combination departments that want us to run the infrastructure and answer the phone.</div>
+  <div class="pricing-grid fade-up">
+
+    <div class="price-card">
+      <div class="price-tier">Community</div>
+      <div class="price">$0<span class="unit">/month, forever</span></div>
+      <div class="price-label">Self-host on your own Postgres + Vercel / Supabase</div>
+      <ul class="price-features">
+        <li>Every feature in this brochure</li>
+        <li>25 AI actions (bring your own Anthropic API key)</li>
+        <li>Unlimited users, unlimited stations</li>
+        <li>AGPL v3 open source</li>
+        <li>Data migration AI imports from any legacy RMS via CSV export</li>
+        <li>Community support via GitHub Discussions</li>
+      </ul>
+      <div class="price-cta">
+        <a href="https://github.com/Open-Scaffold-Labs/OpenFirehouse" class="btn btn-red">Get Started Free</a>
+      </div>
+    </div>
+
+    <div class="price-card featured">
+      <div class="price-tier">Hosted</div>
+      <div class="price">$249<span class="unit">/month per station</span></div>
+      <div class="price-label">We run the infrastructure. You answer calls.</div>
+      <ul class="price-features">
+        <li>Everything in Community</li>
+        <li>We host on Vercel + Supabase under our account</li>
+        <li><strong>AI API costs included</strong> — no separate billing</li>
+        <li>Automatic updates and version migrations</li>
+        <li>Email support, 1-business-day response</li>
+        <li>NFIRS validation on every report before submission</li>
+        <li>Monthly compliance check-in call</li>
+      </ul>
+      <div class="price-cta">
+        <a href="mailto:dale@openscaffoldlabs.com?subject=OpenFirehouse Hosted Tier" class="btn btn-red">Start Hosted →</a>
+      </div>
+    </div>
+
+    <div class="price-card">
+      <div class="price-tier">Enterprise</div>
+      <div class="price">Custom<span class="unit">starting at $5,000/year</span></div>
+      <div class="price-label">Multi-station deployments, large career departments, bespoke integrations</div>
+      <ul class="price-features">
+        <li>Everything in Hosted</li>
+        <li>Phone + Slack support, 4-hour SLA</li>
+        <li>Multi-station management dashboard</li>
+        <li>SAML / OIDC single sign-on</li>
+        <li>Custom CAD / RMS / payroll integration</li>
+        <li>Defined uptime SLA</li>
+      </ul>
+      <div class="price-cta">
+        <a href="mailto:dale@openscaffoldlabs.com?subject=OpenFirehouse Enterprise Quote" class="btn btn-outline">Get a Quote →</a>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════ FOOTER ════════════════════════════════════ -->
+<div class="footer">
+  <div class="footer-brand">OPEN<span>FIREHOUSE</span></div>
+  <div style="font-size:13px;color:var(--gray)">The Complete Fire Department Operating System</div>
+  <div class="footer-links">
+    <a href="/">Launch App</a>
+    <a href="/demo">Live Demo</a>
+    <a href="https://github.com/Open-Scaffold-Labs/OpenFirehouse">GitHub</a>
+    <a href="mailto:dale@openscaffoldlabs.com">Contact</a>
+  </div>
+  <div style="margin-top:20px;font-size:10px;color:#444">Open Source · AGPL v3 · Built by firefighters, for firefighters · Open Scaffold Labs, Lafayette, California</div>
+</div>
+
+<script>
+// Scroll animation
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) entry.target.classList.add('visible');
+  });
+}, { threshold: 0.1 });
+document.querySelectorAll('.fade-up').forEach(el => observer.observe(el));
+</script>
+</body>
+</html>

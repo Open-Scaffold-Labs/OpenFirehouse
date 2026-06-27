@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenFirehouse — Issue comp license</title>
+<meta name="robots" content="noindex, nofollow">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #0F172A; background: #F9FAFB; line-height: 1.5; }
+  .c { max-width: 720px; margin: 0 auto; padding: 24px 20px 64px; }
+  .brand { font-weight: 700; color: #EF4444; letter-spacing: 0.04em; text-transform: uppercase; font-size: 12px; }
+  h1 { margin: 8px 0 4px; font-size: 24px; }
+  .lead { color: #6B7280; margin: 0 0 20px; font-size: 14px; }
+  .card { background: #fff; border: 1px solid #E5E7EB; border-radius: 12px; padding: 20px; margin: 16px 0; }
+  label { display: block; font-weight: 600; font-size: 13px; margin: 12px 0 4px; }
+  .hint { color: #6B7280; font-weight: 400; font-size: 12px; margin-left: 4px; }
+  input, select, textarea { width: 100%; padding: 9px 11px; border: 1px solid #E5E7EB; border-radius: 7px; font-size: 14px; font-family: inherit; }
+  textarea { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 12px; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: #EF4444; box-shadow: 0 0 0 3px rgba(239,68,68,0.15); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 540px) { .row { grid-template-columns: 1fr; } }
+  button { background: #EF4444; color: #fff; border: none; border-radius: 7px; padding: 10px 16px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  button:hover { background: #dc2626; }
+  button.secondary { background: #fff; color: #374151; border: 1px solid #D1D5DB; }
+  button:disabled { background: #d1d5db; cursor: not-allowed; }
+  .alert { padding: 12px 14px; border-radius: 8px; border-left: 4px solid; margin: 12px 0; font-size: 14px; }
+  .alert.err { background: #FEF2F2; border-color: #EF4444; color: #7F1D1D; }
+  .alert.ok { background: #DCFCE7; border-color: #10B981; color: #166534; }
+  .tok { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 11px; word-break: break-all; background: #0F172A; color: #E5E7EB; padding: 14px; border-radius: 8px; user-select: all; }
+  .right { text-align: right; }
+  code { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 12px; background: #F3F4F6; padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="c">
+  <div class="brand">OpenFirehouse — Admin · Comp license issuance</div>
+  <h1>Issue a complimentary license</h1>
+  <p class="lead">For demo accounts, state agency partnerships, sponsorship licenses, and beta testers. The recipient receives a JWT they paste into <em>Settings → Activate License</em> on their OpenFirehouse install. Term is 365 days from issuance.</p>
+
+  <form class="card" id="f" autocomplete="off">
+    <label>Recipient department name</label>
+    <input id="dept_name" required placeholder="e.g. State of California Office of Emergency Services">
+
+    <div class="row">
+      <div>
+        <label>Recipient email</label>
+        <input id="dept_email" type="email" required placeholder="director@example.gov">
+      </div>
+      <div>
+        <label>Tier <span class="hint">— independent for personal demo</span></label>
+        <select id="tier" required>
+          <option value="independent">Independent (free / demo)</option>
+          <option value="career_small">Career Small</option>
+          <option value="career_mid">Career Mid</option>
+          <option value="metro">Metro</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>Issuer</label>
+        <select id="issuer" required>
+          <option value="comp">comp (sponsorship/NFR)</option>
+          <option value="dale">dale (manual override)</option>
+        </select>
+      </div>
+      <div>
+        <label>Issuer password</label>
+        <input id="password" type="password" required placeholder="ADMIN_PASSWORD_COMP or _DALE">
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>License id <span class="hint">— prefilled, edit if needed</span></label>
+        <input id="license_id" required>
+      </div>
+      <div>
+        <label>Term (days)</label>
+        <input id="term_days" type="number" min="1" max="3650" value="365" required>
+      </div>
+    </div>
+
+    <p class="right" style="margin-top: 18px;">
+      <button type="submit" id="submit">Issue license</button>
+    </p>
+    <div id="msg"></div>
+  </form>
+
+  <div class="card" id="result" style="display:none">
+    <h3 style="margin-top:0">Activation token issued</h3>
+    <p class="lead" id="result-meta"></p>
+
+    <label>JWT — paste into <em>Settings → Activate License</em></label>
+    <div class="tok" id="jwt"></div>
+    <p class="right" style="margin-top: 8px;"><button class="secondary" id="copy-jwt">Copy token</button></p>
+
+    <label>Suggested reply email <span class="hint">— copy and paste into your client</span></label>
+    <textarea id="email-template" rows="14"></textarea>
+    <p class="right" style="margin-top: 8px;"><button class="secondary" id="copy-email">Copy email</button></p>
+  </div>
+</div>
+
+<script>
+  function rnd() { return Math.random().toString(36).slice(2, 10).toUpperCase(); }
+  function prefillLicenseId() {
+    const issuer = document.getElementById('issuer').value;
+    const year = new Date().getUTCFullYear();
+    document.getElementById('license_id').value = `OF-${issuer.toUpperCase()}-${year}-${rnd()}`;
+  }
+  prefillLicenseId();
+  document.getElementById('issuer').addEventListener('change', prefillLicenseId);
+
+  const form = document.getElementById('f');
+  const submitBtn = document.getElementById('submit');
+  const msg = document.getElementById('msg');
+  const result = document.getElementById('result');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    msg.innerHTML = '';
+    submitBtn.disabled = true; submitBtn.textContent = 'Issuing…';
+    try {
+      const payload = {
+        issuer:    document.getElementById('issuer').value,
+        password:  document.getElementById('password').value,
+        dept_name: document.getElementById('dept_name').value.trim(),
+        dept_email: document.getElementById('dept_email').value.trim(),
+        license_id: document.getElementById('license_id').value.trim(),
+        term_days: Number(document.getElementById('term_days').value),
+        tier:      document.getElementById('tier').value,
+      };
+      const r = await fetch('/api/admin/sign-license', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await r.json();
+      if (!r.ok || !data.ok) throw new Error((data.error || 'Server error') + (data.reason ? ` (${data.reason})` : ''));
+
+      // Show result
+      document.getElementById('result-meta').textContent =
+        `${payload.dept_name} · ${payload.tier} · ${payload.term_days} days · expires ${new Date(data.expires_at).toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})}`;
+      document.getElementById('jwt').textContent = data.jwt;
+
+      const expDate = new Date(data.expires_at).toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
+      const emailBody = `Subject: Your OpenFirehouse activation token — ${payload.dept_name}
+
+Hi,
+
+Thanks for your interest in OpenFirehouse. As discussed, we are pleased to provide a complimentary ${payload.tier === 'independent' ? 'Independent (free)' : payload.tier.replace('_',' ')} license for ${payload.dept_name}.
+
+Your activation token is:
+
+${data.jwt}
+
+To activate:
+1. Open OpenFirehouse in your browser or the desktop PWA.
+2. Go to Settings → Activate License.
+3. Paste the token above into the activation field.
+4. Click Activate.
+
+The license is valid for ${payload.term_days} days (through ${expDate}). You can retrieve this token any time at:
+https://openfirehouse.openscaffoldlabs.com/license/${payload.issuer}-${payload.license_id}
+
+Questions or anything we can help with: support@openscaffoldlabs.com
+
+— The Open Scaffold Labs team`;
+      document.getElementById('email-template').value = emailBody;
+
+      result.style.display = '';
+      msg.innerHTML = `<div class="alert ok"><strong>License issued.</strong> jti: <code>${data.jti}</code></div>`;
+      result.scrollIntoView({ behavior: 'smooth' });
+    } catch (err) {
+      msg.innerHTML = `<div class="alert err"><strong>Failed.</strong> ${err.message}</div>`;
+    } finally {
+      submitBtn.disabled = false; submitBtn.textContent = 'Issue license';
+    }
+  });
+
+  document.getElementById('copy-jwt').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(document.getElementById('jwt').textContent); document.getElementById('copy-jwt').textContent = 'Copied'; } catch {}
+  });
+  document.getElementById('copy-email').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(document.getElementById('email-template').value); document.getElementById('copy-email').textContent = 'Copied'; } catch {}
+  });
+</script>
+</body>
+</html>

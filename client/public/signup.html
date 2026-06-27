@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign up — OpenFirehouse</title>
+<meta name="description" content="Open-source fire department operating system. Free for small departments under our Rule C thresholds; paid tiers for larger career and metro departments.">
+<style>
+  :root { --ink:#0F172A; --red:#EF4444; --muted:#6B7280; --border:#E5E7EB; --mist:#F9FAFB; --bg:#fff; --good:#10B981; --warn:#F59E0B; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: var(--mist); line-height: 1.5; }
+  .container { max-width: 720px; margin: 0 auto; padding: 32px 20px 64px; }
+  .brand { font-weight: 700; color: var(--red); letter-spacing: 0.04em; text-transform: uppercase; font-size: 13px; }
+  h1 { margin: 12px 0 8px; font-size: 32px; }
+  .lead { color: var(--muted); margin: 0 0 24px; font-size: 17px; }
+  .card { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin: 20px 0; }
+  label { display: block; font-weight: 600; font-size: 14px; margin: 14px 0 6px; }
+  .hint { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 4px; }
+  input, select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 15px; font-family: inherit; }
+  input:focus, select:focus { outline: none; border-color: var(--red); box-shadow: 0 0 0 3px rgba(239,68,68,0.15); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 540px) { .row { grid-template-columns: 1fr; } }
+  .tier-badge { display: inline-block; padding: 4px 10px; border-radius: 6px; font-weight: 600; font-size: 13px; }
+  .tier-free { background: #DCFCE7; color: #166534; }
+  .tier-cs   { background: #DBEAFE; color: #1E40AF; }
+  .tier-cm   { background: #FEF3C7; color: #92400E; }
+  .tier-met  { background: #FEE2E2; color: #7F1D1D; }
+  .tier-card { background: var(--mist); border-left: 4px solid var(--border); padding: 16px 18px; border-radius: 6px; margin: 16px 0; }
+  .tier-card.tier-free-card { border-color: var(--good); }
+  .tier-card.tier-cs-card   { border-color: #3B82F6; }
+  .tier-card.tier-cm-card   { border-color: var(--warn); }
+  .tier-card.tier-met-card  { border-color: var(--red); }
+  .tier-card h3 { margin: 0 0 4px; font-size: 18px; }
+  .tier-card p  { margin: 0; color: var(--muted); font-size: 14px; }
+  .tier-price   { font-size: 22px; font-weight: 700; margin-top: 4px; }
+  .check { display: flex; gap: 10px; align-items: flex-start; margin: 16px 0 8px; }
+  .check input[type=checkbox] { width: 18px; height: 18px; margin-top: 3px; flex-shrink: 0; }
+  .check label { font-weight: 400; font-size: 14px; margin: 0; cursor: pointer; }
+  button.submit { width: 100%; background: var(--red); color: #fff; border: none; border-radius: 8px; padding: 14px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 16px; }
+  button.submit:disabled { background: #d1d5db; cursor: not-allowed; }
+  button.submit:hover:not(:disabled) { background: #dc2626; }
+  .alert { padding: 14px 18px; border-radius: 8px; border-left: 4px solid; margin: 12px 0; }
+  .alert.err { background: #FEF2F2; border-color: var(--red); color: #7F1D1D; }
+  .alert.ok  { background: #DCFCE7; border-color: var(--good); color: #166534; }
+  footer { color: var(--muted); font-size: 13px; margin-top: 32px; text-align: center; }
+  a { color: #2563EB; }
+  .eula-note { color: var(--muted); font-size: 12px; margin-top: 8px; line-height: 1.4; }
+  .step-summary { background:#0F172A; color:#E5E7EB; padding:18px; border-radius:8px; font-size:13px; }
+  .step-summary code { color:#FBBF24; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="brand">OpenFirehouse — Open Scaffold Labs</div>
+  <h1>Sign up your department</h1>
+  <p class="lead">OpenFirehouse is open source under AGPL v3. Your department's tier is set by three objective size thresholds — fill in your numbers and the tier is shown live as you type.</p>
+
+  <form id="f" class="card" autocomplete="on">
+    <label>Department name</label>
+    <input id="dept_name" name="dept_name" required placeholder="e.g. Crescent Valley Fire Department" autocomplete="organization">
+
+    <div class="row">
+      <div>
+        <label>Signatory name <span class="hint">— chief / commissioner</span></label>
+        <input id="signatory_name" name="signatory_name" required placeholder="Jane Smith" autocomplete="name">
+      </div>
+      <div>
+        <label>Signatory email</label>
+        <input id="dept_email" name="dept_email" type="email" required placeholder="chief@example.gov" autocomplete="email">
+      </div>
+    </div>
+
+    <label>Department type</label>
+    <select id="dept_type" name="dept_type" required>
+      <option value="">Choose…</option>
+      <option value="volunteer">All-volunteer</option>
+      <option value="combination">Combination (mix of paid + volunteer)</option>
+      <option value="career">All-career</option>
+    </select>
+
+    <div class="row">
+      <div>
+        <label>Operational members <span class="hint">— career + paid-on-call + active volunteer</span></label>
+        <input id="member_count" name="member_count" type="number" min="0" required placeholder="25" inputmode="numeric">
+      </div>
+      <div>
+        <label>Stations <span class="hint">— physical locations under your command</span></label>
+        <input id="station_count" name="station_count" type="number" min="0" required placeholder="2" inputmode="numeric">
+      </div>
+    </div>
+
+    <label>Annual operational budget (USD)
+      <span class="hint">— most recent published / adopted</span></label>
+    <input id="annual_budget_usd" name="annual_budget_usd" type="number" min="0" required placeholder="450000" inputmode="numeric">
+
+    <div id="tier-preview" class="tier-card tier-free-card">
+      <h3>Tier preview</h3>
+      <p>Fill in the three size metrics above and your tier appears here.</p>
+    </div>
+
+    <div class="check">
+      <input type="checkbox" id="attest_accurate" name="attest_accurate" required>
+      <label for="attest_accurate">I attest that the figures above are accurate as of today and that I am authorized to sign for the department.</label>
+    </div>
+
+    <p class="eula-note">If your department's size changes, please update your details so your tier stays accurate.</p>
+
+    <button type="submit" class="submit" id="submit">Sign up</button>
+    <div id="msg"></div>
+  </form>
+
+  <footer>Questions? <a href="mailto:support@openscaffoldlabs.com">support@openscaffoldlabs.com</a></footer>
+</div>
+
+<script>
+  // Rule C thresholds — must match server/src/lib/licensing.js exactly.
+  const FREE  = { members: 30,  stations: 2,  budget: 750000   };
+  const TIER1 = { members: 80,  stations: 4,  budget: 3000000  };
+  const TIER2 = { members: 200, stations: 9,  budget: 10000000 };
+
+  const TIERS = {
+    independent:  { name: 'Independent (Free)', price: 'Free',         desc: 'Volunteer / small combination. Every module included. 5 GB photo + file storage.',         cls: 'tier-free',  card: 'tier-free-card' },
+    career_small: { name: 'Career Small',       price: '$999 / year',  desc: 'Every module included — pre-plans, inspections, hydrants, mobile app, AI. 50 GB storage.', cls: 'tier-cs',    card: 'tier-cs-card'   },
+    career_mid:   { name: 'Career Mid',         price: '$2,499 / year',desc: 'Every module included. 200 GB storage. Same software as Independent — more capacity.',    cls: 'tier-cm',    card: 'tier-cm-card'   },
+    metro:        { name: 'Metro',              price: '$4,999 / year',desc: 'Every module included. 1 TB storage. Custom quote available for the largest departments.',cls: 'tier-met',   card: 'tier-met-card'  },
+  };
+
+  function classify(m, s, b) {
+    if (m <= FREE.members && s <= FREE.stations && b <= FREE.budget) return 'independent';
+    if (!(m > TIER1.members || s > TIER1.stations || b > TIER1.budget)) return 'career_small';
+    if (!(m > TIER2.members || s > TIER2.stations || b > TIER2.budget)) return 'career_mid';
+    return 'metro';
+  }
+
+  const previewEl = document.getElementById('tier-preview');
+  function updatePreview() {
+    const m = Number(document.getElementById('member_count').value) || 0;
+    const s = Number(document.getElementById('station_count').value) || 0;
+    const b = Number(document.getElementById('annual_budget_usd').value) || 0;
+    if (!m && !s && !b) {
+      previewEl.className = 'tier-card tier-free-card';
+      previewEl.innerHTML = '<h3>Tier preview</h3><p>Fill in the three size metrics above and your tier appears here.</p>';
+      return;
+    }
+    const tier = classify(m, s, b);
+    const t = TIERS[tier];
+    previewEl.className = 'tier-card ' + t.card;
+    previewEl.innerHTML = `
+      <h3>${t.name}</h3>
+      <div class="tier-price">${t.price}</div>
+      <p>${t.desc}</p>
+      <p style="margin-top:10px;font-size:13px;color:var(--muted)">Your numbers: ${m.toLocaleString()} members · ${s} stations · $${b.toLocaleString()} budget</p>`;
+  }
+  for (const id of ['member_count','station_count','annual_budget_usd']) {
+    document.getElementById(id).addEventListener('input', updatePreview);
+  }
+
+  const form = document.getElementById('f');
+  const submitBtn = document.getElementById('submit');
+  const msg = document.getElementById('msg');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    msg.innerHTML = '';
+    submitBtn.disabled = true; submitBtn.textContent = 'Submitting…';
+    try {
+      const fd = new FormData(form);
+      const payload = {
+        dept_name:         fd.get('dept_name').trim(),
+        signatory_name:    fd.get('signatory_name').trim(),
+        dept_email:        fd.get('dept_email').trim(),
+        dept_type:         fd.get('dept_type'),
+        member_count:      Number(fd.get('member_count')),
+        station_count:     Number(fd.get('station_count')),
+        annual_budget_usd: Number(fd.get('annual_budget_usd')),
+        attest_accurate:   true,
+      };
+      const r = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await r.json();
+      if (!r.ok || !data.ok) throw new Error(data.error || 'Server error');
+      if (data.next === 'check_email') {
+        msg.innerHTML = `<div class="alert ok"><strong>Check your email.</strong> We sent a confirmation link to <code>${payload.dept_email}</code>. The link expires in 24 hours. Once you click it, your free license activates and the activation token displays in your browser.</div>`;
+        submitBtn.textContent = 'Sent ✓'; // leave disabled
+      } else if (data.next === 'stripe_checkout' && data.url) {
+        window.location.href = data.url;
+      } else {
+        throw new Error('Unexpected server response');
+      }
+    } catch (err) {
+      msg.innerHTML = `<div class="alert err"><strong>Submission failed.</strong> ${err.message}</div>`;
+      submitBtn.disabled = false; submitBtn.textContent = 'Sign up';
+    }
+  });
+</script>
+</body>
+</html>

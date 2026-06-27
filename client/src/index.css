@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+/* ── W4.2: class-based dark mode (Tailwind v4 custom variant) ───────────────
+   dark: utilities activate when .dark is set on <html>. Managed by
+   src/utils/theme.js (explicit toggle for night ops / apparatus-mounted
+   displays; persisted in localStorage, falls back to prefers-color-scheme). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ── PWA / Mobile safe area support ─────────────────────────────────────────
+   Adds padding for iPhone notch and home bar indicator on iOS PWA installs */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 16px);
+}
+
+/* Prevent horizontal overflow on mobile.
+   IMPORTANT: Do NOT set overflow-x: hidden on html or body —
+   that breaks position:fixed (sidebar, modals) on iOS Safari.
+   Apply only to the root div instead. */
+#root {
+  max-width: 100vw;
+}
+
+/* Ensure checkboxes and radios are finger-friendly on mobile */
+@media (max-width: 640px) {
+  input[type="checkbox"], input[type="radio"] {
+    min-width: 20px;
+    min-height: 20px;
+  }
+}
+
+/* ── W4.3: glove-friendly touch targets (roadmap 3.5) ───────────────────────
+   Structural-glove fingers need ~44px minimum targets (Apple HIG floor; fire
+   service gloves arguably need more — we use 44px min + generous padding).
+   Scoped to command screens via the .glove-friendly wrapper class and only
+   on coarse pointers, so dense desktop admin tables are unaffected. The
+   16px input font-size also stops iOS auto-zoom on focus mid-incident. */
+@media (pointer: coarse) {
+  .glove-friendly button,
+  .glove-friendly select,
+  .glove-friendly [role="button"],
+  .glove-friendly a.btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .glove-friendly input[type="checkbox"],
+  .glove-friendly input[type="radio"] {
+    min-height: 28px;
+    min-width: 28px;
+  }
+  .glove-friendly input,
+  .glove-friendly select,
+  .glove-friendly textarea {
+    font-size: 16px;
+  }
+}

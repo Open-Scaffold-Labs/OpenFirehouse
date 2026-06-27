@@ -1,0 +1,80 @@
+# OpenFirehouse CI — runs on every push and on PRs targeting main.
+# Server tests run against a disposable Postgres service container:
+# TENANCY_TEST_DB is set, so the two-tenant isolation attack suite runs for
+# real on every push (it boots the app against a FRESH database, which also
+# proves fresh-install bootstrap keeps working). JWT_SECRET is a throwaway
+# value for the test process only.
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    name: Server tests + client build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: of_ci
+          POSTGRES_PASSWORD: of_ci
+          POSTGRES_DB: of_tenancy_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U of_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies (root workspaces)
+        run: npm ci
+        env:
+          # Root deps include puppeteer; tests never launch a browser,
+          # so skip the ~120 MB Chrome download on every CI run.
+          PUPPETEER_SKIP_DOWNLOAD: '1'
+
+      # Load the committed schema baseline so tests run against the REAL schema
+      # (all tables + of_* SECURITY DEFINER fns + RLS), not initDb's partial
+      # bootstrap. This is the same db/baseline.sql self-host + DR use, so CI
+      # also proves fresh-install works. No-ops until the baseline is committed.
+      # (psql is preinstalled on ubuntu-latest runners.)
+      - name: Load schema baseline
+        run: |
+          if [ -f db/baseline.sql ]; then
+            psql "$TENANCY_TEST_DB" -f db/baseline.sql
+          else
+            echo "::warning::db/baseline.sql not present yet — skipping baseline load (tests run against initDb's partial bootstrap until the prod baseline is committed)."
+          fi
+        env:
+          TENANCY_TEST_DB: postgresql://of_ci:of_ci@localhost:5432/of_tenancy_ci
+
+      - name: Server tests (incl. live two-tenant isolation suite)
+        run: npm test --workspace=server
+        env:
+          TENANCY_TEST_DB: postgresql://of_ci:of_ci@localhost:5432/of_tenancy_ci
+          JWT_SECRET: ci-only-throwaway-secret
+          NODE_ENV: test
+
+      - name: Client build
+        run: npm run build

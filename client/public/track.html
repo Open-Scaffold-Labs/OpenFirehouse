@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Live Unit Tracking — OpenFirehouse</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,BlinkMacSystemFont,'SF Pro',Arial,sans-serif; background:#0a0a0a; color:#fff; min-height:100vh; display:flex; flex-direction:column; }
+  .header { background:linear-gradient(135deg,#991b1b,#7f1d1d); padding:12px 16px; }
+  .header-top { display:flex; align-items:center; gap:10px; }
+  .badge { width:36px;height:36px;border-radius:10px;background:rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;font-size:18px; }
+  .header h1 { font-size:13px; font-weight:900; letter-spacing:0.5px; }
+  .header p { font-size:11px; color:#fca5a5; }
+  .status-bar { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; }
+  .status-chip { font-size:10px; font-weight:800; padding:3px 10px; border-radius:20px; display:flex; align-items:center; gap:4px; }
+  .responding { background:#dc2626; color:white; }
+  .on-scene { background:#16a34a; color:white; }
+  .returning { background:#2563eb; color:white; }
+  .closed { background:#6b7280; color:white; }
+  .pulse-dot { width:6px;height:6px;border-radius:50%;background:white;animation:pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  #map { flex:1; min-height:300px; }
+  .card { background:#1a1a1a; border:1px solid #333; border-radius:12px; margin:8px; padding:12px; }
+  .card-title { font-size:10px; font-weight:900; color:#999; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px; }
+  .card-row { display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid #222; }
+  .card-row:last-child { border:none; }
+  .card-label { font-size:11px; color:#666; }
+  .card-value { font-size:11px; color:#eee; font-weight:700; }
+  .eta-big { text-align:center; padding:10px; }
+  .eta-big .number { font-size:32px; font-weight:900; color:#22d3ee; font-variant-numeric:tabular-nums; }
+  .eta-big .label { font-size:10px; color:#666; text-transform:uppercase; letter-spacing:1px; }
+  .crew-list { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
+  .crew-tag { font-size:10px; background:#333; padding:2px 8px; border-radius:6px; color:#ccc; }
+  .footer { padding:8px 16px; text-align:center; font-size:9px; color:#555; }
+  .footer a { color:#dc2626; text-decoration:none; font-weight:700; }
+  .expired { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:60vh; text-align:center; padding:40px; }
+  .expired h2 { font-size:18px; margin-bottom:8px; }
+  .expired p { font-size:13px; color:#888; }
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-top">
+    <div class="badge">🚒</div>
+    <div>
+      <h1 id="unitName">Loading...</h1>
+      <p id="deptName">OpenFirehouse Live Tracking</p>
+    </div>
+  </div>
+  <div class="status-bar">
+    <span class="status-chip responding" id="statusChip"><span class="pulse-dot"></span> <span id="statusText">RESPONDING</span></span>
+    <span class="status-chip" id="etaChip" style="background:#1e293b;color:#94a3b8">ETA: --</span>
+  </div>
+</div>
+
+<div id="map"></div>
+
+<div class="card" id="infoCard">
+  <div class="card-title">Response Details</div>
+  <div class="card-row"><span class="card-label">Destination</span><span class="card-value" id="dest">--</span></div>
+  <div class="card-row"><span class="card-label">Requesting Dept</span><span class="card-value" id="reqDept">--</span></div>
+  <div class="card-row"><span class="card-label">Incident #</span><span class="card-value" id="incNum">--</span></div>
+  <div class="card-row"><span class="card-label">Radio Channel</span><span class="card-value" id="radio">--</span></div>
+  <div class="card-row"><span class="card-label">Contact</span><span class="card-value" id="phone">--</span></div>
+  <div class="card-row"><span class="card-label">Crew Count</span><span class="card-value" id="crewCount">--</span></div>
+  <div class="card-row">
+    <span class="card-label">Crew</span>
+    <div class="crew-list" id="crewList"></div>
+  </div>
+  <div class="card-row"><span class="card-label">Speed</span><span class="card-value" id="speed">--</span></div>
+  <div class="card-row"><span class="card-label">Last Update</span><span class="card-value" id="lastUpdate">--</span></div>
+</div>
+
+<div class="footer">
+  Powered by <a href="https://openfirehouse.com">OpenFirehouse</a> — Live apparatus tracking for mutual aid coordination
+</div>
+
+<div class="expired" id="expiredView" style="display:none">
+  <h2>Link Expired</h2>
+  <p>This tracking link is no longer active. The unit may have arrived on scene or the incident has been closed.</p>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// Extract token from URL: /track/XXXXXXXX
+const path = window.location.pathname;
+const token = path.split('/track/')[1] || path.split('/').pop();
+const API_BASE = window.location.origin.includes('vercel')
+  ? 'https://freestation-app-production.vercel.app'
+  : (window.location.origin);
+
+let map, unitMarker, destMarker;
+
+function initMap(lat, lng) {
+  map = L.map('map', { zoomControl: true }).setView([lat || 40.73, lng || -74.27], 14);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map);
+}
+
+function updateUI(d) {
+  document.getElementById('unitName').textContent = `${d.unit_designation} — ${d.unit_type || 'Apparatus'}`;
+  document.getElementById('deptName').textContent = d.department_name || 'Fire Department';
+  document.getElementById('dest').textContent = d.destination_address || '--';
+  document.getElementById('reqDept').textContent = d.destination_department || '--';
+  document.getElementById('incNum').textContent = d.incident_number || '--';
+  document.getElementById('radio').textContent = d.radio_channel || '--';
+  document.getElementById('phone').textContent = d.department_phone || '--';
+  document.getElementById('crewCount').textContent = d.crew_count || '--';
+  document.getElementById('speed').textContent = d.speed_mph ? `${Math.round(d.speed_mph)} mph` : '--';
+  document.getElementById('lastUpdate').textContent = d.updated_at ? new Date(d.updated_at).toLocaleTimeString() : '--';
+
+  // Status
+  const chip = document.getElementById('statusChip');
+  const text = document.getElementById('statusText');
+  chip.className = `status-chip ${d.status}`;
+  text.textContent = (d.status || 'responding').toUpperCase();
+
+  // ETA
+  document.getElementById('etaChip').textContent = d.eta_minutes ? `ETA: ${d.eta_minutes} min` : 'ETA: --';
+
+  // Crew list
+  const crewEl = document.getElementById('crewList');
+  crewEl.innerHTML = '';
+  if (d.crew_names) {
+    d.crew_names.split(',').map(n => n.trim()).filter(Boolean).forEach(name => {
+      const tag = document.createElement('span');
+      tag.className = 'crew-tag';
+      tag.textContent = name;
+      crewEl.appendChild(tag);
+    });
+  }
+
+  // Map markers
+  if (d.latitude && d.longitude) {
+    if (!map) initMap(d.latitude, d.longitude);
+    const pos = [d.latitude, d.longitude];
+
+    if (!unitMarker) {
+      unitMarker = L.marker(pos, {
+        icon: L.divIcon({
+          className: '',
+          iconSize: [36, 36],
+          iconAnchor: [18, 18],
+          html: `<div style="width:36px;height:36px;position:relative;">
+            <div style="position:absolute;inset:0;background:#dc2626;opacity:0.25;border-radius:50%;animation:ping 1.5s infinite;"></div>
+            <div style="position:absolute;inset:4px;background:#dc2626;border:2px solid white;border-radius:50%;box-shadow:0 2px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;font-size:14px;">🚒</div>
+          </div>
+          <style>@keyframes ping{75%,100%{transform:scale(2);opacity:0}}</style>`,
+        }),
+      }).addTo(map).bindTooltip(d.unit_designation, { permanent: true, direction: 'top', offset: [0, -20] });
+    } else {
+      unitMarker.setLatLng(pos);
+    }
+    map.panTo(pos);
+  } else if (!map) {
+    initMap();
+  }
+}
+
+async function fetchData() {
+  try {
+    const res = await fetch(`${API_BASE}/api/live-share/${token}`);
+    if (res.status === 404) {
+      document.getElementById('expiredView').style.display = 'flex';
+      document.getElementById('map').style.display = 'none';
+      document.getElementById('infoCard').style.display = 'none';
+      return false;
+    }
+    const { data } = await res.json();
+    updateUI(data);
+    return true;
+  } catch (e) {
+    console.warn('Fetch error:', e);
+    return true; // keep polling
+  }
+}
+
+// Initial fetch
+fetchData().then(active => {
+  if (active) {
+    // Poll every 5 seconds
+    setInterval(fetchData, 5000);
+  }
+});
+</script>
+</body>
+</html>

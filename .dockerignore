@@ -1,0 +1,54 @@
+# Version control
+.git
+.github
+.gitignore
+
+# Build artifacts (the Dockerfile rebuilds these)
+client/dist
+client/.vite
+**/node_modules
+**/dist
+**/build
+
+# Local environment + secrets — must never enter the image
+**/.env
+**/.env.*
+!**/.env.example
+
+# Editor / IDE
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store
+
+# Logs + ephemeral files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+coverage
+.nyc_output
+
+# Test + audit artifacts
+test-results
+playwright-report
+
+# Docs / marketing source the runtime image doesn't need
+docs/internal
+brand
+unpacked_capabilities
+unpacked_contextual
+unpacked_tech
+unpacked_workflow
+
+# Local databases / data dumps
+*.sqlite
+*.sqlite3
+*.dump
+*.sql.gz
+
+# Output / scratch directories
+_demos
+_deploy

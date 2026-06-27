@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#dc2626"/>
+      <stop offset="40%" style="stop-color:#ea580c"/>
+      <stop offset="100%" style="stop-color:#1B3A5C"/>
+    </linearGradient>
+    <linearGradient id="inner" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1B3A5C"/>
+      <stop offset="100%" style="stop-color:#0f2440"/>
+    </linearGradient>
+  </defs>
+  <!-- Outer rounded square -->
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#grad1)"/>
+  <!-- Inner rounded square -->
+  <rect x="24" y="24" width="208" height="208" rx="44" fill="url(#inner)"/>
+  <!-- Abstract fire/signal icon -->
+  <g transform="translate(128,110)">
+    <!-- Signal arcs -->
+    <path d="M-40,20 Q-40,-30 0,-50 Q40,-30 40,20" fill="none" stroke="#dc2626" stroke-width="6" stroke-linecap="round" opacity="0.4"/>
+    <path d="M-28,15 Q-28,-18 0,-35 Q28,-18 28,15" fill="none" stroke="#ea580c" stroke-width="6" stroke-linecap="round" opacity="0.6"/>
+    <path d="M-16,10 Q-16,-8 0,-20 Q16,-8 16,10" fill="none" stroke="#fbbf24" stroke-width="6" stroke-linecap="round" opacity="0.8"/>
+    <!-- Center dot -->
+    <circle cx="0" cy="8" r="8" fill="#fbbf24"/>
+  </g>
+  <!-- Text -->
+  <text x="128" y="180" text-anchor="middle" font-family="Arial" font-weight="900" font-size="22" fill="white" letter-spacing="4">OPENFIRE</text>
+</svg>

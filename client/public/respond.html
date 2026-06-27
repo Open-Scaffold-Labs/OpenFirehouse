@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Respond — OpenFirehouse Mutual Aid</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,BlinkMacSystemFont,'SF Pro',Arial,sans-serif; background:#0a0a0a; color:#fff; min-height:100vh; display:flex; flex-direction:column; }
+  .header { background:linear-gradient(135deg,#1e40af,#1e3a5f); padding:14px 16px; }
+  .header-top { display:flex; align-items:center; gap:10px; }
+  .badge { width:36px;height:36px;border-radius:10px;background:rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;font-size:18px; }
+  .header h1 { font-size:14px; font-weight:900; }
+  .header p { font-size:11px; color:#93c5fd; }
+  .status-bar { display:flex; gap:8px; margin-top:8px; }
+  .status-chip { font-size:10px; font-weight:800; padding:4px 12px; border-radius:20px; display:flex; align-items:center; gap:5px; }
+  .sharing { background:#16a34a; color:white; }
+  .stopped { background:#6b7280; color:white; }
+  .pulse-dot { width:6px;height:6px;border-radius:50%;background:white;animation:pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  #map { flex:1; min-height:250px; }
+  .card { background:#1a1a1a; border:1px solid #333; border-radius:12px; margin:8px; padding:14px; }
+  .card-title { font-size:10px; font-weight:900; color:#999; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; }
+  .field { margin-bottom:8px; }
+  .field label { display:block; font-size:10px; color:#666; margin-bottom:3px; font-weight:600; }
+  .field input, .field select { width:100%; background:#222; border:1px solid #444; border-radius:8px; padding:8px 10px; color:#fff; font-size:13px; }
+  .btn { width:100%; padding:14px; border:none; border-radius:12px; font-size:15px; font-weight:800; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; margin-top:8px; }
+  .btn-start { background:#16a34a; color:white; }
+  .btn-start:active { background:#15803d; }
+  .btn-stop { background:#dc2626; color:white; }
+  .btn-stop:active { background:#b91c1c; }
+  .info-row { display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid #222; font-size:11px; }
+  .info-label { color:#666; }
+  .info-value { color:#eee; font-weight:700; }
+  .footer { padding:8px 16px; text-align:center; font-size:9px; color:#555; }
+  .footer a { color:#3b82f6; text-decoration:none; font-weight:700; }
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-top">
+    <div class="badge">🚒</div>
+    <div>
+      <h1>Mutual Aid Response</h1>
+      <p id="subtitle">Share your location with the requesting department</p>
+    </div>
+  </div>
+  <div class="status-bar">
+    <span class="status-chip stopped" id="statusChip"><span id="statusText">NOT SHARING</span></span>
+  </div>
+</div>
+
+<div id="map"></div>
+
+<!-- Setup form (shown before sharing starts) -->
+<div class="card" id="setupCard">
+  <div class="card-title">Your Unit Information</div>
+  <div class="field">
+    <label>Unit Designation</label>
+    <input id="unitName" placeholder="Engine 3" />
+  </div>
+  <div class="field">
+    <label>Department</label>
+    <input id="deptName" placeholder="Springfield FD" />
+  </div>
+  <div class="field">
+    <label>Crew Count</label>
+    <input id="crewCount" type="number" placeholder="3" />
+  </div>
+  <div class="field">
+    <label>Crew Names</label>
+    <input id="crewNames" placeholder="Smith, Jones, Garcia" />
+  </div>
+  <div class="field">
+    <label>Radio Channel</label>
+    <input id="radioChannel" placeholder="Tac 2" />
+  </div>
+  <button class="btn btn-start" onclick="startSharing()">📍 Start Sharing Location</button>
+</div>
+
+<!-- Active sharing panel (shown while sharing) -->
+<div class="card" id="activeCard" style="display:none">
+  <div class="card-title">Sharing Your Location</div>
+  <div class="info-row"><span class="info-label">Unit</span><span class="info-value" id="activeUnit">--</span></div>
+  <div class="info-row"><span class="info-label">Position</span><span class="info-value" id="activePos">--</span></div>
+  <div class="info-row"><span class="info-label">Speed</span><span class="info-value" id="activeSpeed">--</span></div>
+  <div class="info-row"><span class="info-label">Last Update</span><span class="info-value" id="activeTime">--</span></div>
+  <div class="info-row"><span class="info-label">Updates Sent</span><span class="info-value" id="activeCount">0</span></div>
+  <button class="btn btn-stop" onclick="stopSharing()">⏹ Stop Sharing</button>
+</div>
+
+<div class="footer">
+  Powered by <a href="https://openfirehouse.com">OpenFirehouse</a> — Your location is shared with the requesting IC only
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const path = window.location.pathname;
+const token = path.split('/respond/')[1] || path.split('/').pop();
+const API_BASE = window.location.origin.includes('vercel')
+  ? 'https://freestation-app-production.vercel.app'
+  : window.location.origin;
+
+let map, myMarker, watchId = null, updateCount = 0;
+
+// Init map
+map = L.map('map', { zoomControl: true }).setView([40.73, -74.27], 13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map);
+
+function updatePosition(lat, lng, speed) {
+  const pos = [lat, lng];
+  if (!myMarker) {
+    myMarker = L.marker(pos, {
+      icon: L.divIcon({
+        className: '', iconSize: [32, 32], iconAnchor: [16, 16],
+        html: `<div style="width:32px;height:32px;position:relative;">
+          <div style="position:absolute;inset:0;background:#2563eb;opacity:0.25;border-radius:50%;animation:ping 1.5s infinite;"></div>
+          <div style="position:absolute;inset:4px;background:#2563eb;border:2px solid white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;">🚒</div>
+        </div><style>@keyframes ping{75%,100%{transform:scale(2);opacity:0}}</style>`,
+      }),
+    }).addTo(map);
+  } else {
+    myMarker.setLatLng(pos);
+  }
+  map.panTo(pos);
+
+  document.getElementById('activePos').textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  document.getElementById('activeSpeed').textContent = speed ? `${Math.round(speed * 2.237)} mph` : '--';
+  document.getElementById('activeTime').textContent = new Date().toLocaleTimeString();
+  updateCount++;
+  document.getElementById('activeCount').textContent = updateCount;
+}
+
+async function pushPosition(lat, lng, speed, heading) {
+  try {
+    await fetch(`${API_BASE}/api/live-share/${token}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        latitude: lat,
+        longitude: lng,
+        speed_mph: speed ? speed * 2.237 : null,
+        heading: heading || null,
+        status: 'responding',
+      }),
+    });
+  } catch (e) { console.warn('Push failed:', e); }
+}
+
+function startSharing() {
+  if (!navigator.geolocation) {
+    alert('Geolocation is not supported by this browser.');
+    return;
+  }
+
+  const unit = document.getElementById('unitName').value || 'Unknown Unit';
+  const dept = document.getElementById('deptName').value || 'Unknown Dept';
+  const crew = document.getElementById('crewCount').value || '0';
+  const names = document.getElementById('crewNames').value || '';
+  const radio = document.getElementById('radioChannel').value || '';
+
+  document.getElementById('activeUnit').textContent = `${unit} — ${dept}`;
+  document.getElementById('subtitle').textContent = `${unit} sharing location with requesting IC`;
+
+  // Update the share record with unit info
+  fetch(`${API_BASE}/api/live-share/${token}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      unit_designation: unit,
+      department_name: dept,
+      crew_count: parseInt(crew) || 0,
+      crew_names: names,
+      radio_channel: radio,
+      status: 'responding',
+    }),
+  }).catch(() => {});
+
+  // Start watching position
+  watchId = navigator.geolocation.watchPosition(
+    (pos) => {
+      const { latitude, longitude, speed, heading } = pos.coords;
+      updatePosition(latitude, longitude, speed);
+      pushPosition(latitude, longitude, speed, heading);
+    },
+    (err) => { console.warn('Geo error:', err.message); },
+    { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+  );
+
+  // Show active panel, hide setup
+  document.getElementById('setupCard').style.display = 'none';
+  document.getElementById('activeCard').style.display = 'block';
+  const chip = document.getElementById('statusChip');
+  chip.className = 'status-chip sharing';
+  chip.innerHTML = '<span class="pulse-dot"></span> <span>SHARING</span>';
+}
+
+function stopSharing() {
+  if (watchId !== null) {
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+  }
+
+  // Update status on server
+  fetch(`${API_BASE}/api/live-share/${token}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'on_scene' }),
+  }).catch(() => {});
+
+  document.getElementById('setupCard').style.display = 'block';
+  document.getElementById('activeCard').style.display = 'none';
+  const chip = document.getElementById('statusChip');
+  chip.className = 'status-chip stopped';
+  chip.innerHTML = '<span>STOPPED</span>';
+}
+</script>
+</body>
+</html>

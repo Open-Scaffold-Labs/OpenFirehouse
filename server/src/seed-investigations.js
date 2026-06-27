@@ -1,0 +1,137 @@
+'use strict';
+const { investigations: db } = require('./db');
+
+module.exports = async function seedInvestigations() {
+  const existing = await db.all(1);
+  if (existing.length > 0) {
+    console.log(`Investigations seed: already seeded (${existing.length} records) — skipping.`);
+  } else {
+  const SCENE_CHECKLIST = [
+    'Scene photographed — exterior',
+    'Scene photographed — interior',
+    'Area of origin identified',
+    'V-pattern / burn pattern documented',
+    'Electrical systems inspected',
+    'Utility shutoffs confirmed',
+    'Witness interviews conducted',
+    'Debris samples collected',
+    'Accelerant screening performed',
+    'Scene released to owner / insurer',
+  ];
+
+  const records = [
+    {
+      caseNumber: 'FI-2026-001',
+      incidentDate: '2026-02-28',
+      address: '2200 Industrial Pkwy',
+      occupancyType: 'Industrial / Manufacturing',
+      cause: 'Undetermined',
+      causeDetail: 'Under investigation',
+      status: 'Active — Lab Analysis',
+      investigator: 'Sarah Chen',
+      coInvestigator: 'State Fire Marshal',
+      areaOfOrigin: 'Exterior wall / siding',
+      originRoom: '',
+      estimatedLoss: 450000,
+      injuries: 0,
+      fatalities: 0,
+      structure: 'Maplewood Metalworks, Inc.',
+      ownerName: 'Maplewood Metalworks, Inc.',
+      ownerPhone: '715-555-0190',
+      insuranceCarrier: 'Acme Commercial Insurance',
+      lawEnforcementNotified: true,
+      stateFMNotified: true,
+      sceneChecklist: [
+        'Scene photographed — exterior',
+        'Scene photographed — interior',
+        'Area of origin identified',
+        'V-pattern / burn pattern documented',
+        'Electrical systems inspected',
+        'Utility shutoffs confirmed',
+        'Witness interviews conducted',
+        'Debris samples collected',
+        'Accelerant screening performed',
+      ],
+      evidence: [
+        { id: 1, type: 'Photograph',      description: 'Exterior V-pattern on south wall — 42 photos', date: '2026-02-28' },
+        { id: 2, type: 'Physical sample', description: 'Debris collection — 3 samples from area of origin sent to ISP lab', date: '2026-02-28' },
+        { id: 3, type: 'Witness statement', description: 'Statement from plant manager re: operations at time of fire', date: '2026-02-28' },
+        { id: 4, type: 'Accelerant sample', description: 'Soil samples from south exterior — awaiting GC/MS results', date: '2026-02-28' },
+      ],
+      narrative: 'Large structure fire at 2200 Industrial Pkwy — Maplewood Metalworks. Fire originated on south exterior wall. Cause undetermined pending lab analysis of debris samples. No injuries. Significant property loss. State FM and county sheriff notified. Awaiting lab results.',
+      closeDate: null,
+      createdDate: '2026-02-28',
+    },
+    {
+      caseNumber: 'FI-2026-002',
+      incidentDate: '2026-03-05',
+      address: '412 Main St',
+      occupancyType: 'Residential — Single Family',
+      cause: 'Accidental',
+      causeDetail: 'Electrical failure / malfunction',
+      status: 'Open',
+      investigator: 'Maria Delgado',
+      coInvestigator: '',
+      areaOfOrigin: 'Electrical panel / utility room',
+      originRoom: 'Basement',
+      estimatedLoss: 85000,
+      injuries: 0,
+      fatalities: 0,
+      structure: 'Residential — Single Family',
+      ownerName: 'Robert Robert Robert & Carol Huang Carol Chen Carol Chen',
+      ownerPhone: '715-555-0244',
+      insuranceCarrier: 'State Farm',
+      lawEnforcementNotified: false,
+      stateFMNotified: false,
+      sceneChecklist: [
+        'Scene photographed — exterior',
+        'Scene photographed — interior',
+        'Area of origin identified',
+        'V-pattern / burn pattern documented',
+        'Electrical systems inspected',
+        'Utility shutoffs confirmed',
+      ],
+      evidence: [
+        { id: 1, type: 'Photograph',          description: 'Scene photos — 24 photos, interior and exterior', date: '2026-03-05' },
+        { id: 2, type: 'Electrical component', description: 'Breaker panel — failed 200A main breaker retained for analysis', date: '2026-03-05' },
+      ],
+      narrative: 'Structure fire at 412 Main St. Determined origin in basement electrical panel. Accidental — electrical failure. No injuries. Owner and insurer notified. Case open pending final documentation.',
+      closeDate: null,
+      createdDate: '2026-03-05',
+    },
+    {
+      caseNumber: 'FI-2025-019',
+      incidentDate: '2025-11-12',
+      address: '88 Riverside Dr',
+      occupancyType: 'Residential — Single Family',
+      cause: 'Accidental',
+      causeDetail: 'Heating equipment',
+      status: 'Closed — No Charges',
+      investigator: 'Sarah Chen',
+      coInvestigator: '',
+      areaOfOrigin: 'Living room',
+      originRoom: 'Living room',
+      estimatedLoss: 22000,
+      injuries: 1,
+      fatalities: 0,
+      structure: 'Residential — Single Family',
+      ownerName: 'Patricia Voss',
+      ownerPhone: '715-555-0317',
+      insuranceCarrier: 'Allstate',
+      lawEnforcementNotified: false,
+      stateFMNotified: false,
+      sceneChecklist: SCENE_CHECKLIST,
+      evidence: [
+        { id: 1, type: 'Photograph',       description: 'Scene photos — 18 photos', date: '2025-11-12' },
+        { id: 2, type: 'Physical sample',  description: 'Portable space heater retained — failed internal thermostat', date: '2025-11-12' },
+      ],
+      narrative: 'Fire originated in living room from a portable space heater placed too close to combustibles. Accidental — heating equipment. One minor injury (smoke inhalation). Case closed.',
+      closeDate: '2025-12-01',
+      createdDate: '2025-11-12',
+    },
+  ];
+
+    for (const r of records) { await db.create(r, 1); }
+    console.log(`Investigations seed: inserted ${records.length} records.`);
+  }
+};

@@ -1,0 +1,13 @@
+# gitleaks configuration for OpenFirehouse
+# Run a full-history scan with:  gitleaks git . --no-banner
+#
+# Extends gitleaks' default ruleset and allowlists known false positives.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Fake API-key fixtures used only to test the redaction unit (sanitizeAIError). No real secrets."
+paths = [
+  '''server/src/tests/aiModel\.test\.js''',
+]

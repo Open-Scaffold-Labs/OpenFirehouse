@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenFirehouse — Dispatch & Command Demo</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+:root {
+  --brand: #1B3A5C;
+  --red: #dc2626;
+  --green: #16a34a;
+  --blue: #2563eb;
+  --orange: #ea580c;
+  --purple: #7c3aed;
+  --amber: #d97706;
+  --tile-radius: 10px;
+  --tile-bg: #1a1a1a;
+  --tile-border: #2a2a2a;
+  --gap: 5px;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,'SF Pro',Arial,sans-serif; background:#0f0f0f; color:#fff; height:100vh; overflow:hidden; }
+
+/* ── Top-level: header, content, footer ── */
+.demo-shell { display:grid; grid-template-rows:auto 1fr auto; height:100vh; }
+
+/* ── Top bar ── */
+.top-bar { background:linear-gradient(90deg,#7f1d1d,#991b1b,#7f1d1d); padding:5px 16px; display:flex; align-items:center; gap:12px; }
+.top-bar .logo { font-size:12px; font-weight:900; letter-spacing:1px; }
+.top-bar .logo span { color:#fca5a5; }
+.top-bar .title { font-size:13px; font-weight:800; flex:1; }
+.top-bar .timer { font-family:'SF Mono',monospace; font-size:18px; font-weight:900; font-variant-numeric:tabular-nums; color:#fca5a5; }
+.top-bar .controls { display:flex; gap:4px; }
+.top-bar .controls button { width:28px; height:28px; border:none; border-radius:8px; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:12px; color:white; }
+.btn-play { background:var(--red); }
+.btn-pause { background:var(--amber); }
+.btn-skip { background:rgba(255,255,255,0.15); }
+.btn-restart { background:rgba(255,255,255,0.15); }
+.progress { height:3px; background:rgba(255,255,255,0.1); }
+.progress-fill { height:100%; background:linear-gradient(90deg,var(--red),var(--orange)); transition:width 0.3s; }
+
+/* ── Two-pane layout ── */
+.two-pane { display:grid; grid-template-columns:1fr 1fr; gap:var(--gap); padding:var(--gap); overflow:hidden; }
+
+/* ── Each pane is a tile grid ── */
+.pane-left {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  grid-template-rows:minmax(0,2fr) minmax(0,2fr) minmax(0,1fr);
+  gap:var(--gap);
+  min-height:0;
+  overflow:hidden;
+}
+.pane-right {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  grid-template-rows:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);
+  gap:var(--gap);
+  min-height:0;
+  overflow:hidden;
+}
+
+/* ── Tile base ── */
+.tile { background:var(--tile-bg); border:1px solid var(--tile-border); border-radius:var(--tile-radius); overflow:hidden; display:flex; flex-direction:column; min-height:0; }
+.tile-header { padding:5px 8px; border-bottom:1px solid var(--tile-border); display:flex; align-items:center; gap:5px; flex-shrink:0; }
+.tile-header .icon { width:18px; height:18px; border-radius:5px; display:flex; align-items:center; justify-content:center; font-size:9px; }
+.tile-header .label { font-size:9px; font-weight:900; text-transform:uppercase; letter-spacing:0.5px; color:#888; }
+.tile-header .count { font-size:8px; font-weight:800; background:#333; padding:1px 5px; border-radius:8px; color:#aaa; margin-left:auto; }
+.tile-body { flex:1; overflow-y:auto; overflow-x:hidden; padding:5px; min-height:0; }
+
+/* ── Spanning tiles ── */
+.tile-map { grid-column:1/2; grid-row:1/3; } /* map: left col, rows 1-2 */
+.tile-units { grid-column:2/3; grid-row:1/3; } /* units: right col, rows 1-2 */
+.tile-ics { grid-column:1/-1; grid-row:3/4; } /* ICS: full width, row 3 */
+
+.tile-cam1 { grid-column:1/2; grid-row:1/2; }
+.tile-cam2 { grid-column:2/3; grid-row:1/2; }
+.tile-personnel { grid-column:1/2; grid-row:2/3; }
+.tile-comms { grid-column:2/3; grid-row:2/3; }
+.tile-photos { grid-column:1/-1; grid-row:3/4; }
+
+/* ── Map ── */
+#response-map { width:100%; height:100%; min-height:200px; }
+.leaflet-container { background:#111 !important; }
+
+/* ── Unit card ── */
+.unit-card { display:flex; align-items:center; gap:5px; padding:4px 6px; border-radius:6px; margin-bottom:3px; border:2px solid transparent; transition:all 0.5s; }
+.unit-card.flash { border-color:var(--amber); box-shadow:0 0 12px rgba(217,119,6,0.3); }
+.unit-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+.unit-name { font-size:10px; font-weight:800; color:#eee; flex:1; }
+.unit-badge { font-size:8px; font-weight:800; padding:2px 6px; border-radius:8px; color:white; }
+.status-dispatched { background:#6b7280; } .dot-dispatched { background:#6b7280; } .bg-dispatched { background:#374151; }
+.status-enroute { background:var(--blue); } .dot-enroute { background:var(--blue); } .bg-enroute { background:#1e3a5f; }
+.status-onscene { background:var(--green); } .dot-onscene { background:var(--green); } .bg-onscene { background:#14532d; }
+.status-committed { background:var(--orange); } .dot-committed { background:var(--orange); } .bg-committed { background:#7c2d12; }
+
+/* ── ICS Role ── */
+.role-card { display:inline-flex; align-items:center; gap:5px; padding:5px 8px; background:#1f1f1f; border-radius:6px; border:2px solid transparent; transition:all 0.5s; min-width:130px; }
+.role-card.flash { border-color:var(--red); background:#2a1a1a; }
+
+/* ── Personnel ── */
+.person-row { display:flex; align-items:center; gap:4px; padding:3px 5px; font-size:9px; border-radius:5px; margin-bottom:2px; background:#1f1f1f; transition:all 0.3s; }
+.person-row.flash { background:#14532d; }
+.person-name { font-weight:700; color:#eee; flex:1; }
+.person-assignment { color:#666; font-size:8px; }
+.person-status { font-size:7px; font-weight:800; padding:1px 5px; border-radius:4px; color:white; }
+.ps-onscene { background:var(--green); }
+.ps-instructure { background:var(--red); }
+.ps-rehab { background:var(--amber); }
+
+/* ── Comms ── */
+.comms-entry { padding:3px 6px; border-radius:5px; margin-bottom:2px; background:#1f1f1f; transition:all 0.5s; }
+.comms-entry.flash { background:#1e1b4b; border:1px solid #4338ca; }
+.comms-header { display:flex; align-items:center; gap:3px; font-size:8px; }
+.comms-from { font-weight:800; color:#818cf8; }
+.comms-channel { color:#555; }
+.comms-time { color:#444; margin-left:auto; }
+.comms-message { font-size:9px; color:#ccc; margin-top:1px; line-height:1.3; }
+
+/* ── Commander Cam (square video tiles) ── */
+.cam-tile { position:relative; background:#000; overflow:hidden; }
+.cam-tile video { width:100%; height:100%; object-fit:cover; display:block; }
+.cam-hud-top { position:absolute; top:0; left:0; right:0; display:flex; align-items:center; justify-content:space-between; padding:3px 6px; background:linear-gradient(to bottom,rgba(0,0,0,0.7),transparent); }
+.cam-hud-bottom { position:absolute; bottom:0; left:0; right:0; display:flex; align-items:center; justify-content:space-between; padding:3px 6px; background:linear-gradient(to top,rgba(0,0,0,0.7),transparent); }
+.cam-label { font-size:9px; font-weight:900; color:white; display:flex; align-items:center; gap:3px; }
+.cam-live { font-size:7px; font-weight:900; color:#ef4444; background:rgba(0,0,0,0.5); padding:1px 4px; border-radius:3px; }
+.cam-vital { font-size:8px; font-weight:800; font-family:monospace; }
+.rec-dot { width:5px; height:5px; border-radius:50%; background:#ef4444; animation:pulse 1.5s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+/* ── Scene Photos ── */
+.photo-card { flex-shrink:0; width:110px; height:85px; border-radius:6px; overflow:hidden; position:relative; border:2px solid #333; cursor:pointer; transition:all 0.5s; }
+.photo-card.new { border-color:#a855f7; box-shadow:0 0 12px rgba(168,85,247,0.3); }
+.photo-card img, .photo-card canvas { width:100%; height:100%; object-fit:cover; }
+.photo-caption { position:absolute; bottom:0; left:0; right:0; background:rgba(0,0,0,0.7); padding:2px 4px; font-size:7px; color:#ccc; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.photo-time { position:absolute; top:2px; right:3px; font-size:6px; color:#a855f7; font-weight:800; }
+.photo-badge { position:absolute; top:2px; left:3px; font-size:6px; background:#a855f7; color:white; padding:0 3px; border-radius:3px; font-weight:800; }
+
+/* ── Callout overlay ── */
+.callout { position:fixed; z-index:100; max-width:420px; padding:12px 16px; background:rgba(15,15,15,0.95); border:1px solid rgba(217,119,6,0.4); border-radius:14px; backdrop-filter:blur(8px); transition:all 0.5s; pointer-events:none; }
+.callout.hidden { opacity:0; transform:scale(0.95) translateY(10px); }
+.callout.visible { opacity:1; transform:scale(1) translateY(0); }
+.callout-text { font-size:13px; font-weight:600; color:#eee; line-height:1.5; }
+
+/* ── Bottom bar ── */
+.bottom-bar { background:#111; padding:4px 16px; display:flex; align-items:center; gap:12px; font-size:10px; color:#555; border-top:1px solid #222; }
+.bottom-bar .step { color:var(--amber); font-weight:800; }
+
+/* ── Pane labels ── */
+.pane-label { font-size:8px; font-weight:900; text-transform:uppercase; letter-spacing:1px; color:#444; padding:2px 0 0 4px; grid-column:1/-1; }
+</style>
+</head>
+<body>
+<div class="demo-shell">
+
+<!-- ── TOP BAR ── -->
+<div>
+  <div class="top-bar">
+    <div class="logo">OPEN<span>FIREHOUSE</span></div>
+    <div class="title">Structure Fire — 742 Evergreen Terrace, Maplewood, NJ</div>
+    <div class="timer" id="timer">0:00 / 2:20</div>
+    <div class="controls">
+      <button class="btn-play" id="playBtn" onclick="togglePlay()" title="Play/Pause">&#9654;</button>
+      <button class="btn-skip" onclick="skip()" title="Skip">&#9197;</button>
+      <button class="btn-restart" onclick="restart()" title="Restart">&#8634;</button>
+    </div>
+  </div>
+  <div class="progress"><div class="progress-fill" id="progressBar" style="width:0%"></div></div>
+</div>
+
+<!-- ══════ TWO-PANE CONTENT ══════ -->
+<div class="two-pane">
+
+  <!-- ═══ LEFT PANE: Tactical ═══ -->
+  <div class="pane-left">
+    <!-- Map tile (spans left col, rows 1-2) -->
+    <div class="tile tile-map">
+      <div class="tile-header">
+        <div class="icon" style="background:#1e3a5f">🗺️</div>
+        <div class="label">Response Map</div>
+        <div class="count" id="mapCount">0/4 on scene</div>
+      </div>
+      <div class="tile-body" style="padding:0"><div id="response-map"></div></div>
+    </div>
+
+    <!-- Units tile (spans right col, rows 1-2) -->
+    <div class="tile tile-units">
+      <div class="tile-header">
+        <div class="icon" style="background:#1e3a5f">🚒</div>
+        <div class="label">Units</div>
+      </div>
+      <div class="tile-body" id="unitsPanel"></div>
+    </div>
+
+    <!-- ICS tile (full width, row 3) -->
+    <div class="tile tile-ics">
+      <div class="tile-header">
+        <div class="icon" style="background:#3b1111">🛡️</div>
+        <div class="label">ICS Organization</div>
+        <div class="count" id="icsCount">0 roles</div>
+      </div>
+      <div class="tile-body" id="icsPanel" style="display:flex;flex-wrap:wrap;gap:3px;padding:4px"></div>
+    </div>
+  </div>
+
+  <!-- ═══ RIGHT PANE: Situational Awareness ═══ -->
+  <div class="pane-right">
+    <!-- Telemetry Tile 1 (Engine 1) -->
+    <div class="tile tile-cam1 cam-tile" style="border:2px solid var(--red); background:#0a0a0a">
+      <div class="cam-hud-top">
+        <div class="cam-label"><span class="rec-dot"></span> Engine 1</div>
+        <span class="cam-live">TELEMETRY</span>
+      </div>
+      <div class="cam-hud-bottom">
+        <span class="cam-vital" id="cam1-air" style="color:#22c55e">SCBA 88%</span>
+        <span class="cam-vital" id="cam1-hr" style="color:#22d3ee">HR 105</span>
+        <span class="cam-vital" id="cam1-phase" style="color:#22d3ee">RESPONDING</span>
+      </div>
+    </div>
+
+    <!-- Telemetry Tile 2 (Truck 1) -->
+    <div class="tile tile-cam2 cam-tile" style="border:2px solid var(--red); background:#0a0a0a">
+      <div class="cam-hud-top">
+        <div class="cam-label"><span class="rec-dot"></span> Truck 1</div>
+        <span class="cam-live">TELEMETRY</span>
+      </div>
+      <div class="cam-hud-bottom">
+        <span class="cam-vital" id="cam2-air" style="color:#22c55e">SCBA 92%</span>
+        <span class="cam-vital" id="cam2-hr" style="color:#22d3ee">HR 98</span>
+        <span class="cam-vital" id="cam2-phase" style="color:#22d3ee">RESPONDING</span>
+      </div>
+    </div>
+
+    <!-- Personnel tile -->
+    <div class="tile tile-personnel">
+      <div class="tile-header">
+        <div class="icon" style="background:#14532d">👥</div>
+        <div class="label">Personnel</div>
+        <div class="count" id="personnelCount">0 on scene</div>
+      </div>
+      <div class="tile-body" id="personnelPanel"></div>
+    </div>
+
+    <!-- Radio / Comms tile -->
+    <div class="tile tile-comms">
+      <div class="tile-header">
+        <div class="icon" style="background:#312e81">📻</div>
+        <div class="label">Radio / Comms</div>
+        <div class="count" id="commsCount">0</div>
+        <button onclick="openCommsLog()" style="margin-left:6px;font-size:7px;font-weight:800;background:#1e1b4b;border:1px solid #4338ca;color:#818cf8;padding:2px 6px;border-radius:4px;cursor:pointer;text-transform:uppercase;letter-spacing:0.4px">Full Log</button>
+      </div>
+      <div class="tile-body" id="commsPanel"></div>
+    </div>
+
+    <!-- Full comms log overlay -->
+    <div id="commsLogOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;overflow-y:auto;padding:24px">
+      <div style="max-width:680px;margin:0 auto;background:#111;border:1px solid #333;border-radius:10px;overflow:hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #333;background:#1a1a1a">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:16px">📻</span>
+            <span style="font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:0.5px;color:#aaa">Full Radio Log</span>
+            <span id="commsLogCount" style="font-size:10px;background:#333;padding:2px 7px;border-radius:8px;color:#aaa"></span>
+          </div>
+          <button onclick="closeCommsLog()" style="background:#333;border:none;color:#aaa;font-size:18px;cursor:pointer;border-radius:5px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;line-height:1">×</button>
+        </div>
+        <div id="commsLogBody" style="padding:12px;display:flex;flex-direction:column;gap:6px"></div>
+      </div>
+    </div>
+
+    <!-- Scene Photos tile (full width bottom) -->
+    <div class="tile tile-photos">
+      <div class="tile-header">
+        <div class="icon" style="background:#581c87">📷</div>
+        <div class="label">Scene Photos</div>
+        <div class="count" id="photoCount">0</div>
+        <span id="photoUploadLink" style="display:none;font-size:7px;color:#a855f7;margin-left:auto;cursor:pointer" onclick="copyPhotoLink()">📋 Copy Upload Link</span>
+      </div>
+      <div class="tile-body" style="padding:3px;display:flex;gap:4px;overflow-x:auto" id="photosPanel">
+        <div style="display:flex;align-items:center;justify-content:center;width:100%;color:#555;font-size:9px">
+          No photos yet — upload link will appear when incident is active
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── BOTTOM BAR ── -->
+<div class="bottom-bar">
+  <span>DEMO MODE</span>
+  <span class="step" id="stepLabel">Press Play to start</span>
+  <span style="margin-left:auto">open-firehouse-client.vercel.app</span>
+</div>
+</div>
+
+<!-- Callout overlay -->
+<div class="callout hidden" id="callout">
+  <span class="callout-text" id="calloutText"></span>
+</div>
+
+<!-- Photo lightbox -->
+<div id="photoLightbox" style="display:none;position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.92);flex-direction:column;align-items:center;justify-content:center;cursor:pointer" onclick="this.style.display='none'">
+  <div style="max-width:600px;width:90%;background:#111;border-radius:14px;overflow:hidden;border:2px solid #a855f7;box-shadow:0 20px 60px rgba(0,0,0,0.5)" onclick="event.stopPropagation()">
+    <img id="lightboxImg" src="" alt="Scene photo" style="width:100%;max-height:400px;object-fit:contain;display:block;background:#000">
+    <div style="padding:12px 16px">
+      <p id="lightboxCaption" style="font-size:15px;font-weight:800;color:white"></p>
+      <div style="display:flex;gap:16px;margin-top:6px;font-size:11px;color:#888">
+        <span id="lightboxUploader"></span>
+        <span id="lightboxTime"></span>
+      </div>
+    </div>
+  </div>
+  <p style="font-size:10px;color:#555;margin-top:12px">Click anywhere to close</p>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ══════════════════════════════════════════════════════════════════════════════
+// DEMO ENGINE — Self-contained dispatch demo for Zoom screen share
+// Two-pane tiled layout
+// ══════════════════════════════════════════════════════════════════════════════
+
+const TOTAL = 140; // seconds
+let playing = false, startWall = null, elapsedAtPause = 0, completed = false;
+let rafId = null;
+const fired = new Set();
+const narratorFired = new Set();
+
+// ── State ──
+let units = [
+  { name: 'Engine 1',    status: 'Dispatched', lat: 40.7312, lng: -74.2674 },
+  { name: 'Engine 2',    status: 'Dispatched', lat: 40.7280, lng: -74.2720 },
+  { name: 'Truck 1',     status: 'Dispatched', lat: 40.7312, lng: -74.2674 },
+  { name: 'Battalion 1', status: 'Dispatched', lat: 40.7350, lng: -74.2600 },
+  { name: 'Engine 3',    status: 'Dispatched', lat: 40.7450, lng: -74.2545 },
+  { name: 'Rescue 1',    status: 'Dispatched', lat: 40.7268, lng: -74.2735 },
+  { name: 'Truck 2',     status: 'Dispatched', lat: 40.7385, lng: -74.2590 },
+];
+let roles = [];
+let personnel = [];
+let commsLog = [];
+const INCIDENT = { lat: 40.7335, lng: -74.2695 };
+
+// ── Audio engine ──
+let audioCtx = null, speaking = false, speechQueue = [];
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+function playSquelch(dur=0.12, vol=0.25) {
+  try {
+    const ac = getAudioCtx();
+    const buf = ac.createBuffer(1, ac.sampleRate * dur, ac.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*vol;
+    const s=ac.createBufferSource(); s.buffer=buf;
+    const f=ac.createBiquadFilter(); f.type='bandpass'; f.frequency.value=2000; f.Q.value=1.5;
+    const g=ac.createGain(); g.gain.value=vol;
+    s.connect(f); f.connect(g); g.connect(ac.destination); s.start();
+    return new Promise(r=>setTimeout(r,dur*1000));
+  } catch(_){return Promise.resolve();}
+}
+function playBeep(vol=0.12) {
+  try {
+    const ac=getAudioCtx(); const o=ac.createOscillator(); const g=ac.createGain();
+    o.type='sine'; o.frequency.value=1200; g.gain.value=vol;
+    o.connect(g); g.connect(ac.destination); o.start();
+    o.frequency.setValueAtTime(1500,ac.currentTime+0.08);
+    g.gain.linearRampToValueAtTime(0,ac.currentTime+0.2);
+    o.stop(ac.currentTime+0.2);
+    return new Promise(r=>setTimeout(r,220));
+  } catch(_){return Promise.resolve();}
+}
+function speakRadio(text) {
+  if (!window.speechSynthesis) return;
+  speechQueue.push(text);
+  processQueue();
+}
+async function processQueue() {
+  if (speaking || speechQueue.length===0) return;
+  speaking=true;
+  const text=speechQueue.shift();
+  try {
+    await playSquelch();
+    await new Promise(r=>{
+      const u=new SpeechSynthesisUtterance(text); u.rate=1.05; u.pitch=0.9; u.volume=0.9;
+      const v=speechSynthesis.getVoices();
+      const pref=v.find(x=>/Daniel|Alex|Tom|Google US/i.test(x.name)&&x.lang.startsWith('en'))||v.find(x=>x.lang.startsWith('en'));
+      if(pref) u.voice=pref;
+      u.onend=r; u.onerror=r; speechSynthesis.speak(u); setTimeout(r,15000);
+    });
+    await playSquelch(0.08,0.15); await playBeep();
+  } finally { speaking=false; processQueue(); }
+}
+
+// ── Map ──
+let map, unitMarkers = {}, incidentMarker;
+const STATIONS = {
+  'Engine 1':    { lat: 40.7268, lng: -74.2735, label: 'Station 14' },
+  'Engine 2':    { lat: 40.7385, lng: -74.2590, label: 'Station 15' },
+  'Truck 1':     { lat: 40.7268, lng: -74.2735, label: 'Station 14' },
+  'Battalion 1': { lat: 40.7410, lng: -74.2680, label: 'HQ' },
+  'Engine 3':    { lat: 40.7450, lng: -74.2545, label: 'Station 16' },
+  'Rescue 1':    { lat: 40.7268, lng: -74.2735, label: 'Station 14' },
+  'Truck 2':     { lat: 40.7385, lng: -74.2590, label: 'Station 15' },
+};
+const HYDRANTS = [
+  { lat: 40.7336, lng: -74.2694, label: 'H-1 — Evergreen & Oak St (Side A)' },
+  { lat: 40.7321, lng: -74.2701, label: 'H-2 — Evergreen & Maple Ave (Side C)' },
+  { lat: 40.7330, lng: -74.2722, label: 'H-3 — Evergreen & Pine St (Side B)' },
+  { lat: 40.7349, lng: -74.2685, label: 'H-4 — Oak St & Birch Rd' },
+  { lat: 40.7314, lng: -74.2713, label: 'H-5 — Maple Ave & Cedar Ln' },
+];
+let hydrantMarkers = [];
+
+const ARRIVAL_POS = {
+  'Engine 1':    { lat: 40.7337, lng: -74.2700 },
+  'Engine 2':    { lat: 40.7330, lng: -74.2688 },
+  'Truck 1':     { lat: 40.7340, lng: -74.2692 },
+  'Battalion 1': { lat: 40.7335, lng: -74.2705 },
+  'Engine 3':    { lat: 40.7333, lng: -74.2710 },
+  'Rescue 1':    { lat: 40.7342, lng: -74.2697 },
+  'Truck 2':     { lat: 40.7325, lng: -74.2715 },
+};
+const ROUTES = {
+  'Engine 1':    [{lat:40.7275,lng:-74.2730},{lat:40.7290,lng:-74.2715},{lat:40.7310,lng:-74.2708},{lat:40.7325,lng:-74.2702}],
+  'Engine 2':    [{lat:40.7380,lng:-74.2600},{lat:40.7370,lng:-74.2630},{lat:40.7355,lng:-74.2660},{lat:40.7345,lng:-74.2680}],
+  'Truck 1':     [{lat:40.7275,lng:-74.2730},{lat:40.7285,lng:-74.2720},{lat:40.7305,lng:-74.2710},{lat:40.7330,lng:-74.2698}],
+  'Battalion 1': [{lat:40.7405,lng:-74.2675},{lat:40.7390,lng:-74.2680},{lat:40.7370,lng:-74.2688},{lat:40.7350,lng:-74.2692}],
+  'Engine 3':    [{lat:40.7445,lng:-74.2558},{lat:40.7420,lng:-74.2598},{lat:40.7395,lng:-74.2638},{lat:40.7365,lng:-74.2672}],
+  'Rescue 1':    [{lat:40.7272,lng:-74.2728},{lat:40.7285,lng:-74.2718},{lat:40.7308,lng:-74.2712},{lat:40.7328,lng:-74.2702}],
+  'Truck 2':     [{lat:40.7298,lng:-74.2588},{lat:40.7310,lng:-74.2618},{lat:40.7318,lng:-74.2650},{lat:40.7324,lng:-74.2682}],
+};
+
+function initMap() {
+  map = L.map('response-map', { center:[40.7330, -74.2680], zoom:13, zoomControl:false, attributionControl:false });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18}).addTo(map);
+
+  Object.entries(STATIONS).forEach(([name, s]) => {
+    if (Object.values(STATIONS).findIndex(x => x.lat===s.lat && x.lng===s.lng) === Object.keys(STATIONS).indexOf(name)) {
+      L.marker([s.lat, s.lng], {icon: L.divIcon({className:'',iconSize:[16,16],iconAnchor:[8,8],
+        html:`<div style="width:16px;height:16px;background:#475569;border:1px solid #94a3b8;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:7px;color:white;font-weight:900">🏠</div>`
+      })}).addTo(map).bindTooltip(s.label,{permanent:true,direction:'right',offset:[10,0],className:'station-tooltip'});
+    }
+  });
+
+  incidentMarker = L.marker([INCIDENT.lat,INCIDENT.lng],{icon:L.divIcon({className:'',iconSize:[36,36],iconAnchor:[18,18],
+    html:`<div style="width:36px;height:36px;position:relative"><div style="position:absolute;inset:0;background:#dc2626;opacity:0.25;border-radius:50%;animation:ping 2s infinite"></div><div style="position:absolute;inset:4px;background:#dc2626;border:3px solid white;border-radius:50%;box-shadow:0 3px 12px rgba(220,38,38,0.5);display:flex;align-items:center;justify-content:center;font-size:16px">🔥</div></div><style>@keyframes ping{75%,100%{transform:scale(2);opacity:0}}</style>`
+  })}).addTo(map).bindTooltip('742 Evergreen Terrace',{permanent:true,direction:'top',offset:[0,-20]});
+
+  HYDRANTS.forEach((h, i) => {
+    const icon = L.divIcon({className:'',iconSize:[14,14],iconAnchor:[7,7],
+      html:`<div id="hydrant-${i}" style="width:14px;height:14px;background:#b91c1c;border:2px solid #fca5a5;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.4);cursor:pointer"></div>`
+    });
+    const m = L.marker([h.lat, h.lng], {icon}).addTo(map).bindTooltip(h.label,{direction:'top',offset:[0,-8],className:'station-tooltip'});
+    hydrantMarkers.push(m);
+  });
+
+  map.fitBounds([[40.7240,-74.2750],[40.7470,-74.2530]], {padding:[20,20]});
+}
+
+let lastZoomLevel = 13;
+function updateMapMarkers(elapsed) {
+  const TRAVEL = {'Engine 1':18,'Engine 2':24,'Truck 1':20,'Battalion 1':28,'Engine 3':30,'Rescue 1':22,'Truck 2':32};
+  const COLORS = {'Engine 1':'#dc2626','Engine 2':'#2563eb','Truck 1':'#ea580c','Battalion 1':'#7c3aed','Engine 3':'#16a34a','Rescue 1':'#0891b2','Truck 2':'#f59e0b'};
+  const allPositions = [[INCIDENT.lat, INCIDENT.lng]];
+
+  units.forEach((u,i) => {
+    const station = STATIONS[u.name] || STATIONS['Engine 1'];
+    const route = ROUTES[u.name] || [];
+    const arrivalPos = ARRIVAL_POS[u.name] || { lat: INCIDENT.lat, lng: INCIDENT.lng };
+    const travel = TRAVEL[u.name] || 25;
+    const arrived = u.status==='On Scene' || u.status==='Committed' || elapsed > travel;
+    const progress = Math.min(elapsed / travel, 1);
+    const color = COLORS[u.name] || '#999';
+    const abbr = u.name.replace('Engine ','E').replace('Truck ','T').replace('Battalion ','BC').replace('Rescue ','R');
+
+    let lat, lng;
+    if (arrived) {
+      lat = arrivalPos.lat; lng = arrivalPos.lng;
+    } else {
+      const fullPath = [station, ...route, arrivalPos];
+      const segments = fullPath.length - 1;
+      const segProgress = progress * segments;
+      const segIdx = Math.min(Math.floor(segProgress), segments - 1);
+      const segT = segProgress - segIdx;
+      const from = fullPath[segIdx]; const to = fullPath[segIdx + 1];
+      lat = from.lat + (to.lat - from.lat) * segT;
+      lng = from.lng + (to.lng - from.lng) * segT;
+      lat += Math.sin(elapsed * 2 + i * 3) * 0.0001;
+      lng += Math.cos(elapsed * 1.5 + i * 2) * 0.0001;
+    }
+    allPositions.push([lat, lng]);
+
+    const size = arrived ? 22 : 26;
+    const icon = L.divIcon({className:'',iconSize:[size,size],iconAnchor:[size/2,size/2],
+      html:`<div style="width:${size}px;height:${size}px;position:relative">
+        ${!arrived?`<div style="position:absolute;inset:0;background:${color};opacity:0.3;border-radius:50%;animation:ping 1.5s infinite"></div>`:''}
+        <div style="position:absolute;inset:${arrived?0:3}px;background:${color};border:2px solid white;border-radius:50%;box-shadow:0 2px 8px ${color}80;display:flex;align-items:center;justify-content:center;font-size:${arrived?7:8}px;font-weight:900;color:white">${abbr}</div>
+      </div>`
+    });
+
+    if(!unitMarkers[u.name]) {
+      unitMarkers[u.name] = L.marker([lat,lng],{icon}).addTo(map)
+        .bindTooltip(u.name,{direction:'right',offset:[12,0],className:'unit-tooltip'});
+    } else {
+      unitMarkers[u.name].setLatLng([lat,lng]).setIcon(icon);
+      unitMarkers[u.name].setTooltipContent(`${u.name} — ${arrived?'On Scene':'En Route'}`);
+    }
+  });
+
+  if (elapsed > 2 && elapsed < 50) {
+    const bounds = L.latLngBounds(allPositions);
+    const targetZoom = map.getBoundsZoom(bounds.pad(0.15));
+    if (Math.abs(targetZoom - lastZoomLevel) > 0.3) {
+      map.flyToBounds(bounds.pad(0.15), { duration: 1.5, maxZoom: 16 });
+      lastZoomLevel = targetZoom;
+    }
+  } else if (elapsed >= 50 && elapsed < 52) {
+    map.flyTo([INCIDENT.lat, INCIDENT.lng], 16, { duration: 2 });
+    lastZoomLevel = 16;
+  }
+
+  const onScene = units.filter(u=>u.status==='On Scene'||u.status==='Committed').length;
+  document.getElementById('mapCount').textContent=`${onScene}/${units.length} on scene`;
+}
+
+// ── Events timeline ──
+const EVENTS = [
+  {t:0,type:'step',label:'🚨 Dispatch — tones dropping'},
+  {t:2,type:'comms',from:'Dispatch',channel:'Dispatch',message:'Engine 1, Engine 2, Engine 3, Truck 1, Truck 2, Rescue 1, Battalion 1 — respond to a reported structure fire, 742 Evergreen Terrace. Caller reporting heavy smoke, possible persons trapped.'},
+  {t:12,type:'step',label:'🚒 Units responding'},
+  {t:12,type:'unit',idx:0,status:'En Route'},{t:12,type:'comms',from:'Engine 1',channel:'Dispatch',message:'Engine 1 responding.'},
+  {t:14,type:'unit',idx:1,status:'En Route'},{t:14,type:'comms',from:'Engine 2',channel:'Dispatch',message:'Engine 2 en route.'},
+  {t:16,type:'unit',idx:2,status:'En Route'},{t:16,type:'comms',from:'Truck 1',channel:'Dispatch',message:'Truck 1 responding.'},
+  {t:18,type:'unit',idx:3,status:'En Route'},{t:18,type:'comms',from:'Battalion 1',channel:'Dispatch',message:'Battalion 1 en route.'},
+  {t:19,type:'unit',idx:4,status:'En Route'},{t:19,type:'comms',from:'Engine 3',channel:'Dispatch',message:'Engine 3 responding.'},
+  {t:20,type:'unit',idx:5,status:'En Route'},{t:20,type:'comms',from:'Rescue 1',channel:'Dispatch',message:'Rescue 1 en route.'},
+  {t:21,type:'unit',idx:6,status:'En Route'},{t:21,type:'comms',from:'Truck 2',channel:'Dispatch',message:'Truck 2 responding.'},
+  {t:35,type:'step',label:'📍 Engine 1 on scene'},
+  {t:35,type:'unit',idx:0,status:'On Scene'},
+  {t:35,type:'comms',from:'Engine 1',channel:'Tac 1',message:'Engine 1 on scene. Two-story wood-frame, heavy smoke second floor side Charlie. Engine 1 establishing Evergreen Command.'},
+  {t:37,type:'role',role:'Incident Commander',assignee:'Capt. Rodriguez — Engine 1'},
+  {t:39,type:'role',role:'Safety Officer',assignee:'Lt. Kowalski — Truck 1'},
+  {t:36,type:'person',name:'Capt. Rodriguez',assignment:'Entry Team A',status:'On Scene'},
+  {t:36,type:'person',name:'FF Davis',assignment:'Entry Team A',status:'On Scene'},
+  {t:36,type:'person',name:'FF Ortiz',assignment:'Entry Team A',status:'On Scene'},
+  {t:36,type:'person',name:'FF Nguyen',assignment:'Entry Team A',status:'On Scene'},
+  {t:40,type:'unit',idx:1,status:'On Scene'},{t:43,type:'unit',idx:2,status:'On Scene'},{t:46,type:'unit',idx:3,status:'On Scene'},
+  {t:44,type:'unit',idx:4,status:'On Scene'},{t:44,type:'comms',from:'Engine 3',channel:'Tac 1',message:'Engine 3 on scene, standing by for assignment.'},
+  {t:45,type:'unit',idx:5,status:'On Scene'},{t:45,type:'comms',from:'Rescue 1',channel:'Tac 1',message:'Rescue 1 on scene, RIC team ready to deploy.'},
+  {t:47,type:'unit',idx:6,status:'On Scene'},{t:47,type:'comms',from:'Truck 2',channel:'Tac 1',message:'Truck 2 on scene, standing by for assignment.'},
+  {t:41,type:'hydrant',idx:0},
+  {t:41,type:'comms',from:'Engine 2',channel:'Tac 1',message:'Engine 2 to Command — water supply established, hydrant on Evergreen and Oak. Charging the line.'},
+  {t:41,type:'person',name:'Lt. Torres',assignment:'Water Supply',status:'On Scene'},
+  {t:41,type:'person',name:'FF Sullivan',assignment:'Water Supply',status:'On Scene'},
+  {t:44,type:'person',name:'Lt. Kowalski',assignment:'Roof Group',status:'On Scene'},
+  {t:44,type:'person',name:'FF Ramirez',assignment:'Roof Group',status:'On Scene'},
+  {t:44,type:'person',name:'FF Murphy',assignment:'Aerial Ops',status:'On Scene'},
+  {t:47,type:'person',name:'B/C Simmons',assignment:'Command',status:'On Scene'},
+  {t:47,type:'person',name:'FF Walsh',assignment:'Command',status:'On Scene'},
+  {t:45,type:'person',name:'Lt. Chen',assignment:'Search Group',status:'On Scene'},
+  {t:45,type:'person',name:'FF Park',assignment:'Search Group',status:'On Scene'},
+  {t:45,type:'person',name:'FF Reyes',assignment:'Search Group',status:'On Scene'},
+  {t:46,type:'person',name:'Lt. Russo',assignment:'RIC/RIT Leader',status:'On Scene'},
+  {t:46,type:'person',name:'FF Garza',assignment:'RIC/RIT',status:'On Scene'},
+  {t:47,type:'person',name:'Lt. Fitzgerald',assignment:'Forcible Entry',status:'On Scene'},
+  {t:47,type:'person',name:'FF Morales',assignment:'Forcible Entry',status:'On Scene'},
+  {t:48,type:'role',role:'Operations Section',assignee:'B/C Simmons'},
+  {t:50,type:'step',label:'⚡ Command — assigning units'},
+  {t:50,type:'comms',from:'Evergreen Command',channel:'Tac 1',message:'Engine 1 fire attack second floor. Truck 1 ventilation side Charlie. Engine 2 water supply. Rescue 1 — RIC/RIT, stage Side B. Truck 2 and Engine 3 — forcible entry and search, Side A.'},
+  {t:51,type:'role',role:'Division 2',assignee:'Capt. Rodriguez'},{t:52,type:'role',role:'Attack Group',assignee:'Lt. Torres'},
+  {t:52,type:'role',role:'RIC/RIT Leader',assignee:'Lt. Russo — Rescue 1'},
+  {t:52,type:'unit',idx:0,status:'Committed'},{t:54,type:'unit',idx:2,status:'Committed'},
+  {t:53,type:'unit',idx:4,status:'Committed'},{t:53,type:'unit',idx:5,status:'Committed'},
+  {t:53,type:'person_update',name:'Capt. Rodriguez',status:'In Structure'},
+  {t:53,type:'person_update',name:'FF Davis',status:'In Structure'},
+  {t:53,type:'person_update',name:'FF Ortiz',status:'In Structure'},
+  {t:55,type:'person_update',name:'Lt. Kowalski',status:'In Structure'},
+  {t:56,type:'comms',from:'Engine 1',channel:'Tac 1',message:'Engine 1 has a line stretched, water on the fire.'},
+  {t:62,type:'step',label:'📟 2nd alarm struck'},
+  {t:62,type:'comms',from:'Evergreen Command',channel:'Dispatch',message:'Dispatch — strike a second alarm. Heavy fire involvement.'},
+  {t:64,type:'comms',from:'Dispatch',channel:'Dispatch',message:'Second alarm struck. Mutual aid Engine 4, Engine 5, Tanker 1 responding.'},
+  {t:65,type:'role',role:'Staging Manager',assignee:'Capt. Hayes — E4'},
+  {t:66,type:'person',name:'Capt. Hayes',assignment:'Staging',status:'On Scene'},
+  {t:66,type:'person',name:'FF Brennan',assignment:'RIC/RIT',status:'On Scene'},
+  {t:67,type:'person',name:'FF DiMaggio',assignment:'Staging',status:'On Scene'},
+  {t:68,type:'role',role:'Water Supply Officer',assignee:'Lt. Brennan — E5'},
+  {t:75,type:'step',label:'👥 PAR check'},
+  {t:75,type:'comms',from:'Evergreen Command',channel:'Tac 1',message:'All companies — PAR check. Report your personnel count.'},
+  {t:78,type:'comms',from:'Engine 1',channel:'Tac 1',message:'Engine 1 has PAR — all four members accounted for. Engine 1 is interior, Sector A, on the attack line.'},
+  {t:80,type:'comms',from:'Engine 2',channel:'Tac 1',message:'Engine 2 has PAR — all three members accounted for. Engine 2 is exterior, Side C, on water supply.'},
+  {t:82,type:'comms',from:'Truck 1',channel:'Tac 1',message:'Truck 1 has PAR — all four members accounted for. Truck 1 is on the roof, ventilation operations.'},
+  {t:84,type:'comms',from:'Battalion 1',channel:'Tac 1',message:'Battalion 1 has PAR — IC and aide accounted for. Battalion 1 is at the Command Post, Side A.'},
+  {t:86,type:'comms',from:'Engine 3',channel:'Tac 1',message:'Engine 3 has PAR — all three members accounted for. Engine 3 is Side A, primary search second floor.'},
+  {t:88,type:'comms',from:'Rescue 1',channel:'Tac 1',message:'Rescue 1 has PAR — all four members accounted for. Rescue 1 is Side B, RIC/RIT staged and ready.'},
+  {t:90,type:'comms',from:'Truck 2',channel:'Tac 1',message:'Truck 2 has PAR — all four members accounted for. Truck 2 is Side A, search and forcible entry operations.'},
+  {t:76,type:'role',role:'Accountability',assignee:'FF Walsh'},
+  {t:100,type:'step',label:'🔥 Fire knocked down'},
+  {t:100,type:'comms',from:'Engine 1',channel:'Tac 1',message:'Engine 1 to Command. Fire knocked down. Checking for extension in the attic.'},
+  {t:102,type:'person_update',name:'Capt. Rodriguez',status:'Rehab'},
+  {t:102,type:'person_update',name:'FF Davis',status:'Rehab'},
+  {t:105,type:'comms',from:'Evergreen Command',channel:'Dispatch',message:'Dispatch from Command — fire is under control.'},
+  {t:112,type:'step',label:'🔄 Overhaul'},
+  {t:112,type:'unit',idx:0,status:'On Scene'},{t:114,type:'unit',idx:2,status:'On Scene'},
+  {t:115,type:'role',role:'Investigator',assignee:'Inv. Marchetti — en route'},
+  {t:122,type:'comms',from:'Evergreen Command',channel:'Dispatch',message:'Release second alarm companies. Request fire investigator.'},
+  {t:132,type:'step',label:'📝 Incident under control'},
+  {t:132,type:'comms',from:'Dispatch',channel:'Dispatch',message:'Incident under control at fifteen twelve. Mark time.'},
+  {t:140,type:'step',label:'✅ Demo complete'},
+];
+
+const CALLOUTS = [
+  {t:0,dur:8,text:'🚨 A 911 call just came in. Watch the map — apparatus are being dispatched.'},
+  {t:12,dur:6,text:'🗺️ Response Map — units converging from different stations.'},
+  {t:25,dur:5,text:'🚒 Watch unit cards change color: gray → blue → green.'},
+  {t:35,dur:7,text:'📍 First unit on scene. ICS org chart building itself...'},
+  {t:42,dur:5,text:'📷 Scene photos arriving — crews uploading from their phones. No app needed.'},
+  {t:50,dur:6,text:'⚡ Assignments flowing from Command into the board.'},
+  {t:62,dur:5,text:'📟 2nd alarm — mutual aid arriving. More personnel checking in.'},
+  {t:75,dur:7,text:'👥 PAR CHECK — every firefighter tracked automatically.'},
+  {t:100,dur:6,text:'🔥 Knocked down. Crew rotating to rehab. All tracked live.'},
+  {t:120,dur:8,text:'📝 Under control. One click generates narrative + NFIRS + after-action.'},
+  {t:132,dur:10,text:'✅ Full incident lifecycle in under 3 minutes. OpenFirehouse does it live.'},
+];
+
+// ── Render functions ──
+function renderUnits() {
+  const el = document.getElementById('unitsPanel');
+  el.innerHTML = units.map((u,i) => {
+    const s = u.status.toLowerCase().replace(' ','');
+    return `<div class="unit-card bg-${s}" id="unit-${i}"><div class="unit-dot dot-${s}"></div><div class="unit-name">${u.name}</div><span class="unit-badge status-${s}">${u.status}</span></div>`;
+  }).join('');
+}
+
+function renderRoles() {
+  const panel = document.getElementById('icsPanel');
+  if (roles.length === 0) {
+    panel.innerHTML = '<div style="color:#555;font-size:9px;padding:6px;width:100%;text-align:center">Awaiting command establishment...</div>';
+  } else {
+    panel.innerHTML = roles.map(r => {
+      const isNew = Date.now() - (r._addedAt || 0) < 4000;
+      return `<div class="role-card" style="${isNew?'border-color:#dc2626;background:#2a1a1a;box-shadow:0 0 10px rgba(220,38,38,0.3)':''}">
+        <div style="width:20px;height:20px;border-radius:5px;background:${isNew?'#dc2626':'#3b1111'};display:flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0">🛡️</div>
+        <div style="min-width:0">
+          <div style="font-size:7px;font-weight:900;color:#ef4444;text-transform:uppercase;letter-spacing:0.3px">${r.role}</div>
+          <div style="font-size:9px;font-weight:700;color:#eee;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.assignee}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  document.getElementById('icsCount').textContent = `${roles.length} roles`;
+}
+
+function renderPersonnel() {
+  document.getElementById('personnelPanel').innerHTML = personnel.length === 0
+    ? '<div style="text-align:center;color:#555;font-size:9px;padding:8px">No personnel</div>'
+    : personnel.map(p => {
+      const sc = p.status==='In Structure'?'ps-instructure':p.status==='Rehab'?'ps-rehab':'ps-onscene';
+      return `<div class="person-row"><div class="person-name">${p.name}</div><div class="person-assignment">${p.assignment}</div><span class="person-status ${sc}">${p.status}</span></div>`;
+    }).join('');
+  document.getElementById('personnelCount').textContent = `${personnel.length} on scene`;
+}
+
+function renderComms() {
+  document.getElementById('commsPanel').innerHTML = commsLog.length === 0
+    ? '<div style="text-align:center;color:#555;font-size:9px;padding:8px">No radio traffic</div>'
+    : commsLog.map((c,i) => `<div class="comms-entry${i===0?' flash':''}"><div class="comms-header"><span class="comms-from">${c.from}</span><span class="comms-channel">· ${c.channel}</span><span class="comms-time">${c.time}</span></div><div class="comms-message">${c.message}</div></div>`).join('');
+  document.getElementById('commsCount').textContent = commsLog.length;
+}
+
+function showCallout(text) {
+  const el = document.getElementById('callout');
+  document.getElementById('calloutText').textContent = text;
+  el.className = 'callout visible';
+  el.style.top = '50%'; el.style.left = '50%'; el.style.transform = 'translate(-50%,-50%)';
+}
+function hideCallout() { document.getElementById('callout').className = 'callout hidden'; }
+
+function processEvent(ev) {
+  const now = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  if (ev.type==='step') document.getElementById('stepLabel').textContent=ev.label;
+  if (ev.type==='unit') { units[ev.idx].status=ev.status; renderUnits(); flash('unit-'+ev.idx); }
+  if (ev.type==='role') { if(!roles.some(r=>r.role===ev.role)){roles.push({...ev, _addedAt: Date.now()});} renderRoles(); }
+  if (ev.type==='person') { if(!personnel.some(p=>p.name===ev.name)){personnel.push({name:ev.name,assignment:ev.assignment,status:ev.status});} renderPersonnel(); }
+  if (ev.type==='person_update') { personnel=personnel.map(p=>p.name===ev.name?{...p,status:ev.status}:p); renderPersonnel(); }
+  if (ev.type==='comms') { commsLog.unshift({from:ev.from,channel:ev.channel,message:ev.message,time:now}); renderComms(); speakRadio(ev.message); }
+  if (ev.type==='hydrant') {
+    const el = document.getElementById('hydrant-'+ev.idx);
+    if (el) {
+      el.style.background = '#facc15';
+      el.style.borderColor = '#fef08a';
+      el.style.boxShadow = '0 0 8px 3px rgba(250,204,21,0.7)';
+      el.style.width = '16px'; el.style.height = '16px';
+      el.style.marginTop = '-1px'; el.style.marginLeft = '-1px';
+    }
+  }
+}
+
+function flash(id) { const el=document.getElementById(id); if(!el)return; el.classList.add('flash'); setTimeout(()=>el.classList.remove('flash'),3000); }
+
+function openCommsLog() {
+  const overlay = document.getElementById('commsLogOverlay');
+  const body = document.getElementById('commsLogBody');
+  document.getElementById('commsLogCount').textContent = commsLog.length + ' transmissions';
+  // Render oldest → newest for the full log (reverse of the live panel)
+  const ordered = [...commsLog].reverse();
+  const channelColor = {'Dispatch':'#f59e0b','Tac 1':'#22d3ee','Tac 2':'#a78bfa'};
+  body.innerHTML = ordered.map(c => `
+    <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:6px;padding:8px 10px">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+        <span style="font-size:11px;font-weight:800;color:#818cf8">${c.from}</span>
+        <span style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:4px;background:${channelColor[c.channel]||'#334155'};color:#000">${c.channel}</span>
+        <span style="font-size:9px;color:#555;margin-left:auto">${c.time}</span>
+      </div>
+      <div style="font-size:11px;color:#ddd;line-height:1.4">${c.message}</div>
+    </div>`).join('');
+  overlay.style.display = 'block';
+  document.body.style.overflow = 'hidden';
+}
+function closeCommsLog() {
+  document.getElementById('commsLogOverlay').style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+// ── Tick ──
+function tick() {
+  if (!startWall) return;
+  const elapsed = elapsedAtPause + (Date.now()-startWall)/1000;
+  const clamped = Math.min(elapsed, TOTAL);
+
+  document.getElementById('timer').textContent = `${fmtTime(clamped)} / ${fmtTime(TOTAL)}`;
+  document.getElementById('progressBar').style.width = `${(clamped/TOTAL)*100}%`;
+
+  EVENTS.forEach((ev,i) => { if(!fired.has(i)&&ev.t<=clamped){fired.add(i);processEvent(ev);} });
+  CALLOUTS.forEach((c,i) => {
+    if(!narratorFired.has(i)&&clamped>=c.t&&clamped<c.t+c.dur){narratorFired.add(i);showCallout(c.text);setTimeout(hideCallout,c.dur*1000);}
+  });
+
+  updateMapMarkers(clamped);
+  updateCamPhase(clamped);
+  updatePhotos(clamped);
+
+  if (clamped>=TOTAL) {
+    if (!speaking && speechQueue.length===0) {
+      playing=false; completed=true; document.getElementById('playBtn').innerHTML='✅'; return;
+    }
+    // Timer is done but speech is still draining — keep ticking until queue clears
+    rafId = requestAnimationFrame(tick); return;
+  }
+  rafId = requestAnimationFrame(tick);
+}
+
+function fmtTime(s){const m=Math.floor(s/60);return`${m}:${String(Math.floor(s%60)).padStart(2,'0')}`;}
+
+function togglePlay() {
+  if (completed) return;
+  if (playing) { playing=false; elapsedAtPause+=(Date.now()-startWall)/1000; startWall=null; if(rafId)cancelAnimationFrame(rafId);
+    document.getElementById('playBtn').innerHTML='&#9654;'; document.getElementById('playBtn').className='btn-play';
+  } else {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      if (window.speechSynthesis) {
+        speechSynthesis.getVoices();
+        const warmup = new SpeechSynthesisUtterance('');
+        warmup.volume = 0; speechSynthesis.speak(warmup); speechSynthesis.cancel();
+      }
+    } catch(_) {}
+    playing=true; startWall=Date.now();
+    document.getElementById('playBtn').innerHTML='&#10074;&#10074;'; document.getElementById('playBtn').className='btn-pause';
+    rafId=requestAnimationFrame(tick);
+  }
+}
+
+function skip() {
+  const cur=elapsedAtPause+(startWall?(Date.now()-startWall)/1000:0);
+  const next=EVENTS.find(e=>e.type==='step'&&e.t>cur+0.5);
+  const jumpTo=next?next.t:TOTAL;
+  EVENTS.forEach((ev,i)=>{if(!fired.has(i)&&ev.t<=jumpTo){fired.add(i);processEvent(ev);}});
+  elapsedAtPause=jumpTo; startWall=playing?Date.now():null;
+}
+
+function restart() {
+  playing=false; completed=false; startWall=null; elapsedAtPause=0;
+  fired.clear(); narratorFired.clear(); speaking=false; speechQueue=[];
+  if(rafId)cancelAnimationFrame(rafId);
+  if(window.speechSynthesis)speechSynthesis.cancel();
+  units=[{name:'Engine 1',status:'Dispatched'},{name:'Engine 2',status:'Dispatched'},{name:'Truck 1',status:'Dispatched'},{name:'Battalion 1',status:'Dispatched'},{name:'Engine 3',status:'Dispatched'},{name:'Rescue 1',status:'Dispatched'},{name:'Truck 2',status:'Dispatched'}];
+  roles=[]; personnel=[]; commsLog=[];
+  Object.values(unitMarkers).forEach(m=>m.remove()); unitMarkers={}; lastZoomLevel=13;
+  hydrantMarkers.forEach((m,i) => {
+    const el = document.getElementById('hydrant-'+i);
+    if (el) { el.style.background='#b91c1c'; el.style.borderColor='#fca5a5'; el.style.boxShadow='0 1px 4px rgba(0,0,0,0.4)'; el.style.width='14px'; el.style.height='14px'; el.style.marginTop=''; el.style.marginLeft=''; }
+  });
+  photosFired.clear(); photoCount=0;
+  document.getElementById('photosPanel').innerHTML='<div style="display:flex;align-items:center;justify-content:center;width:100%;color:#555;font-size:9px">No photos yet</div>';
+  document.getElementById('photoCount').textContent='0';
+  document.getElementById('photoUploadLink').style.display='none';
+  if(map) map.flyTo([40.7330,-74.2680],13,{duration:1});
+  renderUnits(); renderRoles(); renderPersonnel(); renderComms();
+  document.getElementById('timer').textContent=`0:00 / ${fmtTime(TOTAL)}`;
+  document.getElementById('progressBar').style.width='0%';
+  document.getElementById('stepLabel').textContent='Press Play to start';
+  document.getElementById('playBtn').innerHTML='&#9654;';
+  document.getElementById('playBtn').className='btn-play';
+  hideCallout();
+}
+
+// ── Apparatus Telemetry (SCBA / HR / phase) ──
+// Body-cam video feeds were removed from the demo (the .mp4 fixtures
+// were placeholder footage, not real product). The telemetry HUDs that
+// surrounded them stay — they exercise the SCBA-depletion and HR
+// simulation, which is the actual demo point.
+let currentCamPhase = '';
+let camFrame = 0;
+
+function startCams() { /* no-op; retained for back-compat with existing call sites */ }
+
+function updateCamPhase(elapsed) {
+  let phase;
+  if (elapsed > 105) phase = 'overhaul';
+  else if (elapsed > 56) phase = 'attack';
+  else if (elapsed > 50) phase = 'interior';
+  else if (elapsed > 35) phase = 'onscene';
+  else phase = 'responding';
+
+  if (phase !== currentCamPhase) {
+    currentCamPhase = phase;
+  }
+
+  camFrame++;
+  // SCBA drain only during interior/attack — mask goes on at the door, not on arrival
+  const interiorSeconds = ['interior', 'attack', 'overhaul'].includes(phase) ? Math.max(0, elapsed - 50) : 0;
+  const air1 = Math.max(20, 90 - (interiorSeconds * 0.22));
+  const air2 = Math.max(25, 92 - (interiorSeconds * 0.18));
+  const airColor1 = air1 < 50 ? '#ef4444' : air1 < 75 ? '#f59e0b' : '#22c55e';
+  const airColor2 = air2 < 50 ? '#ef4444' : air2 < 75 ? '#f59e0b' : '#22c55e';
+  const hr1 = Math.floor(100 + Math.sin(camFrame * 0.03) * 15 + (phase === 'attack' ? 30 : 0));
+  const hr2 = Math.floor(95 + Math.sin(camFrame * 0.04 + 1) * 12 + (phase === 'attack' ? 25 : 0));
+
+  document.getElementById('cam1-air').textContent = `SCBA ${Math.floor(air1)}%`;
+  document.getElementById('cam1-air').style.color = airColor1;
+  document.getElementById('cam1-hr').textContent = `HR ${hr1}`;
+  document.getElementById('cam1-hr').style.color = hr1 > 140 ? '#ef4444' : '#22d3ee';
+  document.getElementById('cam1-phase').textContent = phase.toUpperCase();
+
+  document.getElementById('cam2-air').textContent = `SCBA ${Math.floor(air2)}%`;
+  document.getElementById('cam2-air').style.color = airColor2;
+  document.getElementById('cam2-hr').textContent = `HR ${hr2}`;
+  document.getElementById('cam2-hr').style.color = hr2 > 140 ? '#ef4444' : '#22d3ee';
+  document.getElementById('cam2-phase').textContent = phase.toUpperCase();
+}
+
+// ── Scene Photos ──
+const DEMO_PHOTOS = [
+  { t: 36, caption: 'Smoke showing — Side A', uploader: 'Engine 1', img: '/photos/exterior-1.jpg' },
+  { t: 38, caption: 'Heavy smoke 2nd floor — Side C', uploader: 'Truck 1', img: '/photos/exterior-2.jpg' },
+  { t: 42, caption: 'Flames in 2nd floor window', uploader: 'Engine 1', img: '/photos/attack-1.jpg' },
+  { t: 53, caption: 'Interior — 1st floor conditions', uploader: 'FF Davis', img: '/photos/interior-1.jpg' },
+  { t: 58, caption: 'Fire attack — 2nd floor hallway', uploader: 'FF Ortiz', img: '/photos/interior-2.jpg' },
+  { t: 65, caption: 'Exposure check — Side B', uploader: 'Engine 2', img: '/photos/exterior-3.jpg' },
+  { t: 78, caption: 'Interior conditions improving', uploader: 'BC Simmons', img: '/photos/interior-3.jpg' },
+  { t: 102, caption: 'Origin area — 2nd floor bedroom', uploader: 'FF Davis', img: '/photos/attack-2.jpg' },
+  { t: 110, caption: 'Overhaul — checking extension', uploader: 'FF Ramirez', img: '/photos/overhaul-1.jpg' },
+  { t: 125, caption: 'Salvage operations — 1st floor', uploader: 'Truck 1', img: '/photos/overhaul-2.jpg' },
+];
+
+const photosFired = new Set();
+let photoCount = 0;
+
+function addDemoPhoto(photo) {
+  const panel = document.getElementById('photosPanel');
+  if (photoCount === 0) panel.innerHTML = '';
+
+  const card = document.createElement('div');
+  card.className = 'photo-card new';
+  card.onclick = () => showPhotoLightbox(photo);
+
+  const img = document.createElement('img');
+  img.src = photo.img; img.alt = photo.caption;
+  img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block';
+  card.appendChild(img);
+
+  const caption = document.createElement('div');
+  caption.className = 'photo-caption'; caption.textContent = photo.caption;
+  card.appendChild(caption);
+
+  const time = document.createElement('div');
+  time.className = 'photo-time';
+  time.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  card.appendChild(time);
+
+  const badge = document.createElement('div');
+  badge.className = 'photo-badge'; badge.textContent = photo.uploader;
+  card.appendChild(badge);
+
+  panel.appendChild(card);
+  panel.scrollLeft = panel.scrollWidth;
+  setTimeout(() => card.classList.remove('new'), 3000);
+
+  photoCount++;
+  document.getElementById('photoCount').textContent = photoCount;
+  document.getElementById('photoUploadLink').style.display = 'inline';
+}
+
+function updatePhotos(elapsed) {
+  DEMO_PHOTOS.forEach((p, i) => {
+    if (!photosFired.has(i) && elapsed >= p.t) { photosFired.add(i); addDemoPhoto(p); }
+  });
+}
+
+function showPhotoLightbox(photo) {
+  const lb = document.getElementById('photoLightbox');
+  document.getElementById('lightboxImg').src = photo.img;
+  document.getElementById('lightboxCaption').textContent = photo.caption;
+  document.getElementById('lightboxUploader').textContent = '📷 ' + photo.uploader;
+  document.getElementById('lightboxTime').textContent = '🕐 ' + new Date().toLocaleTimeString();
+  lb.style.display = 'flex';
+}
+
+function copyPhotoLink() {
+  const url = window.location.origin + '/upload/demo-' + Date.now().toString(36);
+  navigator.clipboard?.writeText(url);
+  const el = document.getElementById('photoUploadLink');
+  el.textContent = '✅ Copied!';
+  setTimeout(() => { el.textContent = '📋 Copy Upload Link'; }, 2000);
+}
+
+// ── Init ──
+window.addEventListener('load', () => {
+  initMap();
+  startCams();
+  renderUnits(); renderRoles(); renderPersonnel(); renderComms();
+  speechSynthesis.getVoices();
+});
+</script>
+</body>
+</html>
