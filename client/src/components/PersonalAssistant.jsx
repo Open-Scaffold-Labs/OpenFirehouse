@@ -70,7 +70,7 @@ function AlertCard({ alert, onView, onDismiss, onFeedback }) {
         )}
         <button
           onClick={() => onDismiss(alert.id)}
-          className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
+          className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
           title="Dismiss"
           aria-label="Dismiss alert"
         >
@@ -127,7 +127,11 @@ export default function PersonalAssistant({
     if (!user?.id) return;
     try {
       const data = await api.get(`/api/assistant/alerts?member_id=${user.id}&limit=20`);
-      setAlerts(data.alerts || []);
+      // GET /api/assistant/alerts responds with a bare array (res.json(result.rows)),
+      // not { alerts: [...] }. Reading data.alerts always yielded undefined, so the
+      // panel rendered "All clear!" no matter how many alerts existed. Accept both
+      // shapes so the fix holds if the endpoint is ever wrapped.
+      setAlerts(Array.isArray(data) ? data : (data?.alerts ?? []));
       setLastUpdate(new Date());
     } catch (err) {
       console.error('Failed to fetch alerts:', err);
@@ -337,7 +341,7 @@ export default function PersonalAssistant({
           <button
             onClick={handleRefresh}
             disabled={loading}
-            className="w-full flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm"
+            className="w-full flex items-center justify-center gap-2 bg-violet-600 hover:bg-violet-700 disabled:bg-gray-200 disabled:text-gray-600 dark:disabled:bg-gray-700 dark:disabled:text-gray-300 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm"
           >
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
             Refresh Alerts

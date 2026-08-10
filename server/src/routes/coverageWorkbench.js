@@ -12,6 +12,7 @@
 
 const express = require('express');
 const router  = express.Router();
+const { requireOfficer } = require('../middleware/requireRole');
 const { members: memberDb, shifts: shiftDb, leaveRequests: leaveDb, shiftSwaps: swapDb, coverageOutreach: outreachDb } = require('../db');
 
 // ── Helper: Check if two shift times overlap ────────────────────────────────
@@ -132,7 +133,7 @@ router.get('/outreach/:leaveId', async (req, res) => {
 
 // ── POST /outreach ─────────────────────────────────────────────────────────
 // Record that the officer reached out to a member
-router.post('/outreach', async (req, res) => {
+router.post('/outreach', requireOfficer, async (req, res) => {
   try {
     const { leaveRequestId, shiftId, memberId, memberName, contactMethod, status, sentAt } = req.body;
     const stationId = req.user.department_id;
@@ -166,7 +167,7 @@ router.post('/outreach', async (req, res) => {
 
 // ── PATCH /outreach/:id ────────────────────────────────────────────────────
 // Update outreach when member responds
-router.patch('/outreach/:id', async (req, res) => {
+router.patch('/outreach/:id', requireOfficer, async (req, res) => {
   try {
     const id = Number(req.params.id);
     const stationId = req.user.department_id;
@@ -187,7 +188,7 @@ router.patch('/outreach/:id', async (req, res) => {
 // 2. If swapId provided, mark swap as Approved with coveredBy info
 // 3. If outreachId provided, mark outreach as Accepted
 // 4. Return the updated shift
-router.post('/assign', async (req, res) => {
+router.post('/assign', requireOfficer, async (req, res) => {
   try {
     const { shiftId, memberId, memberName, swapId, outreachId } = req.body;
     const stationId = req.user.department_id;

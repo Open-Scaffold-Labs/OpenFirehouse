@@ -139,6 +139,26 @@ router.get('/pending', requireChief, async (req, res) => {
 // evidence so the chief confirms a *reason*, not a guess (Principle #3/#4). The
 // chief then POSTs /:id/link to bind, or creates an invite if no login exists.
 // Registered BEFORE GET /:id so "unlinked" isn't captured as an :id param.
+// ── GET /api/members/fleet-maintenance-grants — current grant state (chief) ──
+// MOUNTED BEFORE '/:id'. The Technicians panel must show WHO IS GRANTED, not
+// neutral buttons — never imply a status the app isn't reading (design-critique
+// 2026-07-26, 🔴).
+router.get('/fleet-maintenance-grants', requireChief, async (req, res) => {
+  try {
+    const r = await db.pool.query(
+      `SELECT m.id AS member_id, m.name, m.rank, u.id AS user_id,
+              COALESCE(u.fleet_maintenance, FALSE) AS granted
+         FROM members m JOIN users u ON u.id = m.user_id
+        WHERE m.department_id = $1 AND m.status = 'Active'
+        ORDER BY m.name`,
+      [req.user.department_id]);
+    res.json({ data: r.rows });
+  } catch (err) {
+    console.error('GET /members/fleet-maintenance-grants error:', err);
+    res.status(500).json({ error: 'Failed to load grants' });
+  }
+});
+
 router.get('/unlinked', requireChief, async (req, res) => {
   try {
     const deptId = req.user.department_id;
@@ -334,6 +354,37 @@ router.patch('/:id', requireOfficer, async (req, res) => {
   }
 });
 
+// ── PATCH /api/members/:id/home-station — set a member's HOME station (chief).
+// 2.2 (0073): home is the baseline; a rider whose seat station differs from home is
+// shown as a DETAIL on the roster. Tenant-safe: the station must be in the caller's dept.
+// A null/empty body clears home (unknown home → never treated as a detail).
+router.patch('/:id/home-station', requireChief, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const deptId = req.user.department_id;
+    const member = await db.members.findById(id, deptId);
+    if (!member) return res.status(404).json({ error: 'Member not found' });
+
+    const raw = req.body.home_station_id;
+    let homeStationId = null;
+    if (raw != null && raw !== '') {
+      const st = await db.pool.query(
+        'SELECT id FROM stations WHERE id = $1 AND department_id = $2', [Number(raw), deptId]);
+      if (!st.rows.length) {
+        return res.status(400).json({ error: 'home_station_id must be a station in your department', code: 'BAD_STATION' });
+      }
+      homeStationId = st.rows[0].id;
+    }
+    await db.pool.query(
+      'UPDATE members SET home_station_id = $1 WHERE id = $2 AND department_id = $3',
+      [homeStationId, id, deptId]);
+    res.json({ data: { id, home_station_id: homeStationId } });
+  } catch (err) {
+    console.error('PATCH /members/:id/home-station error:', err);
+    res.status(500).json({ error: 'Failed to set home station' });
+  }
+});
+
 // ── POST /api/members/:id/invite — issue a single-use set-password invite (chief)
 // Creates the member's login (pinned to the lowest role until verified) if one
 // doesn't exist, maps it to the department via the audited of_link_member DEFINER
@@ -401,6 +452,34 @@ router.post('/:id/verify', requireChief, async (req, res) => {
   } catch (err) {
     console.error('POST /members/:id/verify error:', err);
     res.status(500).json({ error: 'Failed to verify member' });
+  }
+});
+
+// ── POST /api/members/:id/fleet-maintenance — the mechanic capability grant ───
+// 2.2 (0083, phase spec §5 ruling 1): mechanic is a per-user CAPABILITY, never a
+// role rung — the market pattern (checks platforms gate by per-user flags; fleet
+// platforms decouple technician identity from access). Chief grants/revokes; takes
+// effect on the member's next request (auth reads the user row fresh).
+router.post('/:id/fleet-maintenance', requireChief, async (req, res) => {
+  try {
+    const deptId = req.user.department_id;
+    const id = Number(req.params.id);
+    const granted = req.body?.granted === true;
+    if (req.body?.granted === undefined || typeof req.body.granted !== 'boolean') {
+      return res.status(400).json({ error: 'granted (boolean) is required' });
+    }
+    const member = await db.members.findById(id, deptId);
+    if (!member) return res.status(404).json({ error: 'Member not found' });
+    if (!member.user_id) {
+      return res.status(422).json({ error: 'Member has no linked login yet — send an invite first.', code: 'NO_LOGIN' });
+    }
+    await db.pool.query('UPDATE users SET fleet_maintenance = $1 WHERE id = $2', [granted, member.user_id]);
+    await audit(deptId, req.user, 'update', 'members', id,
+      { action: 'fleet_maintenance_grant', granted, user_id: member.user_id });
+    res.json({ data: { id, user_id: member.user_id, fleet_maintenance: granted } });
+  } catch (err) {
+    console.error('POST /members/:id/fleet-maintenance error:', err);
+    res.status(500).json({ error: 'Failed to update the fleet-maintenance grant' });
   }
 });
 

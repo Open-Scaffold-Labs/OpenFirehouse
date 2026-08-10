@@ -57,6 +57,51 @@ startup may take 1–2 seconds longer than subsequent calls.
 - **Database changes** go in `server/src/db.js` (the canonical schema
   file). Use `CREATE TABLE IF NOT EXISTS` so reruns are safe.
 
+## Non-negotiables (life-safety)
+
+OpenFirehouse runs during real emergencies. A couple of rules aren't stylistic —
+a PR that violates them won't be merged:
+
+- **AI never authors the legal record.** Incident narratives and NFIRS/NERIS
+  reports are written by officers, not generated. AI may auto-fill factual,
+  structured fields, but it is removed from every incident-narrative surface — a
+  hallucinated sentence in a legal record is a liability, not a feature. (See the
+  doctrine in `server/src/utils/aiActionRegistry.js`.)
+- **Unit status is never flipped automatically.** Clearing a call or releasing a
+  unit is a human-confirmed action; nothing changes an apparatus's status on the
+  crew's behalf. (See `client/src/components/LiveDispatch.jsx`.)
+
+## Architecture Decision Records (ADRs)
+
+For any change that touches the data model, security model, billing, licensing,
+the public API, or a cross-component contract: **write an ADR before the code.**
+ADRs live at `docs/adr/ADR-NNNN-short-name.md` and capture Status, Context,
+Decision, and Consequences. The current records:
+
+- `docs/adr/ADR-0001-licensing-and-commercial-tier.md`
+- `docs/adr/ADR-0002-identity-link-and-sso-scim.md`
+- `docs/adr/ADR-0003-avl-vehicle-location-ingestion.md`
+- `docs/adr/ADR-0004-bug-reports-tenant-privacy.md`
+- `docs/adr/ADR-0005-agpl-open-core-hosted-and-oem.md`
+
+## Working method
+
+However you write the code — by hand or with an AI assistant — a few disciplines
+keep changes reviewable and safe:
+
+- **Plan before code.** State the approach first, then implement. Skipping the
+  plan means discovering requirements mid-change and throwing work away.
+- **Simplicity first.** Prefer the boring solution. A 30-line file that solves the
+  problem beats a 300-line abstraction that might be useful later.
+- **Surgical changes.** Touch the minimum surface area. A fix that also reformats
+  four unrelated files is harder to review and harder to revert.
+- **Diagnose before fixing.** For a bug, state your top hypotheses and the file to
+  check for each *before* writing a fix — it prevents fixing the wrong root cause.
+- **Verify before you claim it's done.** Never call something complete based on
+  its own status response; check the end state. `npm run seed` printing "OK" isn't
+  rows in the table, a webhook returning 200 isn't the downstream reacting, and a
+  migration "applied" isn't the column existing. Confirm it separately.
+
 ## Audit gate
 
 Every PR runs a 14-point audit gate (see
@@ -92,10 +137,11 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
 ## Licensing your contributions — sign the CLA first
 
-OpenFirehouse is **open source under AGPL v3**. So that contributions can always
-ship under the AGPL — and, if ever needed, under a separate commercial license —
-we accept contributions under a **Contributor License Agreement**
-([CLA.md](CLA.md)).
+OpenFirehouse is **open source under AGPL v3**, and Open Scaffold Labs also
+offers a commercial/OEM license (the open-core model — see
+[COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)). So that contributions can ship
+both under the AGPL **and** in commercial licenses, we accept contributions
+under a **Contributor License Agreement** ([CLA.md](CLA.md)).
 
 **Before we merge your first pull request**, please sign the CLA: read
 [CLA.md](CLA.md), then either email a signed copy to dale@openscaffoldlabs.com

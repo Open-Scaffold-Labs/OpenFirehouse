@@ -10,14 +10,20 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getStoredUser } from '../utils/api';
 import { getReadIds, markRead as persistMarkRead } from '../utils/bulletinReads';
+import { localToday, toLocalDay } from '../utils/localDay';
 import { fetchBulletins, subscribeBulletins, invalidateBulletins, getCachedBulletins } from '../utils/bulletinCache';
 
-function todayStr() {
-  return new Date().toISOString().split('T')[0];
-}
-
+// A Daily Notice belongs to the LOCAL day it was posted on, and "today's shift"
+// is a local day. Both sides used to be derived from UTC: `created_at.split('T')`
+// is the UTC date of the post, compared against the UTC date now. Those agree
+// most of the day and diverge in the evening — in America/New_York, from 20:00
+// EDT the UTC date rolls to tomorrow, so every notice posted earlier that same
+// local day stopped matching and the "Today's Shift" card silently emptied out
+// for the last four hours of every day. Convert the instant to a local day first.
 function isToday(isoStr) {
-  return isoStr ? isoStr.split('T')[0] === todayStr() : false;
+  if (!isoStr) return false;
+  const d = new Date(isoStr);
+  return Number.isNaN(d.getTime()) ? false : toLocalDay(d) === localToday();
 }
 
 export function useBulletinAlerts() {

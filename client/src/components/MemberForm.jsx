@@ -167,11 +167,18 @@ export default function MemberForm({ member, onSave, onClose }) {
   const [activeTab, setActiveTab]       = useState('Basic Info');
   const [photoUploading, setPhotoUploading] = useState(false);
   const [apparatusList, setApparatusList] = useState([]);
+  const [stationList, setStationList]     = useState([]);
 
   // Apparatus for the standing-unit dropdown (chief assigns a member's crew).
   useEffect(() => {
     api.get('/api/apparatus').then((r) => setApparatusList(r?.data || [])).catch(() => {});
   }, []);
+  // Stations for the HOME STATION dropdown (0073). Only meaningful multi-house:
+  // a rider whose seat station ≠ home station is flagged as a DETAIL on the roster.
+  useEffect(() => {
+    api.get('/api/stations').then((r) => setStationList(r?.data || [])).catch(() => {});
+  }, []);
+  const isMultiHouse = stationList.length > 1;
 
   useEffect(() => {
     if (member) {
@@ -248,6 +255,13 @@ export default function MemberForm({ member, onSave, onClose }) {
     }
     // Coerce the standing-assignment fields: '' → null (empty string would fail
     // the integer column / store a blank group). Number for the unit FK.
+    // Home station rides a dedicated chief endpoint (0073), separate from the
+    // main member write — persist it for an existing member on save.
+    if (isEditing && isMultiHouse && member?.id) {
+      api.patch(`/api/members/${member.id}/home-station`, {
+        home_station_id: form.home_station_id === '' || form.home_station_id == null ? null : Number(form.home_station_id),
+      }).catch(() => {});
+    }
     onSave({
       ...form,
       assigned_unit_id: form.assigned_unit_id === '' || form.assigned_unit_id == null ? null : Number(form.assigned_unit_id),
@@ -279,7 +293,7 @@ export default function MemberForm({ member, onSave, onClose }) {
               className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
                 activeTab === tab
                   ? 'text-red-700 dark:text-red-300 border-b-2 border-red-700 bg-white dark:bg-gray-900'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
               }`}
             >
               {tab}
@@ -533,6 +547,16 @@ export default function MemberForm({ member, onSave, onClose }) {
                   <TextInput name="assigned_group" value={form.assigned_group ?? ''}
                     onChange={handleChange} placeholder="e.g. 4  (blank for volunteers)" />
                 </Field>
+
+                {isMultiHouse && isEditing && (
+                  <Field label="Home Station" tooltip="The member's home house. If they ride a seat at a DIFFERENT station on a given day, the roster flags them as a detail (move-up) from here. Set this after the member is created.">
+                    <select name="home_station_id" value={form.home_station_id ?? ''} onChange={handleChange}
+                      className="w-full rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 shadow-sm outline-none focus:ring-2 focus:ring-red-500 dark:bg-gray-900">
+                      <option value="">— No home station —</option>
+                      {stationList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </Field>
+                )}
 
                 <Field label="Seniority Number" tooltip="Department-assigned seniority number. Lower = more senior. Used for shift bidding.">
                   <TextInput type="number" name="seniority_number" value={form.seniority_number}

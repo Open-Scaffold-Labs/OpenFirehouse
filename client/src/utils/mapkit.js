@@ -158,6 +158,39 @@ export function regionForPoints(mk, points) {
   );
 }
 
+// Great-circle distance in statute miles between two lat/lng points.
+export function milesBetween(lat1, lng1, lat2, lng2) {
+  const R = 3958.7613; // mean Earth radius, miles
+  const rad = (d) => (d * Math.PI) / 180;
+  const dLat = rad(lat2 - lat1);
+  const dLng = rad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+// A device GPS fix this far from the station is not a rig — it's a VPN exit node,
+// a Wi-Fi geolocation miss, or someone reviewing the incident from out of town.
+// Routing from it draws a cross-country line to the scene. Fall back to the
+// station instead. Override per-department with VITE_MAX_GPS_ORIGIN_MI.
+// Optional chaining so this module can be imported by `node --test`, where
+// import.meta.env does not exist.
+export const MAX_GPS_ORIGIN_MI = Number(import.meta.env?.VITE_MAX_GPS_ORIGIN_MI || 75);
+
+// Decide where a response route should start. Returns the origin plus why.
+//   { lat, lng, source: 'gps' | 'station', deviceMiles }
+// source==='station' means either no fix, or a fix we judged implausible.
+export function resolveRouteOrigin(dev, stationLat, stationLng, maxMi = MAX_GPS_ORIGIN_MI) {
+  if (!dev || typeof dev.lat !== 'number' || typeof dev.lng !== 'number') {
+    return { lat: stationLat, lng: stationLng, source: 'station', deviceMiles: null };
+  }
+  const deviceMiles = milesBetween(dev.lat, dev.lng, stationLat, stationLng);
+  if (deviceMiles > maxMi) {
+    return { lat: stationLat, lng: stationLng, source: 'station', deviceMiles };
+  }
+  return { lat: dev.lat, lng: dev.lng, source: 'gps', deviceMiles };
+}
+
 // This device's current GPS position (the rig running the software). Resolves
 // { lat, lng } or null if geolocation is unavailable/denied — callers fall back
 // to the configured station.

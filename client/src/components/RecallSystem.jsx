@@ -161,10 +161,10 @@ function RespondModal({ recall, myResponse, onClose, onResponded }) {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
 
-  async function respond(response) {
+  async function respond(response, destination = null) {
     setSaving(true); setErr('');
     try {
-      const data = await api.post(`/api/recall/${recall.id}/respond`, { response, eta });
+      const data = await api.post(`/api/recall/${recall.id}/respond`, { response, eta, destination });
       if (data.error) throw new Error(data.error || 'Failed to respond');
       onResponded(data.data);
     } catch (e) {
@@ -206,7 +206,9 @@ function RespondModal({ recall, myResponse, onClose, onResponded }) {
                 : <XCircle className="h-5 w-5 text-gray-400" />}
               <div>
                 <p className="text-white font-semibold text-sm">
-                  {myResponse.response === 'responding' ? 'You marked yourself Responding' : 'You marked yourself Unavailable'}
+                  {myResponse.response === 'responding'
+                    ? `You marked yourself Responding${myResponse.destination === 'station' ? ' to Station' : myResponse.destination === 'scene' ? ' to Scene' : ''}`
+                    : 'You marked yourself Unavailable'}
                 </p>
                 {myResponse.eta && <p className="text-gray-400 text-xs">ETA: {myResponse.eta}</p>}
               </div>
@@ -231,22 +233,30 @@ function RespondModal({ recall, myResponse, onClose, onResponded }) {
 
           {err && <p className="text-red-400 text-sm">{err}</p>}
 
+          {/* 0037 structured response: Station / Scene / Unable */}
           <div className="grid grid-cols-2 gap-3">
             <button
               disabled={saving}
-              onClick={() => respond('unavailable')}
-              className="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white rounded-lg py-3 text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+              onClick={() => respond('responding', 'station')}
+              className="bg-green-700 hover:bg-green-600 disabled:opacity-50 text-white rounded-lg py-3 text-sm font-bold transition-colors flex items-center justify-center gap-2"
             >
-              <XCircle className="h-4 w-4 text-gray-300 dark:text-gray-600" /> Not Available
+              <CheckCircle2 className="h-4 w-4" /> To Station
             </button>
             <button
               disabled={saving}
-              onClick={() => respond('responding')}
-              className="bg-green-700 hover:bg-green-600 disabled:opacity-50 text-white rounded-lg py-3 text-sm font-bold transition-colors flex items-center justify-center gap-2"
+              onClick={() => respond('responding', 'scene')}
+              className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-lg py-3 text-sm font-bold transition-colors flex items-center justify-center gap-2"
             >
-              <CheckCircle2 className="h-4 w-4" /> Responding
+              <CheckCircle2 className="h-4 w-4" /> To Scene
             </button>
           </div>
+          <button
+            disabled={saving}
+            onClick={() => respond('unavailable')}
+            className="w-full bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white rounded-lg py-3 text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+          >
+            <XCircle className="h-4 w-4 text-gray-300 dark:text-gray-600" /> Unable to Respond
+          </button>
 
           <button onClick={onClose} className="w-full text-gray-500 dark:text-gray-400 hover:text-gray-300 text-xs py-1 transition-colors">
             Dismiss
@@ -353,6 +363,11 @@ function RecallCard({ recall, user, onClose: onCloseRecall, onRefresh, collapseS
                     >
                       <span className="text-green-100 text-xs font-medium flex items-center gap-1.5">
                         <CheckCircle2 className="h-3 w-3" /> {r.member_name}
+                        {r.destination && (
+                          <span className="text-[10px] font-bold uppercase tracking-wide bg-green-800 text-green-200 rounded px-1 py-px">
+                            {r.destination === 'station' ? 'STA' : 'SCENE'}
+                          </span>
+                        )}
                       </span>
                       {r.eta && <span className="text-green-300 text-xs font-semibold">{r.eta}</span>}
                     </div>

@@ -4,13 +4,24 @@ import { ROLES } from '../data/auth';
 import { api, setToken } from '../utils/api';
 import { version as APP_VERSION } from '../../package.json';
 
+// Initials are DERIVED from the name, never hand-maintained. They used to be a
+// literal field, and it had silently drifted: Sarah Chen's avatar read "DR" — the
+// wrong initials, on the first row of the first screen a fire chief ever sees.
+// A duplicated fact is a fact that can disagree with itself.
+function initialsFor(name) {
+  const words = String(name || '').split(/[\s/]+/).filter((w) => /[a-z]/i.test(w));
+  if (!words.length) return '—';
+  const first = words[0][0];
+  const last = words.length > 1 ? words[words.length - 1][0] : (words[0][1] || '');
+  return (first + last).toUpperCase();
+}
+
 const DEMO_USERS = [
   {
     username: 'chief',
     name: 'Sarah Chen',
     title: 'Fire Chief',
     role: 'chief',
-    initials: 'DR',
     highlights: ['Full dashboard', 'LOSAP compliance', 'Budget & reports'],
   },
   {
@@ -18,7 +29,6 @@ const DEMO_USERS = [
     name: 'Maria Delgado',
     title: 'Captain · Training Officer',
     role: 'officer',
-    initials: 'MD',
     highlights: ['Incident command', 'Scheduling', 'Pre-incident plans'],
   },
   {
@@ -26,7 +36,6 @@ const DEMO_USERS = [
     name: 'B/C Simmons',
     title: 'Battalion Chief',
     role: 'battalion_chief',
-    initials: 'BS',
     highlights: ['Command board access', 'Unit & PAR tracking', 'Incident command'],
   },
   {
@@ -34,7 +43,6 @@ const DEMO_USERS = [
     name: 'Dispatch Center',
     title: 'Dispatcher',
     role: 'dispatch',
-    initials: 'DC',
     highlights: ['Manage active incidents', 'Update command board', 'Log units & personnel'],
   },
   {
@@ -42,7 +50,6 @@ const DEMO_USERS = [
     name: 'Nathan McGee',
     title: 'Firefighter I',
     role: 'member',
-    initials: 'NM',
     highlights: ['Training & certs', 'Incident log', 'My schedule'],
   },
 ];
@@ -67,44 +74,51 @@ function clearAllOnboarding() {
 function RoleCard({ user, onQuickLogin, loading, onboardingDone, onResetOnboarding }) {
   const role = ROLES[user.role];
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm hover:shadow-md hover:border-red-200 transition-all group">
+    <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm hover:shadow-md hover:border-red-300 dark:hover:border-red-500/60 transition-all group">
       <button
         onClick={() => onQuickLogin(user.username)}
         disabled={loading}
         className="w-full flex items-center gap-4 p-4 text-left disabled:opacity-60"
       >
         <div className={`h-11 w-11 rounded-xl flex items-center justify-center flex-shrink-0 font-black text-sm ${role.bg} ${role.color}`}>
-          {user.initials}
+          {initialsFor(user.name)}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <p className="text-sm font-bold text-gray-900 dark:text-gray-100 group-hover:text-red-700 transition-colors">
+            <p className="text-sm font-bold text-gray-900 dark:text-gray-100 group-hover:text-red-700 dark:group-hover:text-red-400 transition-colors">
               {user.name}
             </p>
+            {/* Amber, not green: this badge means "setup not done yet". Green reads
+                as complete, which is the opposite of what it is telling you. */}
             {!onboardingDone && (
-              <span className="inline-flex items-center gap-1 text-xs font-semibold px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300">
-                <Sparkles size={10} /> New
+              <span className="inline-flex items-center gap-1 text-xs font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-200">
+                <Sparkles size={10} /> First-time setup
               </span>
             )}
           </div>
-          <p className="text-xs text-gray-500 dark:text-gray-400">{user.title}</p>
-          <p className="text-xs text-gray-400 mt-0.5">{user.highlights.join(' · ')}</p>
+          {/* The role pill on the right already states the rank, so the left column
+              carries the ASSIGNMENT, not a second copy of the title. */}
+          {user.title !== role.label && (
+            <p className="text-xs text-gray-600 dark:text-gray-300">{user.title}</p>
+          )}
+          {/* gray-400 here was ~2.8:1 on white — the unreadable line. */}
+          <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">{user.highlights.join(' · ')}</p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${role.bg} ${role.color}`}>
             {role.label}
           </span>
-          <ChevronRight size={14} className="text-gray-300 dark:text-gray-600 group-hover:text-red-400 transition-colors" />
+          <ChevronRight size={14} className="text-gray-400 dark:text-gray-500 group-hover:text-red-500 transition-colors" />
         </div>
       </button>
 
       {/* onboarding reset row — only shown when already completed */}
       {onboardingDone && (
         <div className="flex items-center justify-between px-4 pb-3 -mt-1">
-          <span className="text-xs text-gray-400">Setup wizard already completed</span>
+          <span className="text-xs text-gray-600 dark:text-gray-400">Setup wizard already completed</span>
           <button
             onClick={(e) => { e.stopPropagation(); onResetOnboarding(user.username); }}
-            className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 dark:hover:text-red-300 font-medium transition-colors"
+            className="flex items-center gap-1 text-xs text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 font-medium transition-colors"
             title="Re-run first-time setup on next login"
           >
             <RotateCcw size={11} /> Reset setup
@@ -118,13 +132,49 @@ function RoleCard({ user, onQuickLogin, loading, onboardingDone, onResetOnboardi
 // ─── Login Screen ─────────────────────────────────────────────────────────────
 
 export default function LoginScreen({ onLogin }) {
-  const [mode,     setMode]     = useState('quick');
+  // ── ONLY ADVERTISE CREDENTIALS THAT EXIST ────────────────────────────────
+  // The quick-login role cards, the "1234" placeholder and the printed demo
+  // credential line used to render UNCONDITIONALLY. But the demo accounts they
+  // name are seeded only when SEED_DEMO=true (db.js DEMO_LABELS) — so a real
+  // department that deployed correctly (SEED_DEMO unset, BOOTSTRAP_CHIEF_* used
+  // for their real chief) saw a login page offering one-click sign-in for
+  // accounts their database does not contain. That is the first screen a fire
+  // chief ever sees.
+  //
+  // The client cannot infer this — only the server knows its seed config — so
+  // /api/setup-status reports it. Starts NULL and FAILS CLOSED: until the server
+  // confirms demo mode we render the plain username/password form, so a slow or
+  // failed request can never flash demo credentials onto a real department's
+  // screen. `null` (unknown) and `false` (not demo) deliberately behave alike.
+  const [demoMode, setDemoMode] = useState(null);
+  const [mode,     setMode]     = useState('form');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPw,   setShowPw]   = useState(false);
   const [error,    setError]    = useState('');
   const [loading,  setLoading]  = useState(false);
   const [onboardingState, setOnboardingState] = useState(() => getOnboardingState());
+  // 0111 — non-null while a second factor is outstanding. Holding the challenge
+  // token in state (never in storage) keeps it exactly as long as the prompt.
+  const [mfaToken, setMfaToken] = useState(null);
+  const [mfaCode,  setMfaCode]  = useState('');
+
+  // Ask the server whether this deployment is demo-seeded. Public endpoint, no
+  // auth (it already backs first-run bootstrap). On any failure we stay in the
+  // fail-closed state above — never optimistically show demo affordances.
+  useEffect(() => {
+    let cancelled = false;
+    fetch((import.meta.env.VITE_API_URL || '') + '/api/setup-status')
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelled) return;
+        const isDemo = d?.demoMode === true;
+        setDemoMode(isDemo);
+        if (isDemo) setMode('quick');   // demo deployments keep the fast path
+      })
+      .catch(() => { if (!cancelled) setDemoMode(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   function handleResetOnboarding(u) {
     clearOnboardingForUser(u);
@@ -136,6 +186,13 @@ export default function LoginScreen({ onLogin }) {
     setLoading(true);
     try {
       const data = await api.post('/api/auth/login', { username: u, password: p });
+      // 0111 — this account has a second factor. The server issued NO session,
+      // only a short-lived challenge; hold it and ask for the code.
+      if (data.mfaRequired) {
+        setMfaToken(data.mfaToken);
+        setMfaCode('');
+        return;
+      }
       setToken(data.token, data.user);
       onLogin(data.user);
     } catch (err) {
@@ -143,6 +200,38 @@ export default function LoginScreen({ onLogin }) {
     } finally {
       setLoading(false);
     }
+  }
+
+  // 0111 — exchange the challenge + code for a real session.
+  async function submitMfa(e) {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const data = await api.post('/api/auth/mfa', { mfaToken, code: mfaCode.trim() });
+      setToken(data.token, data.user);
+      if (data.usedRecoveryCode) {
+        // Not an error, but the member needs to know a one-time code is now spent.
+        console.warn(`Recovery code used. ${data.recoveryCodesRemaining ?? 0} remaining.`);
+      }
+      onLogin(data.user);
+    } catch (err) {
+      // The challenge expiring is a restart, not a bad code — say which.
+      if (err?.code === 'MFA_CHALLENGE_EXPIRED') {
+        setMfaToken(null);
+        setError('That sign-in attempt timed out. Please sign in again.');
+      } else {
+        setError(err.message || 'That code is not right.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function cancelMfa() {
+    setMfaToken(null);
+    setMfaCode('');
+    setError('');
   }
 
   function handleFormLogin(e) {
@@ -154,9 +243,16 @@ export default function LoginScreen({ onLogin }) {
     doLogin(u, '1234');
   }
 
+  // items-start, not items-center: with five role cards the list is taller than a
+  // laptop viewport, and centering pushed the last role below the fold with no
+  // scroll cue. Start-aligned it simply scrolls.
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-red-950 flex items-center justify-center p-4">
-      <div className="w-full max-w-md space-y-6">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-red-950 flex items-start justify-center p-4 py-10 sm:py-14">
+      {/* The role list needs more measure than a password form does: at max-w-md the
+          three-item highlight line wrapped mid-phrase ("Pre-/incident plans") while
+          ~470px of viewport sat empty either side. Widen only for the card list; a
+          credentials form stays at form width, where it belongs. */}
+      <div className={`w-full space-y-6 ${mode === 'quick' && demoMode && !mfaToken ? 'max-w-2xl' : 'max-w-md'}`}>
 
         {/* Logo / branding */}
         <div className="text-center space-y-3">
@@ -173,9 +269,68 @@ export default function LoginScreen({ onLogin }) {
           </div>
         </div>
 
-        {/* Mode toggle */}
+        {/* 0111 — second factor. Replaces the whole sign-in body while pending,
+            so there is no way to "skip" past it in the UI. The server refuses a
+            pending challenge on every other route regardless. */}
+        {mfaToken ? (
+          <form onSubmit={submitMfa} className="bg-white/10 backdrop-blur rounded-2xl p-6 space-y-4">
+            <div className="text-center space-y-1">
+              <h2 className="text-lg font-bold text-white">Enter your code</h2>
+              <p className="text-sm text-gray-300">
+                Open your authenticator app and enter the 6-digit code for OpenFirehouse.
+              </p>
+            </div>
+
+            <div>
+              <label htmlFor="mfa-code" className="sr-only">Authentication code</label>
+              <input
+                id="mfa-code"
+                data-testid="mfa-code"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                autoFocus
+                value={mfaCode}
+                onChange={(e) => setMfaCode(e.target.value)}
+                placeholder="000000"
+                className="w-full text-center tracking-[0.4em] text-2xl font-mono px-4 py-3 rounded-xl bg-white/90 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500"
+              />
+              <p className="text-[11px] text-gray-400 mt-2 text-center">
+                Lost your phone? Enter one of your recovery codes instead.
+              </p>
+            </div>
+
+            {error && (
+              <div data-testid="mfa-error" className="text-sm text-red-300 bg-red-950/50 rounded-lg px-3 py-2">
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              data-testid="mfa-submit"
+              disabled={loading || mfaCode.trim().length < 6}
+              className="w-full py-3 rounded-xl bg-red-600 text-white font-semibold disabled:opacity-50"
+            >
+              {loading ? 'Checking…' : 'Verify'}
+            </button>
+            <button
+              type="button"
+              onClick={cancelMfa}
+              className="w-full py-2 text-sm text-gray-300 hover:text-white"
+            >
+              Cancel and start over
+            </button>
+          </form>
+        ) : (
+        <>
+        {/* Mode toggle — demo deployments only. A real department has exactly
+            one way in (their own credentials), so the toggle is not just
+            useless there, it points at a door that isn't in the building. */}
+        {demoMode === true && (
         <div className="flex gap-1 bg-white/10 rounded-xl p-1">
           <button
+            data-testid="login-mode-quick"
             onClick={() => setMode('quick')}
             className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${
               mode === 'quick' ? 'bg-white text-gray-900 shadow' : 'text-gray-300 hover:text-white'
@@ -184,6 +339,7 @@ export default function LoginScreen({ onLogin }) {
             Quick Demo Login
           </button>
           <button
+            data-testid="login-mode-form"
             onClick={() => setMode('form')}
             className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${
               mode === 'form' ? 'bg-white text-gray-900 shadow' : 'text-gray-300 hover:text-white'
@@ -192,13 +348,15 @@ export default function LoginScreen({ onLogin }) {
             Username / Password
           </button>
         </div>
+        )}
 
-        {/* Quick login panel */}
-        {mode === 'quick' && (
+        {/* Quick login panel — guarded on demoMode too, not just `mode`, so it
+            can never render from stale state on a non-demo deployment. */}
+        {demoMode === true && mode === 'quick' && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-gray-400">
-                Select a role to log in — <span className="text-emerald-400 font-medium">New</span> badge triggers first-time setup
+              <p className="text-xs text-gray-300">
+                Select a role to log in — a <span className="text-amber-300 font-medium">First-time setup</span> badge means that role still has its setup wizard to run
               </p>
               <button
                 onClick={() => { clearAllOnboarding(); setOnboardingState({}); }}
@@ -238,7 +396,8 @@ export default function LoginScreen({ onLogin }) {
                 type="text"
                 autoComplete="username"
                 className="w-full border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 bg-gray-50 dark:bg-gray-950 dark:text-gray-100"
-                placeholder="chief · officer · member"
+                data-testid="login-username"
+                placeholder={demoMode === true ? 'chief · officer · member' : 'Username'}
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
               />
@@ -251,7 +410,8 @@ export default function LoginScreen({ onLogin }) {
                   type={showPw ? 'text' : 'password'}
                   autoComplete="current-password"
                   className="w-full border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 bg-gray-50 dark:bg-gray-950 dark:text-gray-100"
-                  placeholder="1234 for all demo accounts"
+                  data-testid="login-password"
+                  placeholder={demoMode === true ? '1234 for all demo accounts' : 'Password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                 />
@@ -272,6 +432,7 @@ export default function LoginScreen({ onLogin }) {
 
             <button
               type="submit"
+              data-testid="login-submit"
               disabled={loading}
               className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-bold text-white bg-red-700 rounded-xl hover:bg-red-800 transition-colors shadow-sm disabled:opacity-60"
             >
@@ -279,12 +440,16 @@ export default function LoginScreen({ onLogin }) {
               Sign In
             </button>
 
-            <div className="pt-1 border-t border-gray-100 dark:border-gray-700">
-              <p className="text-xs text-gray-400 text-center">
-                Demo credentials · <span className="font-mono">chief</span> / <span className="font-mono">officer</span> / <span className="font-mono">member</span> · password: <span className="font-mono">1234</span>
-              </p>
-            </div>
+            {demoMode === true && (
+              <div className="pt-1 border-t border-gray-100 dark:border-gray-700">
+                <p className="text-xs text-gray-400 text-center">
+                  Demo credentials · <span className="font-mono">chief</span> / <span className="font-mono">officer</span> / <span className="font-mono">member</span> · password: <span className="font-mono">1234</span>
+                </p>
+              </div>
+            )}
           </form>
+        )}
+        </>
         )}
 
         <p className="text-xs text-gray-500 dark:text-gray-400 text-center">

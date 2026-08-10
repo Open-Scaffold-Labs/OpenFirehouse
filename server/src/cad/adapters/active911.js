@@ -64,7 +64,13 @@ module.exports = {
   async parse(req) {
     const p = req.body || {};
 
-    const alertId = String(p.id || p.alert_id || `a911-${Date.now()}`);
+    // Raw vendor id ONLY — no fallback here. Synthesis moved to
+    // processDispatch (cad/alertIdentity.js), which is the one place the
+    // DEPARTMENT is known: NENA namespaces an identifier by the agency that
+    // created it, and the old `${prefix}-${Date.now()}` fallback was
+    // non-deterministic — a vendor retry minted a NEW id and defeated the
+    // duplicate guard exactly when it was needed.
+    const alertId = p.id || p.alert_id || null;
     const address = [p.address, p.city, p.state].filter(Boolean).join(', ');
     const units = String(p.unit || p.units || '');
     const description = String(p.description || p.nature || p.call_type || 'CAD Alert');

@@ -6,6 +6,7 @@ import {
 import { api } from '../utils/api';
 import LinkedMeetings from './LinkedMeetings';
 import Attachments from './Attachments';
+import { openTimePicker } from '../utils/timeInput';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -473,22 +474,22 @@ function EventForm({ event, members, onSave, onCancel }) {
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Start Time</label>
               <input
-                type="time"
+                type="time" onClick={openTimePicker}
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
                 aria-label="Start time"
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none dark:bg-gray-900 dark:text-gray-100"
+                className="cursor-pointer w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none dark:bg-gray-900 dark:text-gray-100"
                 disabled={loading}
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">End Time</label>
               <input
-                type="time"
+                type="time" onClick={openTimePicker}
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
                 aria-label="End time"
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none dark:bg-gray-900 dark:text-gray-100"
+                className="cursor-pointer w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none dark:bg-gray-900 dark:text-gray-100"
                 disabled={loading}
               />
             </div>

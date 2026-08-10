@@ -102,7 +102,7 @@ export default function AIActionButton({
   const baseClasses = 'inline-flex items-center gap-1.5 font-medium transition-all duration-200 disabled:opacity-50';
 
   const variantClasses = {
-    button: `${baseClasses} rounded-lg px-3 py-2 text-xs bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-sm hover:from-violet-700 hover:to-indigo-700 hover:shadow-md`,
+    button: `${baseClasses} rounded-lg px-3 py-2 text-xs bg-violet-700 text-white shadow-sm hover:bg-violet-800 hover:shadow-md`,
     inline: `${baseClasses} rounded-md px-2 py-1 text-xs text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-950/50 hover:bg-violet-100 dark:hover:bg-violet-900 ring-1 ring-violet-200 hover:ring-violet-300`,
     icon: `${baseClasses} rounded-lg p-1.5 text-violet-500 hover:text-violet-700 hover:bg-violet-50 dark:hover:bg-violet-950/50`,
     'menu-item': `${baseClasses} w-full rounded-lg px-3 py-2 text-sm text-left text-gray-700 dark:text-gray-300 hover:bg-violet-50 dark:hover:bg-violet-950/50 hover:text-violet-700`,

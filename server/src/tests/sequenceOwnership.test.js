@@ -28,13 +28,22 @@ if (!TENANCY_TEST_DB) {
   test('every serial id column owns its sequence (ALTER SEQUENCE ... OWNED BY present)', async () => {
     const pool = new Pool({ connectionString: TENANCY_TEST_DB, max: 1 });
     try {
+      // MATERIALIZED CTE: forces the schema/default filters to run BEFORE
+      // pg_get_serial_sequence. Without it the planner may evaluate the
+      // function on pg_catalog rows first (predicate evaluation order is
+      // not guaranteed), erroring with `relation "public.pg_proc" does not
+      // exist` on some local Postgres plans while CI passed. Fixed 2026-07-11.
       const { rows } = await pool.query(`
-        SELECT c.table_name, c.column_name
-        FROM information_schema.columns c
-        WHERE c.table_schema = 'public'
-          AND c.column_default LIKE 'nextval(%'
-          AND pg_get_serial_sequence(format('public.%I', c.table_name), c.column_name) IS NULL
-        ORDER BY c.table_name, c.column_name
+        WITH cols AS MATERIALIZED (
+          SELECT c.table_name, c.column_name
+          FROM information_schema.columns c
+          WHERE c.table_schema = 'public'
+            AND c.column_default LIKE 'nextval(%'
+        )
+        SELECT table_name, column_name
+        FROM cols
+        WHERE pg_get_serial_sequence(format('public.%I', table_name), column_name) IS NULL
+        ORDER BY table_name, column_name
       `);
       assert.strictEqual(
         rows.length, 0,

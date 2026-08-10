@@ -15,15 +15,9 @@ const REPEAT_RULES = [
   { value: 'platoon',  label: 'Platoon Cycle' },
 ];
 
-const CYCLE_TYPES = [
-  { value: '24/48', label: '24/48', on: 1, off: 2, desc: '24 on, 48 off' },
-  { value: '48/96', label: '48/96', on: 2, off: 4, desc: '48 on, 96 off' },
-  { value: 'custom', label: 'Custom', on: 0, off: 0, desc: 'Set your own cycle' },
-];
-
 const PLATOON_NAMES = ['A', 'B', 'C', 'D'];
 
-function PatternFormModal({ pattern, members, onSave, onClose }) {
+function PatternFormModal({ pattern, members, presets, onSave, onClose }) {
   const [form, setForm] = useState({
     name: '',
     shiftType: 'Day',
@@ -41,6 +35,9 @@ function PatternFormModal({ pattern, members, onSave, onClose }) {
     cycle_off: 2,
     kelly_day_interval: 0,
     anchor_date: '',
+    // 1.1b: named preset key + generalized on/off day-state cycle (2-2-3, DuPont…)
+    preset_key: '',
+    cycle_pattern: [],
   });
 
   useEffect(() => {
@@ -61,6 +58,8 @@ function PatternFormModal({ pattern, members, onSave, onClose }) {
         cycle_off: pattern.cycle_off || 2,
         kelly_day_interval: pattern.kelly_day_interval || 0,
         anchor_date: pattern.anchor_date || '',
+        preset_key: pattern.preset_key || '',
+        cycle_pattern: Array.isArray(pattern.cycle_pattern) ? pattern.cycle_pattern : [],
       });
     }
   }, [pattern]);
@@ -213,36 +212,60 @@ function PatternFormModal({ pattern, members, onSave, onClose }) {
                 </div>
               </div>
 
-              {/* Cycle type */}
+              {/* Named rotation presets (1.1b) — the full fire-service set,
+                  sourced from the server so client + engine never drift. Picking
+                  one fills the cycle; a department can then hand-tune it. */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Cycle Type</label>
-                <div className="flex gap-2">
-                  {CYCLE_TYPES.map(ct => (
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Rotation Pattern</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(presets || []).map(p => (
                     <button
-                      key={ct.value}
+                      key={p.key}
                       type="button"
                       onClick={() => setForm(prev => ({
                         ...prev,
-                        cycle_type: ct.value,
-                        ...(ct.value !== 'custom' ? { cycle_on: ct.on, cycle_off: ct.off } : {}),
+                        preset_key: p.key,
+                        cycle_type: p.key,
+                        // Keep repeatRule 'platoon' so this section stays visible;
+                        // the engine reads cycle_pattern first regardless of rule.
+                        cycle_on: p.cycle_on,
+                        cycle_off: p.cycle_off,
+                        cycle_pattern: Array.isArray(p.cycle_pattern) ? p.cycle_pattern : [],
+                        // Default the anchor to the start date so the cycle has a
+                        // concrete reference the moment a preset is picked (the
+                        // engine falls back to startDate anyway — this makes it visible).
+                        anchor_date: prev.anchor_date || prev.startDate,
                       }))}
-                      className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                        form.cycle_type === ct.value
+                      className={`px-2 py-2 rounded-lg text-xs font-medium border transition-colors ${
+                        form.preset_key === p.key
                           ? 'bg-blue-700 text-white border-blue-700'
                           : 'bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-700 hover:border-blue-400'
                       }`}
                     >
-                      <span className="block font-bold">{ct.label}</span>
-                      <span className={`block text-xs ${form.cycle_type === ct.value ? 'text-blue-200' : 'text-gray-400'}`}>
-                        {ct.desc}
+                      <span className="block font-bold">{p.label}</span>
+                      <span className={`block text-[10px] ${form.preset_key === p.key ? 'text-blue-200' : 'text-gray-400'}`}>
+                        {p.cycleLength ? `${p.cycleLength}-day` : 'cycle'}
                       </span>
                     </button>
                   ))}
+                  {/* Custom */}
+                  <button
+                    type="button"
+                    onClick={() => setForm(prev => ({ ...prev, preset_key: 'custom', cycle_type: 'custom', cycle_pattern: [] }))}
+                    className={`px-2 py-2 rounded-lg text-xs font-medium border transition-colors ${
+                      form.preset_key === 'custom'
+                        ? 'bg-blue-700 text-white border-blue-700'
+                        : 'bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-700 hover:border-blue-400'
+                    }`}
+                  >
+                    <span className="block font-bold">Custom</span>
+                    <span className={`block text-[10px] ${form.preset_key === 'custom' ? 'text-blue-200' : 'text-gray-400'}`}>set your own</span>
+                  </button>
                 </div>
               </div>
 
               {/* Custom on/off days */}
-              {form.cycle_type === 'custom' && (
+              {form.preset_key === 'custom' && (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Days On</label>
@@ -269,24 +292,28 @@ function PatternFormModal({ pattern, members, onSave, onClose }) {
                 </div>
               )}
 
-              {/* Kelly Day interval */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Kelly Day Interval
-                  <span className="ml-1 text-xs font-normal text-gray-400">(0 = none)</span>
-                </label>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
-                  Every Nth on-duty day is a Kelly Day (scheduled day off to reduce average hours).
-                </p>
-                <input
-                  type="number"
-                  min={0}
-                  max={30}
-                  value={form.kelly_day_interval}
-                  onChange={e => setForm(p => ({ ...p, kelly_day_interval: parseInt(e.target.value) || 0 }))}
-                  className="w-24 rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 shadow-sm outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900"
-                />
-              </div>
+              {/* Kelly Day interval — only meaningful for a simple on/off ratio.
+                  A pattern-based preset (2-2-3, DuPont, Kelly 9-day) already encodes
+                  its off-days in the cycle, so the field is hidden for those. */}
+              {(!Array.isArray(form.cycle_pattern) || form.cycle_pattern.length === 0) && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Kelly Day Interval
+                    <span className="ml-1 text-xs font-normal text-gray-400">(0 = none)</span>
+                  </label>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+                    Every Nth on-duty day is a Kelly Day (scheduled day off to reduce average hours).
+                  </p>
+                  <input
+                    type="number"
+                    min={0}
+                    max={30}
+                    value={form.kelly_day_interval}
+                    onChange={e => setForm(p => ({ ...p, kelly_day_interval: parseInt(e.target.value) || 0 }))}
+                    className="w-24 rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 shadow-sm outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900"
+                  />
+                </div>
+              )}
 
               {/* Anchor date */}
               <div>
@@ -305,18 +332,32 @@ function PatternFormModal({ pattern, members, onSave, onClose }) {
                 />
               </div>
 
-              {/* Cycle preview */}
-              {form.cycle_on > 0 && form.cycle_off > 0 && (
-                <div className="bg-white dark:bg-gray-900 border border-blue-100 dark:border-blue-900 rounded-lg px-3 py-2">
-                  <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Cycle Preview</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {form.cycle_on} day{form.cycle_on > 1 ? 's' : ''} on → {form.cycle_off} day{form.cycle_off > 1 ? 's' : ''} off
-                    {form.kelly_day_interval > 0 && ` (Kelly Day every ${form.kelly_day_interval} on-duty days)`}
-                    {' '}= {form.cycle_on + form.cycle_off}-day cycle
-                    {' '}≈ {Math.round(form.cycle_on / (form.cycle_on + form.cycle_off) * 168)} hrs/week avg
-                  </p>
-                </div>
-              )}
+              {/* Cycle preview — handles the simple ratio AND a generalized
+                  day-state cycle (2-2-3, DuPont), so pattern-based presets show too. */}
+              {(() => {
+                const cp = Array.isArray(form.cycle_pattern) ? form.cycle_pattern : [];
+                const usePattern = cp.length > 0;
+                const cycleLen = usePattern ? cp.length : (form.cycle_on + form.cycle_off);
+                const onDays = usePattern ? cp.filter(v => v).length : form.cycle_on;
+                if (!cycleLen) return null;
+                return (
+                  <div className="bg-white dark:bg-gray-900 border border-blue-100 dark:border-blue-900 rounded-lg px-3 py-2">
+                    <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Cycle Preview</p>
+                    {usePattern ? (
+                      <p className="text-xs text-gray-500 dark:text-gray-400 font-mono tracking-tight">
+                        {cp.map((v, i) => <span key={i} className={v ? 'text-red-600 dark:text-red-400 font-bold' : 'text-gray-300 dark:text-gray-600'}>{v ? '■' : '·'}</span>)}
+                        <span className="ml-2 font-sans">{onDays}/{cycleLen} days · ≈{Math.round(onDays / cycleLen * 168)} hrs/wk</span>
+                      </p>
+                    ) : (
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {form.cycle_on} day{form.cycle_on > 1 ? 's' : ''} on → {form.cycle_off} day{form.cycle_off > 1 ? 's' : ''} off
+                        {form.kelly_day_interval > 0 && ` (Kelly Day every ${form.kelly_day_interval} on-duty days)`}
+                        {' '}= {cycleLen}-day cycle ≈ {Math.round(form.cycle_on / cycleLen * 168)} hrs/week avg
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           )}
 
@@ -422,23 +463,27 @@ function PatternFormModal({ pattern, members, onSave, onClose }) {
 export default function PatternManager({ onBack }) {
   const [patterns, setPatterns] = useState([]);
   const [members, setMembers] = useState([]);
+  const [presets, setPresets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [deleting, setDeleting] = useState(null);
   const [expanding, setExpanding] = useState(false);
   const [expandResult, setExpandResult] = useState(null);
+  const [conflicts, setConflicts] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {
-      const [pRes, mRes] = await Promise.all([
+      const [pRes, mRes, presetRes] = await Promise.all([
         api.get('/api/shift-patterns'),
         api.get('/api/members'),
+        api.get('/api/shift-patterns/presets').catch(() => ({ data: [] })),
       ]);
       const patterns = Array.isArray(pRes?.data) ? pRes.data : Array.isArray(pRes) ? pRes : [];
       const members = Array.isArray(mRes?.data) ? mRes.data : Array.isArray(mRes) ? mRes : [];
       setPatterns(patterns);
       setMembers(members);
+      setPresets(Array.isArray(presetRes?.data) ? presetRes.data : []);
     } catch (err) {
       console.error('Failed to load patterns:', err);
     } finally {
@@ -485,19 +530,38 @@ export default function PatternManager({ onBack }) {
   async function handleExpand() {
     setExpanding(true);
     setExpandResult(null);
+    setConflicts(null);
+    const start = new Date().toISOString().slice(0, 10);
+    const end = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     try {
-      // Expand for next 30 days
-      const start = new Date().toISOString().slice(0, 10);
-      const end = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-      const res = await api.post('/api/shift-patterns/expand', {
-        startDate: start,
-        endDate: end,
-        commit: true,
-      });
-      setExpandResult(res.data || res);
+      // 1.1b conflict-check on apply: PREVIEW first (commit:false) so overlaps are
+      // shown BEFORE anything is written — the apply never silently overwrites.
+      const preview = await api.post('/api/shift-patterns/expand', { startDate: start, endDate: end, commit: false });
+      const conf = preview.conflicts || preview.data?.conflicts || [];
+      if (conf.length) { setConflicts(conf); setExpanding(false); return; }
+      const res = await api.post('/api/shift-patterns/expand', { startDate: start, endDate: end, commit: true });
+      setExpandResult(res);
       await fetchData();
     } catch (err) {
-      alert(err.message || 'Failed to expand patterns');
+      // If the commit itself 409'd (a race between preview and apply), surface WHAT collided,
+      // not a bare "there was a conflict".
+      //
+      // ⚠️ This used to read `err.details.conflicts` — a structured object — and it could never
+      // have worked: the server's `details` channel is `string[]` app-wide, and until 2026-08-04
+      // an object payload was dropped by errorHandler entirely, so `err.details` was undefined.
+      // The structured read is kept first because it costs nothing if a future route sends one,
+      // but the array is now the real path: utils/api.js only attaches `details` when it IS an
+      // array, and the server flattens `{ conflicts: [...] }` to one line per conflict.
+      const structured = err?.details?.conflicts || err?.body?.details?.conflicts || err?.data?.details?.conflicts;
+      if (structured && structured.length) {
+        setConflicts(structured);
+      } else if (Array.isArray(err?.details) && err.details.length) {
+        // Flattened lines. Rendered through the same amber panel so the race case looks like the
+        // preview case instead of a browser alert — `note` is the panel's plain-text branch.
+        setConflicts(err.details.map((line) => ({ note: String(line) })));
+      } else {
+        alert(err.message || 'Failed to expand patterns');
+      }
     } finally {
       setExpanding(false);
     }
@@ -538,7 +602,7 @@ export default function PatternManager({ onBack }) {
         <div className="flex items-center gap-3">
           {onBack && (
             <button onClick={onBack}
-              className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">
+              className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">
               ← Back to Schedule
             </button>
           )}
@@ -569,12 +633,49 @@ export default function PatternManager({ onBack }) {
           <div className="flex items-center gap-2">
             <CheckCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
             <span className="text-sm text-emerald-800 dark:text-emerald-300">
-              Generated {expandResult.inserted || expandResult.generated?.length || 0} shifts from patterns
+              Generated {expandResult.committed ?? expandResult.data?.length ?? 0} shifts from patterns
             </span>
           </div>
           <button onClick={() => setExpandResult(null)} aria-label="Dismiss notification" className="text-emerald-400 hover:text-emerald-600 dark:hover:text-emerald-400">
             <X className="h-4 w-4" />
           </button>
+        </div>
+      )}
+
+      {/* Conflict-check banner (1.1b) — the apply refuses to overwrite; the
+          overlaps are shown so the officer resolves them, then re-applies. */}
+      {conflicts && conflicts.length > 0 && (
+        <div className="rounded-lg bg-amber-50 dark:bg-amber-950/50 ring-1 ring-amber-300 px-4 py-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+              {conflicts.length} conflict{conflicts.length !== 1 ? 's' : ''} — nothing was generated
+            </span>
+            <button onClick={() => setConflicts(null)} aria-label="Dismiss" className="text-amber-400 hover:text-amber-600">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <p className="text-xs text-amber-800 dark:text-amber-300 mb-2">
+            Applying would collide with shifts that already exist. Resolve these (remove the overlapping pattern or existing shift), then generate again.
+          </p>
+          <ul className="text-xs text-amber-800 dark:text-amber-300 space-y-0.5 max-h-40 overflow-y-auto">
+            {conflicts.slice(0, 30).map((c, i) => (
+              c.note ? (
+                // The flattened-detail branch (a 409 race). One line per detail, verbatim —
+                // better a raw line than a browser alert with the list thrown away.
+                <li key={i} className="font-mono break-all">{c.note}</li>
+              ) : (
+                <li key={i} className="flex items-center gap-2">
+                  <span className="font-mono">{c.date}</span>
+                  <span className="font-medium">{c.shiftType}</span>
+                  <span className="text-amber-600 dark:text-amber-400">
+                    {c.kind === 'override' ? 'manual override exists'
+                      : c.kind === 'double_apply' ? 'two patterns claim this slot'
+                      : 'another pattern already here'}
+                  </span>
+                </li>
+              )
+            ))}
+          </ul>
         </div>
       )}
 
@@ -662,6 +763,7 @@ export default function PatternManager({ onBack }) {
         <PatternFormModal
           pattern={editing}
           members={members}
+          presets={presets}
           onSave={handleSave}
           onClose={() => { setFormOpen(false); setEditing(null); }}
         />

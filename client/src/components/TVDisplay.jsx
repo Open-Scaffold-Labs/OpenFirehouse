@@ -10,6 +10,12 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, unitStatusTopic } from '../utils/supabase';
+import { reportChannelStatus, reportMessageReceived, forgetChannel } from '../utils/realtimeHealth';
+// TODO FeedStatus on the TV surface. It reports its health above, but the
+// indicator is not rendered here yet: a 24/7 wall display needs a deliberate
+// placement decision (glanceable from across a bay, and it must not push the
+// unit strip around), not a guess. Tracked as a follow-up.
+import { tonePar } from '../utils/alertTones';
 import { reconnectDelay } from '../utils/backoff';
 import ScreenErrorBoundary from './ScreenErrorBoundary';
 
@@ -883,6 +889,30 @@ function TVSidebar({ summary, weather, tvData }) {
 function IncidentDisplay({ activeBoard, weather, unitStatuses }) {
   const elapsed = useElapsed(activeBoard?.dispatched_at);
 
+  // PAR spine (0048): the station TV shares the command board's PAR countdown.
+  // Basis = last completed PAR, else dispatch time — computed live, no scheduler.
+  const [parRemaining, setParRemaining] = useState(null); // seconds; <=0 = OVERDUE
+  // Rising-edge PAR tone on the watch-desk TV (per-workstation opt-in).
+  const prevParRef = useRef(null);
+  useEffect(() => {
+    const prev = prevParRef.current;
+    if (prev != null && prev > 0 && parRemaining != null && parRemaining <= 0) tonePar();
+    prevParRef.current = parRemaining;
+  }, [parRemaining]);
+  useEffect(() => {
+    const interval = Number(activeBoard?.par_interval_min) || 0;
+    if (!interval) { setParRemaining(null); return; }
+    const basis = activeBoard?.last_par_at || activeBoard?.dispatched_at;
+    if (!basis) { setParRemaining(null); return; }
+    const tick = () => {
+      const elapsedSec = Math.floor((Date.now() - new Date(basis).getTime()) / 1000);
+      setParRemaining(interval * 60 - elapsedSec);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [activeBoard?.par_interval_min, activeBoard?.last_par_at, activeBoard?.dispatched_at]);
+
   const windSpeed = weather?.current?.wind_speed;
   const windColor = !windSpeed ? '#9ca3af'
     : windSpeed < 15 ? '#4ade80'
@@ -928,6 +958,20 @@ function IncidentDisplay({ activeBoard, weather, unitStatuses }) {
             <p style={{ fontSize: 100, fontWeight: 900, color: '#fff', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
               {elapsed || '00:00'}
             </p>
+            {parRemaining !== null && (
+              <p style={{
+                marginTop: 10, fontSize: 26, fontWeight: 900, letterSpacing: 2,
+                fontVariantNumeric: 'tabular-nums', borderRadius: 12, padding: '6px 16px',
+                display: 'inline-block',
+                background: parRemaining <= 0 ? '#ef4444' : parRemaining <= 120 ? '#f97316' : 'rgba(255,255,255,0.15)',
+                color: '#fff',
+                animation: parRemaining <= 120 ? 'pulse-glow 1.5s infinite' : 'none',
+              }}>
+                {parRemaining <= 0
+                  ? 'PAR OVERDUE'
+                  : `PAR IN ${Math.floor(parRemaining / 60)}:${String(parRemaining % 60).padStart(2, '0')}`}
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -1010,6 +1054,8 @@ const TV_STATUS_COLORS = {
   on_scene:       { bg: '#4a0d0d', br: '#dc2626', tx: '#fca5a5', label: 'On Scene' },
   returning:      { bg: '#042f2e', br: '#0d9488', tx: '#5eead4', label: 'In Service · Returning' },
   on_the_air:     { bg: '#083344', br: '#0891b2', tx: '#67e8f9', label: 'On the Air' },
+  transporting:   { bg: '#3b0764', br: '#a855f7', tx: '#d8b4fe', label: 'Transporting' },
+  at_hospital:    { bg: '#172554', br: '#3b82f6', tx: '#93c5fd', label: 'At Hospital' },
   out_of_service: { bg: '#1f2937', br: '#4b5563', tx: '#9ca3af', label: 'Out of Service' },
 };
 
@@ -1178,30 +1224,85 @@ function TVRadioTicker({ radioFeed = [], pin }) {
 
 // ─── Main TV Display ──────────────────────────────────────────────────────────
 
+const TV_DEVICE_TOKEN_KEY = 'of_tv_device_token';
+function readDeviceToken() {
+  try { return localStorage.getItem(TV_DEVICE_TOKEN_KEY) || ''; } catch (_) { return ''; }
+}
+
 export default function TVDisplay({ pin }) {
   const now = useNow();
   const [error, setError] = useState(null);
+  // Station displays bind to ONE station via a pairing code (migration 0074), the
+  // registered upgrade of the shared PIN. The device token is sent as the
+  // `x-device-token` HEADER — never the query string (a bearer credential must not
+  // leak into logs/Referer). PIN via ?pin= stays as the legacy fallback.
+  const [deviceToken, setDeviceToken] = useState(readDeviceToken);
+  const [pairing, setPairing] = useState(false);
 
-  // Fetch functions using our internal API endpoints
-  const fetchJSON = async (url) => {
-    const res = await fetch(`${API_BASE}${url}`);
+  // One-time pairing: a display is launched at /tv?pair=CODE. Redeem the single-use
+  // code (public route), persist the returned device token, then drop the param.
+  useEffect(() => {
+    let cancelled = false;
+    const code = new URLSearchParams(window.location.search).get('pair');
+    if (!code || readDeviceToken()) return undefined;
+    setPairing(true);
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/station-displays/pair`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!cancelled && res.ok && body?.data?.device_token) {
+          try { localStorage.setItem(TV_DEVICE_TOKEN_KEY, body.data.device_token); } catch (_) { /* private mode */ }
+          setDeviceToken(body.data.device_token);
+          // Strip the one-time code from the URL so a refresh doesn't re-redeem it.
+          const url = new URL(window.location.href);
+          url.searchParams.delete('pair');
+          window.history.replaceState({}, '', url.toString());
+        } else if (!cancelled) {
+          setError('Pairing failed — ask a chief for a fresh code.');
+        }
+      } catch (_) {
+        if (!cancelled) setError('Pairing failed — check the connection and retry.');
+      } finally {
+        if (!cancelled) setPairing(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Fetch helper — optional custom headers (used to carry the device token).
+  const fetchJSON = async (url, headers) => {
+    const res = await fetch(`${API_BASE}${url}`, headers ? { headers } : undefined);
     if (!res.ok) throw new Error(`${res.status}`);
     return res.json();
   };
 
-  // TV data (members, apparatus, run list, active-board, unit statuses) via PIN.
+  // TV data (members, apparatus, run list, active-board, unit statuses).
   // Imperative fetch so the realtime handler can refetch directly (same pattern
   // as the dashboard's load()). Local date so the server finds today's run list.
   const [tvData, setTvData] = useState(null);
   const fetchTvData = useCallback(async () => {
-    if (!pin) return;
+    if (!pin && !deviceToken) return;
     const d = new Date();
     const localDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     try {
-      const data = await fetchJSON(`/api/tv-data?pin=${encodeURIComponent(pin)}&date=${localDate}`);
+      const data = deviceToken
+        ? await fetchJSON(`/api/tv-data?date=${localDate}`, { 'x-device-token': deviceToken })
+        : await fetchJSON(`/api/tv-data?pin=${encodeURIComponent(pin)}&date=${localDate}`);
       setTvData(data); setError(null);
-    } catch (e) { setError(e.message); }
-  }, [pin]);
+    } catch (e) {
+      // A revoked/expired token is unrecoverable on the device — clear it so the
+      // screen falls back to its pairing prompt instead of looping on 401.
+      if (deviceToken && String(e.message) === '401') {
+        try { localStorage.removeItem(TV_DEVICE_TOKEN_KEY); } catch (_) { /* noop */ }
+        setDeviceToken('');
+      }
+      setError(e.message);
+    }
+  }, [pin, deviceToken]);
 
   // Initial load + 15s backstop poll.
   useEffect(() => {
@@ -1215,12 +1316,12 @@ export default function TVDisplay({ pin }) {
   const departmentId = tvData?.station?.departmentId;
   useEffect(() => {
     const topic = unitStatusTopic(departmentId);
-    if (!topic) return undefined;
+    if (!topic || !supabase) return undefined; // no dept or no realtime client → poll backstops
     const channel = supabase
       .channel(topic)
-      .on('broadcast', { event: 'changed' }, () => fetchTvData())
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+      .on('broadcast', { event: 'changed' }, () => { reportMessageReceived(); fetchTvData(); })
+      .subscribe((status) => reportChannelStatus(topic, status));
+    return () => { forgetChannel(topic); supabase.removeChannel(channel); };
   }, [departmentId, fetchTvData]);
 
   // Digital-signage safety: a TV runs 24/7 for days. Browsers accumulate state
@@ -1247,13 +1348,24 @@ export default function TVDisplay({ pin }) {
   const weather = useAutoRefresh(() => fetchJSON('/api/weather/current').catch(() => null), 600000);
 
   // ── Error / loading states ──
-  if (!pin) {
+  if (pairing) {
     return (
       <div style={outerStyle}>
         <div style={centerStyle}>
-          <p style={{ fontSize: 36, color: '#ef4444', fontWeight: 700 }}>No TV PIN provided</p>
+          <p style={{ fontSize: 32, color: '#6b7280' }}>Pairing this display…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!pin && !deviceToken) {
+    return (
+      <div style={outerStyle}>
+        <div style={centerStyle}>
+          <p style={{ fontSize: 36, color: '#ef4444', fontWeight: 700 }}>This display isn’t paired</p>
           <p style={{ fontSize: 22, color: '#6b7280', marginTop: 12 }}>
-            Navigate to <strong>Station Settings → TV Display</strong> to get your PIN and URL.
+            In <strong>Station Settings → Station Displays</strong>, create a display and open its
+            pairing link on this screen, or use a TV PIN.
           </p>
         </div>
       </div>
@@ -1266,9 +1378,13 @@ export default function TVDisplay({ pin }) {
         <div style={centerStyle}>
           <p style={{ fontSize: 36, color: '#ef4444', fontWeight: 700 }}>⚠ Connection Error</p>
           <p style={{ fontSize: 20, color: '#6b7280', marginTop: 12 }}>
-            Check your TV PIN in Station Settings and try again.
+            {deviceToken
+              ? 'This display may have been revoked — ask a chief to re-pair it.'
+              : 'Check your TV PIN in Station Settings and try again.'}
           </p>
-          <p style={{ fontSize: 16, color: '#4b5563', marginTop: 8 }}>PIN: {pin} · Retrying every 15s…</p>
+          <p style={{ fontSize: 16, color: '#4b5563', marginTop: 8 }}>
+            {deviceToken ? 'Paired display' : `PIN: ${pin}`} · Retrying every 15s…
+          </p>
         </div>
       </div>
     );

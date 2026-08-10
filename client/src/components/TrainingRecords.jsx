@@ -117,7 +117,7 @@ function StatCard({ label, value, icon: Icon, color, sub }) {
       <div>
         <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{value}</p>
         <p className="text-sm text-gray-500 dark:text-gray-400">{label}</p>
-        {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+        {sub && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{sub}</p>}
       </div>
     </div>
   );
@@ -294,7 +294,7 @@ export default function TrainingRecords() {
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
               activeTab === id
                 ? 'bg-white dark:bg-gray-900 text-red-700 dark:text-red-300 shadow-sm'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
             }`}
           >
             <Icon size={15} />
@@ -583,7 +583,7 @@ export default function TrainingRecords() {
                           <ExpiryBadge record={rec} />
                         </div>
                       ) : (
-                        <span className="text-gray-400 text-xs">No expiry</span>
+                        <span className="text-gray-500 dark:text-gray-400 text-xs">No expiry</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{rec.hours ?? '—'}</td>

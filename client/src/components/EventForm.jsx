@@ -3,6 +3,7 @@ import { X, CalendarDays, Save } from 'lucide-react';
 import { api } from '../utils/api';
 import { EVENT_TYPES } from '../data/events';
 import DictateTextarea from './DictateTextarea';
+import { openTimePicker } from '../utils/timeInput';
 
 const INPUT = 'w-full border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 bg-white dark:bg-gray-900';
 
@@ -142,10 +143,10 @@ export default function EventForm({ event, onSave, onClose }) {
           {/* Start / End time */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Start Time">
-              <input type="time" className={INPUT} value={form.startTime} onChange={set('startTime')} />
+              <input type="time" onClick={openTimePicker} className={INPUT} value={form.startTime} onChange={set('startTime')} />
             </Field>
             <Field label="End Time">
-              <input type="time" className={INPUT} value={form.endTime} onChange={set('endTime')} />
+              <input type="time" onClick={openTimePicker} className={INPUT} value={form.endTime} onChange={set('endTime')} />
               {errors.endTime && <p className="text-xs text-red-500 mt-1">{errors.endTime}</p>}
             </Field>
           </div>

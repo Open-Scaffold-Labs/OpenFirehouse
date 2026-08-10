@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
 import {
-  INSPECTION_TYPES, INSPECTION_RESULTS, PERMIT_TYPES,
-  PERMIT_STATUSES, VIOLATION_CODES, VIOLATION_STATUSES,
+  INSPECTION_TYPES, INSPECTION_RESULTS, VIOLATION_CODES, VIOLATION_STATUSES,
+  isResolvedViolationStatus,
 } from '../data/fireInspections';
 import { api } from '../utils/api';
 import DictateTextarea from './DictateTextarea';
@@ -42,17 +42,23 @@ function Select({ value, onChange, options, placeholder = 'Select…', }) {
 
 // ─── Inspection Form ──────────────────────────────────────────────────────────
 
-function InspectionForm({ property, properties, onSave, onClose }) {
+// date fields may arrive as ISO timestamps from the API — inputs need YYYY-MM-DD
+const d10 = (v) => (typeof v === 'string' ? v.slice(0, 10) : '');
+
+function InspectionForm({ property, properties, initial, onSave, onClose }) {
+  // `initial` = an existing inspection → EDIT mode (2026-07-11: this was the dead
+  // edit path — the form always sent id:null, so the parent's PATCH branch was
+  // unreachable and no inspection could ever be corrected or completed).
   const [form, setForm] = useState({
-    propertyId:    property?.id ?? '',
-    type:          '',
-    inspectorName: '',
-    scheduledDate: '',
-    completedDate: '',
-    result:        '',
-    violations:    [],
-    followUpDate:  '',
-    notes:         '',
+    propertyId:    initial?.propertyId ?? property?.id ?? '',
+    type:          initial?.type ?? '',
+    inspectorName: initial?.inspectorName ?? '',
+    scheduledDate: d10(initial?.scheduledDate),
+    completedDate: d10(initial?.completedDate),
+    result:        initial?.result ?? '',
+    violations:    Array.isArray(initial?.violations) ? initial.violations : [],
+    followUpDate:  d10(initial?.followUpDate),
+    notes:         initial?.notes ?? '',
   });
   const [members, setMembers] = useState([]);
 
@@ -68,7 +74,10 @@ function InspectionForm({ property, properties, onSave, onClose }) {
   function addViolation() {
     setForm(f => ({
       ...f,
-      violations: [...f.violations, { code: '', status: 'Open', followUpDate: '', correctedDate: '', notes: '' }]
+      // No `severity` — RETIRED 2026-07-14. This default ('Moderate') was the bug: an
+      // inspector who never touched the field still had a grading printed on the notice
+      // served on the owner. The record must never say something the officer didn't say.
+      violations: [...f.violations, { code: '', description: '', status: 'Open', followUpDate: '', correctedDate: '', notes: '' }]
     }));
   }
 
@@ -86,7 +95,7 @@ function InspectionForm({ property, properties, onSave, onClose }) {
 
   function handleSubmit(e) {
     e.preventDefault();
-    onSave({ ...form, id: null });
+    onSave({ ...form, id: initial?.id ?? null });
   }
 
   return (
@@ -147,27 +156,35 @@ function InspectionForm({ property, properties, onSave, onClose }) {
         <div className="space-y-2">
           {form.violations.map((v, idx) => (
             <div key={idx} className="bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-900 rounded-xl p-3 space-y-2">
-              <div className="grid grid-cols-[2fr_1fr_1fr_auto] gap-3 items-start">
+              <div className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-3 items-start">
                 <Field label="Violation Code">
                   <Select value={v.code} onChange={val => updateViolation(idx, 'code', val)}
                     options={VIOLATION_CODES.map(c => ({ code: c.code, label: `${c.code} — ${c.desc}` }))}
                     placeholder="Select violation…" />
                 </Field>
+                {/* Severity RETIRED 2026-07-14 — see data/fireInspections.js. */}
                 <Field label="Status">
                   <Select value={v.status} onChange={val => updateViolation(idx, 'status', val)}
                     options={VIOLATION_STATUSES} />
                 </Field>
-                <Field label={v.status === 'Corrected' ? 'Corrected Date' : 'Follow-Up Date'}>
+                {/* P0 (2026-07-12): resolved-set membership, not a 'Corrected' literal —
+                    the old compare gave Withdrawn (resolved, needs no follow-up) a
+                    Follow-Up Date field. Resolved → date it was closed; open → follow-up. */}
+                <Field label={isResolvedViolationStatus(v.status) ? 'Corrected Date' : 'Follow-Up Date'}>
                   <Input type="date"
-                    value={v.status === 'Corrected' ? v.correctedDate : v.followUpDate}
-                    onChange={val => updateViolation(idx, v.status === 'Corrected' ? 'correctedDate' : 'followUpDate', val)} />
+                    value={isResolvedViolationStatus(v.status) ? v.correctedDate : v.followUpDate}
+                    onChange={val => updateViolation(idx, isResolvedViolationStatus(v.status) ? 'correctedDate' : 'followUpDate', val)} />
                 </Field>
                 <button type="button" onClick={() => removeViolation(idx)} aria-label="Remove violation" className="mt-5 p-1.5 text-gray-400 hover:text-red-600">
                   <Trash2 size={13} />
                 </button>
               </div>
+              <Field label="Description">
+                <Input value={v.description ?? ''} onChange={val => updateViolation(idx, 'description', val)}
+                  placeholder="What was observed (as it should read on the notice)…" />
+              </Field>
               <Field label="Notes">
-                <Input value={v.notes} onChange={val => updateViolation(idx, 'notes', val)} placeholder="Detail the violation…" />
+                <Input value={v.notes} onChange={val => updateViolation(idx, 'notes', val)} placeholder="Internal notes…" />
               </Field>
             </div>
           ))}
@@ -194,116 +211,22 @@ function InspectionForm({ property, properties, onSave, onClose }) {
   );
 }
 
-// ─── Permit Form ──────────────────────────────────────────────────────────────
-
-function PermitForm({ property, properties, onSave, onClose }) {
-  const [form, setForm] = useState({
-    propertyId:   property?.id ?? '',
-    type:         '',
-    permitNumber: '',
-    issuedDate:   '',
-    expiresDate:  '',
-    status:       'Active',
-    issuedBy:     '',
-    fee:          '',
-    conditions:   '',
-    notes:        '',
-  });
-  const [members, setMembers] = useState([]);
-
-  useEffect(() => {
-    api.get('/api/members').then(raw => {
-      const arr = Array.isArray(raw?.data) ? raw.data : Array.isArray(raw) ? raw : [];
-      setMembers(arr.filter(m => m.status !== 'Inactive').sort((a, b) => a.name.localeCompare(b.name)));
-    }).catch(() => {});
-  }, []);
-
-  function set(key) { return val => setForm(f => ({ ...f, [key]: val })); }
-
-  function handleSubmit(e) {
-    e.preventDefault();
-    onSave({ ...form, id: null });
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="p-6 space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Field label="Property" required>
-          <Select value={form.propertyId}
-            onChange={val => setForm(f => ({ ...f, propertyId: parseInt(val) || val }))}
-            options={properties.map(p => ({ code: p.id, label: p.name }))}
-            placeholder={property ? property.name : 'Select property…'} />
-        </Field>
-        <Field label="Permit Type" required>
-          <Select value={form.type} onChange={set('type')} options={PERMIT_TYPES} />
-        </Field>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <Field label="Permit Number" required>
-          <Input value={form.permitNumber} onChange={set('permitNumber')} placeholder="OCC-2026-001" />
-        </Field>
-        <Field label="Status">
-          <Select value={form.status} onChange={set('status')} options={PERMIT_STATUSES} />
-        </Field>
-        <Field label="Issued By">
-          <Select value={form.issuedBy} onChange={set('issuedBy')}
-            options={[
-              ...members.map(m => ({ code: m.name, label: m.name })),
-              { code: 'Other (external)', label: 'Other (external)' }
-            ]} placeholder="Select officer…" />
-        </Field>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <Field label="Issued Date" required>
-          <Input type="date" value={form.issuedDate} onChange={set('issuedDate')} />
-        </Field>
-        <Field label="Expires Date" required>
-          <Input type="date" value={form.expiresDate} onChange={set('expiresDate')} />
-        </Field>
-        <Field label="Fee ($)">
-          <Input type="number" value={form.fee} onChange={set('fee')} min="0" placeholder="0" />
-        </Field>
-      </div>
-      <Field label="Conditions">
-        <DictateTextarea value={form.conditions} onChange={e => set('conditions')(e.target.value)}
-          rows={3} placeholder="Permit conditions and restrictions…" name="conditions" id="permit-conditions" />
-      </Field>
-      <Field label="Notes">
-        <Input value={form.notes} onChange={set('notes')} placeholder="Internal notes…" />
-      </Field>
-      <div className="flex gap-3 pt-2">
-        <button type="submit"
-          className="px-6 py-2.5 text-sm font-bold bg-red-600 text-white rounded-xl hover:bg-red-700">
-          Save Permit
-        </button>
-        <button type="button" onClick={onClose}
-          className="px-6 py-2.5 text-sm font-semibold bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-700">
-          Cancel
-        </button>
-      </div>
-    </form>
-  );
-}
-
 // ─── Wrapper ──────────────────────────────────────────────────────────────────
 
-export default function FireInspectionForm({ mode, property, properties, onSaveInspection, onSavePermit, onClose }) {
+export default function FireInspectionForm({ property, properties, initial, onSaveInspection, onClose }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center overflow-y-auto p-4">
       <div className="bg-white dark:bg-gray-900 rounded-3xl shadow-2xl w-full max-w-2xl my-8">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700 bg-red-700 rounded-t-3xl">
           <h2 className="text-base font-black text-white">
-            {mode === 'permit' ? 'New Permit' : 'New Inspection'}
+            {initial ? 'Edit Inspection' : 'New Inspection'}
             {property && ` — ${property.name}`}
           </h2>
           <button onClick={onClose} aria-label="Close form" className="p-1.5 text-red-200 hover:text-white hover:bg-white/10 rounded-xl">
             <X size={16} />
           </button>
         </div>
-        {mode === 'permit'
-          ? <PermitForm     property={property} properties={properties} onSave={onSavePermit}     onClose={onClose} />
-          : <InspectionForm property={property} properties={properties} onSave={onSaveInspection} onClose={onClose} />
-        }
+        <InspectionForm property={property} properties={properties} initial={initial} onSave={onSaveInspection} onClose={onClose} />
       </div>
     </div>
   );

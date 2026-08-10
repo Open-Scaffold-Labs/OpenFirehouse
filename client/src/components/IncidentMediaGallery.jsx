@@ -89,20 +89,20 @@ export default function IncidentMediaGallery({ incidentId, compact = false }) {
             <button onClick={copyLink} className="text-[10px] font-bold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700">
               {copied ? <><Check size={10} className="inline mr-1" /> Copied</> : <><Copy size={10} className="inline mr-1" /> Copy</>}
             </button>
-            <button onClick={textLink} className="text-[10px] font-bold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/50 px-2 py-1 rounded-lg hover:bg-green-100 dark:hover:bg-green-950/50">
+            <button onClick={textLink} className="text-[10px] font-bold text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/50 px-2 py-1 rounded-lg hover:bg-green-100 dark:hover:bg-green-950/50">
               Text
             </button>
           </div>
         )}
-        {compact && <button onClick={() => setExpanded(false)} aria-label="Collapse scene photos" className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"><X size={12} /></button>}
+        {compact && <button onClick={() => setExpanded(false)} aria-label="Collapse scene photos" className="text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"><X size={12} /></button>}
       </div>
 
       {loading && media.length === 0 ? (
-        <div className="flex justify-center py-4"><Loader2 size={16} className="animate-spin text-gray-400" /></div>
+        <div className="flex justify-center py-4"><Loader2 size={16} className="animate-spin text-gray-500 dark:text-gray-400" /></div>
       ) : media.length === 0 ? (
         <div className="text-center py-4">
           <Image size={20} className="mx-auto text-gray-300 dark:text-gray-600 mb-1" />
-          <p className="text-[10px] text-gray-400">No photos yet. Share the upload link with crew on scene.</p>
+          <p className="text-[10px] text-gray-500 dark:text-gray-400">No photos yet. Share the upload link with crew on scene.</p>
         </div>
       ) : (
         <div className="flex gap-2 p-2 overflow-x-auto">
@@ -136,7 +136,7 @@ export default function IncidentMediaGallery({ incidentId, compact = false }) {
             )}
             <div className="p-3 space-y-1">
               {selectedImage.caption && <p className="text-sm text-white font-bold">{selectedImage.caption}</p>}
-              <div className="flex gap-3 text-[10px] text-gray-400">
+              <div className="flex gap-3 text-[10px] text-gray-500 dark:text-gray-400">
                 <span className="flex items-center gap-1"><User size={9} /> {selectedImage.uploaded_by}</span>
                 <span className="flex items-center gap-1"><Clock size={9} /> {new Date(selectedImage.created_at).toLocaleString()}</span>
                 {selectedImage.latitude && <span className="flex items-center gap-1"><MapPin size={9} /> GPS tagged</span>}

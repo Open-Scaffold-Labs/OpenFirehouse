@@ -235,7 +235,10 @@ export default function ResourceTracker({ compact = false }) {
             {summary.ems > 0 && <span className="text-green-600 dark:text-green-400">{summary.ems} EMS</span>}
             {summary.law > 0 && <span className="text-blue-600 dark:text-blue-400">{summary.law} Law</span>}
             {summary.utility > 0 && <span className="text-amber-600 dark:text-amber-400">{summary.utility} Util</span>}
-            <span className="text-gray-400">| {summary.onScene} on scene</span>
+            {(summary.fire > 0 || summary.ems > 0 || summary.law > 0 || summary.utility > 0) && (
+              <span className="text-gray-300 dark:text-gray-600" aria-hidden="true">|</span>
+            )}
+            <span className="text-gray-400">{summary.onScene} on scene</span>
           </div>
         )}
         {expanded ? <ChevronUp size={12} className="text-gray-400" /> : <ChevronDown size={12} className="text-gray-400" />}

@@ -75,7 +75,7 @@ module.exports = async function seedIncidentAnalysis() {
   for (const analysis of analyses) {
     await pool.query(
       `INSERT INTO nfirs_reports (
-        station_id, "reportDate", "incidentNumber", "reportingArea", status, notes
+        station_id, "reportDate", "incidentNumber", "reportingArea", status, "narrativeStatement"
       )
        VALUES (1, $1, $2, $3, $4, $5)
        ON CONFLICT DO NOTHING`,

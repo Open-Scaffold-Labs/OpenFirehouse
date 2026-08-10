@@ -3,22 +3,25 @@ import {
   Building2, Phone, Mail, Globe, User, MapPin, Hash,
   Shield, Clock, Save, RotateCcw, CheckCircle2, Info, Bell, Tv, Copy,
   Bot, Eye, EyeOff, KeyRound, Briefcase, AlertTriangle, Loader2,
-  Radio, Package, ChevronDown,
+  Radio, Package, ChevronDown, Users, Search,
 } from 'lucide-react';
 import { api } from '../utils/api';
+import RolesPanel from './RolesPanel'; // 5.7 (0113) — department-authored roles
 import { loadSettings, saveSettings, DEFAULT_SETTINGS } from '../data/stationSettings';
 import PushNotificationSetup from './PushNotificationSetup';
 import RankNotificationSettings from './RankNotificationSettings';
 import LicenseInfoCard from './LicenseInfoCard';
+import StationDisplaysPanel from './StationDisplaysPanel';
+import { US_STATES } from '../constants/usStates';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
-const US_STATES = [
-  'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA',
-  'KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ',
-  'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT',
-  'VA','WA','WV','WI','WY','DC',
-];
+// ⚠️ SCOPE NOTE, because this file was edited from a grep once and reverted for it (`7643cc0`):
+// this list is the STATION ADDRESS dropdown and nothing else. The NERIS department picker further
+// down owns a SEPARATE control — an `<input maxLength={2}>` bound to `nerisStateFilter` with its
+// own upper-casing — which never used this array and is untouched here. The list had DC appended
+// after WY (original, 2026-04-17), so DC was selectable but sorted last; it is now alphabetical.
+// Enforced by server/src/tests/clientStateLists.test.js.
 
 const TIMEZONES = [
   { value: 'America/New_York',   label: 'Eastern (ET)'   },
@@ -29,6 +32,37 @@ const TIMEZONES = [
   { value: 'America/Anchorage',  label: 'Alaska (AKT)'   },
   { value: 'Pacific/Honolulu',   label: 'Hawaii (HT)'    },
 ];
+
+// Copy text to the clipboard and report HONESTLY. navigator.clipboard.writeText
+// can hang without ever settling (observed live 2026-08-04: permission granted,
+// document focused, promise never resolved — the old fire-and-forget pattern
+// showed "Copied!" over a clipboard that never changed). Race it with a timeout,
+// then fall back to the legacy textarea + execCommand path. Callers must only
+// show success when this returns true.
+async function copyTextToClipboard(text) {
+  try {
+    await Promise.race([
+      navigator.clipboard.writeText(text),
+      new Promise((_, reject) => setTimeout(reject, 1500, new Error('clipboard write timed out'))),
+    ]);
+    return true;
+  } catch {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+}
 
 // ─── sub-components ───────────────────────────────────────────────────────────
 
@@ -51,7 +85,7 @@ function Field({ label, hint, span, children }) {
     <div className={span === 2 ? 'md:col-span-2' : ''}>
       <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">{label}</label>
       {children}
-      {hint && <p className="text-xs text-gray-400 mt-1">{hint}</p>}
+      {hint && <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{hint}</p>}
     </div>
   );
 }
@@ -86,6 +120,14 @@ export default function StationSettings({ onSettingsChange }) {
   const [careerLoading, setCareerLoading] = useState(true);
   const [careerSaving,  setCareerSaving]  = useState(false);
   const [careerSaved,   setCareerSaved]   = useState(false);
+
+  // ── Unit statusing — rig self-status gate (migration 0040) ──────────────
+  const [rigStatus, setRigStatus] = useState(null);   // null = loading
+  // ── PAR interval default (0062) — the department's SOG cadence ──────────
+  const [parDefault, setParDefault] = useState(null); // null = loading; '' = unset
+  const [parSaving, setParSaving] = useState(false);
+  const [rigDeptId, setRigDeptId] = useState(null);
+  const [rigSaving, setRigSaving] = useState(false);
 
   useEffect(() => {
     api.get('/api/station-config')
@@ -134,6 +176,454 @@ export default function StationSettings({ onSettingsChange }) {
       })
       .catch(() => {});
   }, []);
+
+  // Rig self-status gate — read the current value from the department record.
+  useEffect(() => {
+    api.get('/api/departments/me')
+      .then((d) => {
+        const dept = d?.data;
+        if (dept) {
+          setRigDeptId(dept.id);
+          setRigStatus(dept.allow_rig_status !== false);
+          setTimerCfg(dept.status_timer_config || {});
+          setParDefault(dept.par_interval_default_min ?? '');
+          setMinStaffing(dept.min_staffing_per_shift ?? '');
+          setStaffingEnforcement(dept.staffing_enforcement === 'block' ? 'block' : 'warn');
+          // 0110 — session + idle timeout. Absent → the pre-0110 defaults, so a
+          // department that has never touched these shows exactly what it has.
+          setIdleWeb(dept.session_idle_minutes_web ?? 10080);
+          setIdleMobile(dept.session_idle_minutes_mobile ?? 10080);
+          setMaxHours(dept.session_max_hours ?? 168);
+          setMfaRequired(dept.mfa_required === true); // 0111
+          // NERIS Track B: enrollment surface
+          setNerisId(dept.neris_id || '');
+          setNerisEnabled(dept.neris_submission_enabled === true);
+          api.get(`/api/departments/${dept.id}/neris-info`)
+            .then((info) => setNerisInfo(info?.data || null))
+            .catch(() => setNerisInfo(null));
+          loadNerisRegistry(dept.id);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Status timers (0046): per-status thresholds in minutes; blank = default,
+  // 0 = off. Defaults mirror the server (utils/statusTimers.js).
+  const TIMER_DEFAULTS = { dispatched: 10, enroute: 10, on_scene: 30, transporting: 10, at_hospital: 0, returning: 0, on_the_air: 0, out_of_service: 0 };
+  const TIMER_LABELS = { dispatched: 'Dispatched', enroute: 'En Route', on_scene: 'On Scene', transporting: 'Transporting', at_hospital: 'At Hospital', returning: 'Returning', on_the_air: 'On the Air', out_of_service: 'Out of Service' };
+  const [timerCfg, setTimerCfg] = useState(null); // null = loading
+  const [timerSaving, setTimerSaving] = useState(false);
+
+  // 0110 (Phase 5) — session + idle timeout. Two independent windows because a
+  // browser on a desk and an iPad bolted into an apparatus are not the same
+  // risk: the desk should lock quickly, the rig must not sign a crew out on a
+  // call. Shipped defaults reproduce the pre-0110 behaviour exactly.
+  const SESSION_PRESETS = [
+    { label: '15 minutes', value: 15 },
+    { label: '30 minutes', value: 30 },
+    { label: '1 hour',     value: 60 },
+    { label: '4 hours',    value: 240 },
+    { label: '12 hours',   value: 720 },
+    { label: '24 hours',   value: 1440 },
+    { label: '7 days',     value: 10080 },
+  ];
+  const [idleWeb, setIdleWeb]       = useState(10080);
+  const [idleMobile, setIdleMobile] = useState(10080);
+  const [maxHours, setMaxHours]     = useState(168);
+  const [sessionSaving, setSessionSaving] = useState(false);
+  const [sessionSaved, setSessionSaved]   = useState(false);
+
+  // 0111 (Phase 5) — TOTP MFA. Two surfaces in one panel: the member's OWN
+  // enrolment, and (chief only) the department-wide mandate.
+  const [mfaStatus, setMfaStatus]   = useState(null); // null = loading
+  const [mfaEnroll, setMfaEnroll]   = useState(null); // { secret, otpauthUri, manualEntryKey }
+  const [mfaCode, setMfaCode]       = useState('');
+  const [mfaCodes, setMfaCodes]     = useState(null); // recovery codes, shown ONCE
+  const [mfaBusy, setMfaBusy]       = useState(false);
+  const [mfaErr, setMfaErr]         = useState('');
+  const [mfaRequired, setMfaRequired] = useState(false);
+
+  async function loadMfa() {
+    try { setMfaStatus(await api.get('/api/mfa/status')); }
+    catch { setMfaStatus({ enabled: false, departmentRequired: false }); }
+  }
+  useEffect(() => { loadMfa(); }, []);
+
+  async function startEnroll() {
+    setMfaBusy(true); setMfaErr('');
+    try { setMfaEnroll(await api.post('/api/mfa/enroll', {})); }
+    catch (e) { setMfaErr(e?.message || 'Could not start enrolment.'); }
+    finally { setMfaBusy(false); }
+  }
+
+  async function confirmEnroll() {
+    setMfaBusy(true); setMfaErr('');
+    try {
+      const r = await api.post('/api/mfa/confirm', { code: mfaCode.trim() });
+      setMfaCodes(r.recoveryCodes);   // shown once, never retrievable again
+      setMfaEnroll(null); setMfaCode('');
+      await loadMfa();
+    } catch (e) {
+      setMfaErr(e?.message || 'That code is not right.');
+    } finally { setMfaBusy(false); }
+  }
+
+  async function disableMfa() {
+    const pw = window.prompt('Enter your password to turn off multi-factor authentication:');
+    if (!pw) return;
+    setMfaBusy(true); setMfaErr('');
+    try {
+      await api.post('/api/mfa/disable', { password: pw });
+      setMfaCodes(null);
+      await loadMfa();
+    } catch (e) {
+      setMfaErr(e?.message || 'Could not turn off MFA.');
+    } finally { setMfaBusy(false); }
+  }
+
+  async function toggleMfaRequired() {
+    if (rigDeptId == null) return;
+    const next = !mfaRequired;
+    if (next && !window.confirm(
+      'Require multi-factor authentication for EVERY member of this department?\n\n' +
+      'Members without it will be asked to set it up. Make sure your people can ' +
+      'install an authenticator app before you turn this on.'
+    )) return;
+    setMfaBusy(true);
+    try {
+      await api.patch(`/api/departments/${rigDeptId}`, { mfa_required: next });
+      setMfaRequired(next);
+      await loadMfa();
+    } catch (e) {
+      alert(e?.message || 'Could not change the requirement.');
+    } finally { setMfaBusy(false); }
+  }
+
+  async function saveSessionPolicy() {
+    if (rigDeptId == null || sessionSaving) return;
+    const web = Number(idleWeb), mob = Number(idleMobile), max = Number(maxHours);
+    // Mirrors the server zod schema and the 0110 CHECK constraints. Validating
+    // here is a courtesy; the server is the control.
+    if (![web, mob].every((n) => Number.isInteger(n) && n >= 5 && n <= 10080)) {
+      alert('Idle timeout must be between 5 minutes and 7 days.');
+      return;
+    }
+    if (!Number.isInteger(max) || max < 1 || max > 168) {
+      alert('Maximum session length must be between 1 and 168 hours.');
+      return;
+    }
+    setSessionSaving(true);
+    try {
+      await api.patch(`/api/departments/${rigDeptId}`, {
+        session_idle_minutes_web: web,
+        session_idle_minutes_mobile: mob,
+        session_max_hours: max,
+      });
+      setSessionSaved(true);
+      setTimeout(() => setSessionSaved(false), 2000);
+    } catch (e) {
+      alert(e?.message || 'Could not save session settings.');
+    } finally {
+      setSessionSaving(false);
+    }
+  }
+
+  // 0075 — per-department minimum-staffing config + warn/block enforcement.
+  const [minStaffing, setMinStaffing] = useState('');
+  const [staffingEnforcement, setStaffingEnforcement] = useState('warn');
+  const [staffingSaving, setStaffingSaving] = useState(false);
+  const [staffingSaved, setStaffingSaved] = useState(false);
+
+  async function saveStaffing() {
+    if (rigDeptId == null || staffingSaving) return;
+    let min = null;
+    if (minStaffing !== '' && minStaffing !== null) {
+      const n = Number(minStaffing);
+      if (!Number.isInteger(n) || n < 0 || n > 100) {
+        alert('Minimum staffing must be a whole number 0–100, or blank for none.');
+        return;
+      }
+      min = n;
+    }
+    setStaffingSaving(true);
+    try {
+      await api.patch(`/api/departments/${rigDeptId}`, {
+        min_staffing_per_shift: min,
+        staffing_enforcement: staffingEnforcement === 'block' ? 'block' : 'warn',
+      });
+      setMinStaffing(min ?? '');
+      setStaffingSaved(true);
+      setTimeout(() => setStaffingSaved(false), 2000);
+    } catch (err) {
+      alert('Failed to update minimum staffing: ' + (err.message || 'Unknown error'));
+    } finally {
+      setStaffingSaving(false);
+    }
+  }
+
+  async function saveTimerCfg() {
+    if (rigDeptId == null || timerSaving) return;
+    const cfg = {};
+    for (const [k, v] of Object.entries(timerCfg || {})) {
+      if (v === '' || v === null || v === undefined) continue;
+      const n = Number(v);
+      if (!Number.isInteger(n) || n < 0 || n > 1440) {
+        alert(`${TIMER_LABELS[k] || k}: threshold must be 0–1440 minutes (0 = off).`);
+        return;
+      }
+      cfg[k] = n;
+    }
+    setTimerSaving(true);
+    try {
+      await api.patch(`/api/departments/${rigDeptId}`, { status_timer_config: Object.keys(cfg).length ? cfg : null });
+      setTimerCfg(cfg);
+    } catch (err) {
+      alert('Failed to update status timers: ' + (err.message || 'Unknown error'));
+    } finally {
+      setTimerSaving(false);
+    }
+  }
+
+  // 0062 — save the department's default PAR interval. Blank = NULL = no timer
+  // until command sets one (never impose the folklore-20 on anyone).
+  async function saveParDefault() {
+    if (rigDeptId == null || parSaving) return;
+    let value = null;
+    if (parDefault !== '' && parDefault !== null) {
+      const n = Number(parDefault);
+      if (!Number.isInteger(n) || n < 1 || n > 180) {
+        alert('Default PAR interval must be 1–180 minutes, or blank for none.');
+        return;
+      }
+      value = n;
+    }
+    setParSaving(true);
+    try {
+      await api.patch(`/api/departments/${rigDeptId}`, { par_interval_default_min: value });
+      setParDefault(value ?? '');
+    } catch (err) {
+      alert('Failed to update the PAR interval default: ' + (err.message || 'Unknown error'));
+    } finally {
+      setParSaving(false);
+    }
+  }
+
+  // ── NERIS Track B: entity id + submission gate + connection check ──────────
+  const [nerisId, setNerisId] = useState(null);          // null = loading
+  const [nerisEnabled, setNerisEnabled] = useState(false);
+  const [nerisInfo, setNerisInfo] = useState(null);       // { client_id, configured, environment }
+  const [nerisSaving, setNerisSaving] = useState(false);
+  const [nerisCheck, setNerisCheck] = useState(null);     // last probe result
+  const [nerisChecking, setNerisChecking] = useState(false);
+  const [nerisIdCopied, setNerisIdCopied] = useState(false); // Client ID copy feedback
+
+  // ── NERIS department lookup (picker) ───────────────────────────────────────
+  // A chief should never have to hand-type an FD######## id. A transcription slip
+  // either fails at submit or resolves to ANOTHER department's national record, so
+  // the id is RESOLVED from NERIS and the chief confirms a name and street address
+  // they recognize. Manual entry stays as a first-class fallback: a department that
+  // registered with NERIS minutes ago may not be searchable yet, and search depends
+  // on a third party being reachable.
+  const NERIS_SEARCH_MIN_Q = 3;
+  const [nerisQuery, setNerisQuery] = useState('');
+  const [nerisStateFilter, setNerisStateFilter] = useState('');
+  const [nerisResults, setNerisResults] = useState(null);   // null = never searched
+  const [nerisSearching, setNerisSearching] = useState(false);
+  const [nerisSearchError, setNerisSearchError] = useState(null);
+  const [nerisManual, setNerisManual] = useState(false);
+  const [nerisPicked, setNerisPicked] = useState(null);      // the row the chief chose
+  const [nerisActiveIdx, setNerisActiveIdx] = useState(-1);  // keyboard cursor in the result list
+
+  // The list scrolls, so arrowing the cursor onto a row below the fold would move it
+  // somewhere the chief cannot see — a keyboard user would lose their place entirely.
+  // Keep the active option in view. 'nearest' so it never jumps when already visible.
+  useEffect(() => {
+    if (nerisActiveIdx < 0) return;
+    const el = document.getElementById(`neris-opt-${nerisActiveIdx}`);
+    if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest' });
+  }, [nerisActiveIdx]);
+
+  // Debounced so a chief typing "Maplewood" costs ONE outbound call to NERIS, not
+  // nine. FSRI's integration guidance warns anomalous traffic risks blocking.
+  useEffect(() => {
+    const q = nerisQuery.trim();
+    if (rigDeptId == null || nerisManual) return undefined;
+    if (q.length < NERIS_SEARCH_MIN_Q) { setNerisResults(null); setNerisSearchError(null); return undefined; }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      setNerisSearching(true);
+      setNerisSearchError(null);
+      try {
+        const qs = new URLSearchParams({ q });
+        if (/^[A-Za-z]{2}$/.test(nerisStateFilter.trim())) qs.set('state', nerisStateFilter.trim().toUpperCase());
+        const res = await api.get(`/api/departments/${rigDeptId}/neris-entity-search?${qs.toString()}`);
+        if (cancelled) return;
+        setNerisResults(res?.data || { results: [], total: 0, truncated: false });
+        setNerisActiveIdx(-1);   // a new result set must never inherit the old cursor
+      } catch (err) {
+        if (cancelled) return;
+        setNerisResults(null);
+        // Honest, distinguishable failures — never a generic "something went wrong".
+        setNerisSearchError(err?.message || 'Lookup failed.');
+      } finally {
+        if (!cancelled) setNerisSearching(false);
+      }
+    }, 400);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [nerisQuery, nerisStateFilter, rigDeptId, nerisManual]);
+
+  // Selecting a result saves through the SAME PATCH the manual field uses — one
+  // door for this write — then immediately probes so the chief sees NERIS confirm
+  // the department by name rather than trusting a code they can't read.
+  async function pickNerisEntity(row) {
+    if (!row || !row.neris_id || rigDeptId == null || nerisSaving) return;
+    setNerisSaving(true);
+    try {
+      await api.patch(`/api/departments/${rigDeptId}`, { neris_id: row.neris_id });
+      setNerisId(row.neris_id);
+      setNerisPicked(row);
+      setNerisResults(null);
+      setNerisQuery('');
+      setNerisCheck(null);
+    } catch (err) {
+      alert('Failed to save the NERIS entity ID: ' + (err.message || 'Unknown error'));
+    } finally { setNerisSaving(false); }
+    // Deliberately NO auto-probe here. NERIS only lets us read an entity once that
+    // department has enrolled us, and enrollment happens AFTER this step, in their
+    // portal. Auto-checking meant picking your own department correctly was
+    // immediately answered with a failure (verified live 2026-08-03) — the worst
+    // possible moment to show one. The card tells them the next step instead, and
+    // Check connection is right there for after they've enrolled.
+  }
+
+  async function saveNerisId() {
+    if (rigDeptId == null || nerisSaving) return;
+    const v = String(nerisId || '').trim().toUpperCase();
+    if (v !== '' && !/^[A-Z]{2}\d{8}$/.test(v)) {
+      alert('NERIS entity ID must be two letters + 8 digits (e.g. FD12345678), or blank to clear.');
+      return;
+    }
+    setNerisSaving(true);
+    try {
+      await api.patch(`/api/departments/${rigDeptId}`, { neris_id: v });
+      setNerisId(v);
+      setNerisCheck(null);
+    } catch (err) {
+      alert('Failed to save the NERIS entity ID: ' + (err.message || 'Unknown error'));
+    } finally { setNerisSaving(false); }
+  }
+
+  async function toggleNerisEnabled() {
+    if (rigDeptId == null || nerisSaving) return;
+    const next = !nerisEnabled;
+    if (next && !String(nerisId || '').trim()) {
+      alert('Set your NERIS entity ID first — submissions need to know which department they belong to.');
+      return;
+    }
+    setNerisSaving(true);
+    try {
+      await api.patch(`/api/departments/${rigDeptId}`, { neris_submission_enabled: next });
+      setNerisEnabled(next);
+    } catch (err) {
+      alert('Failed to update NERIS submission: ' + (err.message || 'Unknown error'));
+    } finally { setNerisSaving(false); }
+  }
+
+  // ── NERIS station/unit registration (SR) ───────────────────────────────────
+  const [nerisRegistry, setNerisRegistry] = useState(null);   // { stations, apparatus } | null
+  const [regBusy, setRegBusy] = useState(null);               // 'station-3' | 'unit-7' | null
+  const [regError, setRegError] = useState(null);
+  const [unitStaffing, setUnitStaffing] = useState({});       // apparatusId → input value
+
+  async function loadNerisRegistry(deptId) {
+    try {
+      const res = await api.get(`/api/neris-registry/overview`);
+      const data = res?.data;
+      if (data) {
+        setNerisRegistry(data);
+        setUnitStaffing((cur) => {
+          const next = { ...cur };
+          for (const a of data.apparatus) {
+            if (next[a.id] === undefined && a.staffing_prefill != null) next[a.id] = String(a.staffing_prefill);
+          }
+          return next;
+        });
+      }
+    } catch { setNerisRegistry(null); }
+  }
+
+  async function registerHouse(id) {
+    setRegBusy(`station-${id}`); setRegError(null);
+    try {
+      await api.post(`/api/neris-registry/stations/${id}/register`, {});
+      await loadNerisRegistry();
+    } catch (err) { setRegError(err.message || 'Station registration failed.'); }
+    finally { setRegBusy(null); }
+  }
+
+  async function registerRig(id) {
+    const staffing = Number(unitStaffing[id]);
+    if (!Number.isInteger(staffing) || staffing < 0) {
+      setRegError('Enter the unit\'s minimum staffing (a whole number, 0 or more) before registering.');
+      return;
+    }
+    setRegBusy(`unit-${id}`); setRegError(null);
+    try {
+      await api.post(`/api/neris-registry/apparatus/${id}/register`, { staffing });
+      await loadNerisRegistry();
+    } catch (err) { setRegError(err.message || 'Unit registration failed.'); }
+    finally { setRegBusy(null); }
+  }
+
+  // Explicit re-push of local edits to an already-registered record (the
+  // market's manual "Update in NERIS" pattern — nothing auto-syncs).
+  async function pushHouseUpdate(id) {
+    setRegBusy(`station-${id}`); setRegError(null);
+    try {
+      await api.post(`/api/neris-registry/stations/${id}/push-update`, {});
+      await loadNerisRegistry();
+    } catch (err) { setRegError(err.message || 'Station update failed.'); }
+    finally { setRegBusy(null); }
+  }
+  async function pushRigUpdate(id) {
+    const staffing = Number(unitStaffing[id]);
+    if (!Number.isInteger(staffing) || staffing < 0) {
+      setRegError('Enter the unit\'s minimum staffing before pushing an update.');
+      return;
+    }
+    setRegBusy(`unit-${id}`); setRegError(null);
+    try {
+      await api.post(`/api/neris-registry/apparatus/${id}/push-update`, { staffing });
+      await loadNerisRegistry();
+    } catch (err) { setRegError(err.message || 'Unit update failed.'); }
+    finally { setRegBusy(null); }
+  }
+
+  async function runNerisCheck() {
+    if (rigDeptId == null || nerisChecking) return;
+    setNerisChecking(true);
+    setNerisCheck(null);
+    try {
+      const res = await api.post(`/api/departments/${rigDeptId}/neris-check`, {});
+      setNerisCheck(res?.data || { ok: false, reason: 'no response' });
+    } catch (err) {
+      setNerisCheck({ ok: false, reason: err.message || 'check failed' });
+    } finally { setNerisChecking(false); }
+  }
+
+  async function toggleRigStatus() {
+    if (rigDeptId == null || rigSaving) return;
+    const next = !rigStatus;
+    setRigSaving(true);
+    try {
+      await api.patch(`/api/departments/${rigDeptId}`, { allow_rig_status: next });
+      setRigStatus(next);
+    } catch (err) {
+      alert('Failed to update unit statusing: ' + (err.message || 'Unknown error'));
+    } finally {
+      setRigSaving(false);
+    }
+  }
 
   function set(key, val) {
     setForm((f) => ({ ...f, [key]: val }));
@@ -215,9 +705,9 @@ export default function StationSettings({ onSettingsChange }) {
         <Shield size={20} className="text-white opacity-80 shrink-0" />
         <div>
           <p className="text-white font-bold text-base leading-tight">{displayName || 'Your Station Name'}</p>
-          <p className="text-red-200 text-xs">{form.address ? `${form.address}, ${form.city}, ${form.state} ${form.zip}` : 'Address not set'}</p>
+          <p className="text-red-100 text-xs">{form.address ? `${form.address}, ${form.city}, ${form.state} ${form.zip}` : 'Address not set'}</p>
         </div>
-        <span className="ml-auto text-red-300 text-xs italic">Top bar preview</span>
+        <span className="ml-auto text-red-100 text-xs italic">Top bar preview</span>
       </div>
 
       {/* ── unsaved warning ── */}
@@ -268,7 +758,8 @@ export default function StationSettings({ onSettingsChange }) {
               onChange={(e) => set('state', e.target.value)}
               className="w-full border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 bg-white dark:bg-gray-900 dark:text-gray-100"
             >
-              {US_STATES.map((s) => <option key={s}>{s}</option>)}
+              {/* Value stays the 2-letter code — prod stations hold codes ('NJ') or empty. */}
+              {US_STATES.map((s) => <option key={s.code} value={s.code}>{s.code}</option>)}
             </select>
           </Field>
           <Field label="ZIP Code">
@@ -385,11 +876,49 @@ export default function StationSettings({ onSettingsChange }) {
         </div>
       </div>
 
-      {/* ── TV Display — All Device Options ── */}
+      {/* ── Minimum staffing (per-department, warn/block) ── */}
+      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+        <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-950">
+          <Users size={16} className="text-red-600 dark:text-red-400" />
+          <h2 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Minimum Staffing</h2>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            The per-shift minimum used when reviewing leave. When an approval would drop a shift
+            below this, <strong>Warn</strong> flags it for the approver (the norm); <strong>Block</strong>
+            refuses the approval until coverage is resolved. Leave blank to use the default (3).
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+            <label className="block">
+              <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Minimum per shift</span>
+              <input type="number" min="0" max="100" value={minStaffing}
+                onChange={(e) => setMinStaffing(e.target.value)} placeholder="3"
+                className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 dark:bg-gray-900" />
+            </label>
+            <label className="block">
+              <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">When below minimum</span>
+              <select value={staffingEnforcement} onChange={(e) => setStaffingEnforcement(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 dark:bg-gray-900">
+                <option value="warn">Warn (recommended)</option>
+                <option value="block">Block approval</option>
+              </select>
+            </label>
+            <button type="button" onClick={saveStaffing} disabled={staffingSaving}
+              className="flex items-center justify-center gap-1.5 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white px-3 py-2 rounded-lg text-sm font-semibold transition-colors">
+              {staffingSaving ? 'Saving…' : staffingSaved ? 'Saved ✓' : 'Save'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Station Displays (paired devices, per-station) ── */}
+      <StationDisplaysPanel />
+
+      {/* ── TV Display — All Device Options (legacy shared PIN) ── */}
       <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
         <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-950">
           <Tv size={16} className="text-red-600 dark:text-red-400" />
-          <h2 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">TV Display Setup</h2>
+          <h2 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">TV Display Setup (shared PIN)</h2>
         </div>
         <div className="px-6 py-5 space-y-5">
           <p className="text-sm text-gray-600 dark:text-gray-300">
@@ -410,10 +939,10 @@ export default function StationSettings({ onSettingsChange }) {
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
-                    onClick={() => {
-                      navigator.clipboard.writeText(`${window.location.origin}/tv?pin=${tvPin}`);
-                      setCopied(true);
-                      setTimeout(() => setCopied(false), 2000);
+                    onClick={async () => {
+                      const ok = await copyTextToClipboard(`${window.location.origin}/tv?pin=${tvPin}`);
+                      setCopied(ok); // only claim "Copied!" when a copy path actually succeeded
+                      if (ok) setTimeout(() => setCopied(false), 2000);
                     }}
                     className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white px-3 py-2 rounded-lg text-xs font-semibold transition-colors"
                   >
@@ -791,7 +1320,7 @@ export default function StationSettings({ onSettingsChange }) {
               </details>
             </div>
           ) : (
-            <p className="text-xs text-gray-400">Initializing TV PIN…</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Initializing TV PIN…</p>
           )}
         </div>
       </div>
@@ -828,9 +1357,9 @@ export default function StationSettings({ onSettingsChange }) {
           {/* API Key for station hardware */}
           <div className="space-y-2">
             <label className="text-xs font-bold text-gray-700 dark:text-gray-300">Radio Ingest API Key</label>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Station hardware uses this key to authenticate when sending transcribed radio messages. The Pi sends POST requests to <code className="bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded text-[11px]">/api/radio-ingest</code> with header <code className="bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded text-[11px]">X-Radio-API-Key</code>.</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Station hardware uses this key to authenticate when sending transcribed radio messages. The Pi sends POST requests to <code className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 px-1.5 py-0.5 rounded text-[11px]">/api/radio-ingest</code> with header <code className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 px-1.5 py-0.5 rounded text-[11px]">X-Radio-API-Key</code>.</p>
             <div className="bg-gray-900 rounded-lg p-3 font-mono text-sm text-green-400 flex items-center justify-between gap-2">
-              <span className="text-gray-500 dark:text-gray-400 select-none">Key: </span>
+              <span className="text-gray-400 select-none">Key: </span>
               <span className="flex-1 select-all">Configure in Radio Config API (PUT /api/radio/config)</span>
             </div>
           </div>
@@ -951,7 +1480,7 @@ export default function StationSettings({ onSettingsChange }) {
                           <option key={d} value={d}>{d} days{d === 7 ? ' (standard week)' : d === 28 ? ' (most common for fire)' : ''}</option>
                         ))}
                       </select>
-                      <p className="text-[10px] text-gray-400 mt-1">FLSA §207(k) allows 7–28 day periods</p>
+                      <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">FLSA §207(k) allows 7–28 day periods</p>
                     </div>
 
                     <div>
@@ -964,7 +1493,7 @@ export default function StationSettings({ onSettingsChange }) {
                         onChange={e => setCareerConfig(c => ({ ...c, flsa_ot_threshold: parseFloat(e.target.value) || 40 }))}
                         className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-300 dark:text-gray-100"
                       />
-                      <p className="text-[10px] text-gray-400 mt-1">
+                      <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">
                         FLSA max: {careerConfig.flsa_work_period === 28 ? '212' : careerConfig.flsa_work_period === 14 ? '106' : '53'}h for {careerConfig.flsa_work_period}-day period
                       </p>
                     </div>
@@ -977,7 +1506,7 @@ export default function StationSettings({ onSettingsChange }) {
                         onChange={e => setCareerConfig(c => ({ ...c, flsa_period_start: e.target.value }))}
                         className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-300 dark:text-gray-100"
                       />
-                      <p className="text-[10px] text-gray-400 mt-1">The date your first FLSA work period began</p>
+                      <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">The date your first FLSA work period began</p>
                     </div>
                   </div>
 
@@ -1008,6 +1537,733 @@ export default function StationSettings({ onSettingsChange }) {
               </div>
             </>
           )}
+        </div>
+      </div>
+
+      {/* ── 5.7 (0113) — department-authored roles ── */}
+      <RolesPanel />
+
+      {/* ── Sign-in security — session + idle timeout (migration 0110) ── */}
+      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+        <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-950">
+          <Shield size={16} className="text-red-600 dark:text-red-400" />
+          <h2 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Sign-in Security</h2>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            How long a signed-in session survives without activity. Browsers and mounted apparatus
+            devices get <span className="font-semibold">separate</span> windows on purpose — a browser on
+            a desk in a public hallway should lock quickly; an iPad bolted into a rig must not sign a
+            crew out mid-call. Changes take effect at each member&rsquo;s next sign-in or token refresh
+            and never end a session already underway. (Chief-only setting.)
+          </p>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label htmlFor="idle-web" className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
+                Browser idle timeout
+              </label>
+              <select
+                id="idle-web"
+                value={idleWeb}
+                onChange={(e) => setIdleWeb(Number(e.target.value))}
+                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+              >
+                {SESSION_PRESETS.map((p) => (
+                  <option key={p.value} value={p.value}>{p.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="idle-mobile" className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
+                Apparatus &amp; phone app idle timeout
+              </label>
+              <select
+                id="idle-mobile"
+                value={idleMobile}
+                onChange={(e) => setIdleMobile(Number(e.target.value))}
+                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+              >
+                {SESSION_PRESETS.map((p) => (
+                  <option key={p.value} value={p.value}>{p.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor="max-hours" className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
+              Maximum session length (hours, 1&ndash;168)
+            </label>
+            <input
+              id="max-hours"
+              type="number"
+              min={1}
+              max={168}
+              value={maxHours}
+              onChange={(e) => setMaxHours(e.target.value)}
+              className="w-full sm:w-48 px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+            />
+            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+              A hard ceiling on one sign-in, no matter how active. Reaching it always requires signing in again.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={saveSessionPolicy}
+            disabled={sessionSaving}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border bg-red-600 text-white border-red-600 disabled:opacity-60"
+          >
+            {sessionSaving ? <Loader2 size={14} className="animate-spin" /> : <Shield size={14} />}
+            {sessionSaved ? 'Saved' : 'Save sign-in security'}
+          </button>
+
+          {/* ── 0111 — Multi-factor authentication ── */}
+          <div className="pt-5 mt-1 border-t border-gray-100 dark:border-gray-800 space-y-4">
+            <div>
+              <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300">
+                Multi-factor authentication
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                A 6-digit code from an authenticator app, on top of your password. Codes are
+                generated on your phone and work with no signal.
+              </p>
+              <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400 mt-3">
+                For your account only
+              </p>
+            </div>
+
+            {mfaErr && (
+              <p className="text-xs font-medium text-red-600 dark:text-red-400">{mfaErr}</p>
+            )}
+
+            {/* Recovery codes — shown exactly once, immediately after enrolling. */}
+            {mfaCodes && (
+              <div className="rounded-xl border-2 border-amber-400 bg-amber-50 dark:bg-amber-950/30 p-4 space-y-2">
+                <p className="text-xs font-bold text-amber-900 dark:text-amber-200">
+                  Save these recovery codes now — this is the only time they are shown.
+                </p>
+                <p className="text-[11px] text-amber-800 dark:text-amber-300">
+                  If you lose your phone, these are the only way back into your account. Print them
+                  or put them somewhere safe. Each one works once.
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 pt-1">
+                  {mfaCodes.map((c) => (
+                    <code key={c} className="text-xs font-mono bg-white dark:bg-gray-900 rounded px-2 py-1 text-center text-gray-900 dark:text-gray-100">
+                      {c}
+                    </code>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMfaCodes(null)}
+                  className="text-[11px] font-semibold text-amber-900 dark:text-amber-200 underline"
+                >
+                  I have saved them
+                </button>
+              </div>
+            )}
+
+            {/* Enrolment in progress */}
+            {mfaEnroll ? (
+              <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+                <p className="text-xs text-gray-600 dark:text-gray-300">
+                  Add this key to your authenticator app, then enter the code it shows to finish.
+                </p>
+                <div>
+                  <span className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">Setup key</span>
+                  <code className="block text-sm font-mono bg-gray-100 dark:bg-gray-800 rounded-lg px-3 py-2 break-all text-gray-900 dark:text-gray-100">
+                    {mfaEnroll.manualEntryKey}
+                  </code>
+                </div>
+                <div className="flex flex-wrap items-end gap-2">
+                  <div>
+                    <label htmlFor="mfa-confirm" className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 mb-1">
+                      Code from your app
+                    </label>
+                    <input
+                      id="mfa-confirm"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      value={mfaCode}
+                      onChange={(e) => setMfaCode(e.target.value)}
+                      placeholder="000000"
+                      className="w-40 px-3 py-2 text-sm font-mono tracking-widest rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={confirmEnroll}
+                    disabled={mfaBusy || mfaCode.trim().length < 6}
+                    className="px-4 py-2 rounded-xl text-sm font-semibold bg-red-600 text-white disabled:opacity-50"
+                  >
+                    {mfaBusy ? 'Checking…' : 'Turn on'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setMfaEnroll(null); setMfaCode(''); setMfaErr(''); }}
+                    className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : mfaStatus === null ? (
+              <div className="flex items-center gap-2 text-gray-400 text-sm">
+                <Loader2 size={14} className="animate-spin" /> Loading…
+              </div>
+            ) : mfaStatus.enabled ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300">
+                  <Shield size={13} /> ON for your account
+                </span>
+                <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                  {mfaStatus.recoveryCodesRemaining} recovery code{mfaStatus.recoveryCodesRemaining === 1 ? '' : 's'} left
+                </span>
+                <button
+                  type="button"
+                  onClick={disableMfa}
+                  disabled={mfaBusy || mfaStatus.departmentRequired}
+                  title={mfaStatus.departmentRequired ? 'Your department requires MFA' : undefined}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50"
+                >
+                  Turn off
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={startEnroll}
+                  disabled={mfaBusy}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-red-600 text-white disabled:opacity-60"
+                >
+                  {mfaBusy ? <Loader2 size={14} className="animate-spin" /> : <Shield size={14} />}
+                  Set up on this account
+                </button>
+                {mfaStatus.departmentRequired && (
+                  <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                    Your department requires this.
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Chief-only: the department-wide mandate.
+                Design-critique fix (live walk, 2026-07-27): this sat inches below
+                "Set up on this account" with no scope cue, so a chief could mistake
+                a personal action for a department-wide one. The two are now visually
+                and verbally separated. */}
+            <div className="pt-4 mt-2 border-t-2 border-gray-200 dark:border-gray-700">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">
+                For the whole department
+              </p>
+              <button
+                type="button"
+                onClick={toggleMfaRequired}
+                disabled={mfaBusy || rigDeptId == null}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ${
+                  mfaRequired
+                    ? 'bg-red-600 text-white border-red-600'
+                    : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700'
+                }`}
+              >
+                <Shield size={14} />
+                {mfaRequired
+                  ? 'Required for every member'
+                  : 'Not required department-wide'}
+              </button>
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+                Turning this on asks every member to set up an authenticator app. Nobody is locked
+                out of a session they are already in. (Chief-only setting.)
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Unit Statusing — rig self-status gate (migration 0040) ── */}
+      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+        <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-950">
+          <Shield size={16} className="text-red-600 dark:text-red-400" />
+          <h2 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Unit Statusing</h2>
+        </div>
+        <div className="px-6 py-5 space-y-3">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            When ON, a rig may status <span className="font-semibold">its own unit</span> from the cab
+            (En Route / On Scene / Back in Service / In Quarters, two-tap confirm on the mounted iPad).
+            Dispatch and command can always status any unit and retain override. Statuses are only ever
+            changed by a person — never inferred from GPS, geofences, or AI. Turn this OFF to run strict
+            dispatch-only statusing. (Chief-only setting.)
+          </p>
+          {rigStatus === null ? (
+            <div className="flex items-center gap-2 text-gray-400 text-sm">
+              <Loader2 size={14} className="animate-spin" /> Loading…
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={toggleRigStatus}
+              disabled={rigSaving}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ${
+                rigStatus
+                  ? 'bg-red-600 text-white border-red-600'
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700'
+              }`}
+            >
+              {rigSaving ? <Loader2 size={14} className="animate-spin" /> : <Shield size={14} />}
+              {rigStatus ? 'Rig self-statusing ENABLED (own unit only)' : 'Rig self-statusing OFF (dispatch-only)'}
+            </button>
+          )}
+
+          {/* PAR interval default (0062) */}
+          <div className="pt-4 border-t border-gray-100 dark:border-gray-800">
+            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
+              Default PAR interval (minutes)
+            </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+              Your SOG's PAR cadence. When set, a newly activated Command Board starts its PAR timer
+              at this interval automatically; command can still change it per incident. Blank = no
+              timer until command sets one. (There is no NFPA-mandated interval — this is your
+              department's own SOG number.)
+            </p>
+            {parDefault === null ? (
+              <div className="flex items-center gap-2 text-gray-400 text-sm">
+                <Loader2 size={14} className="animate-spin" /> Loading…
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <input
+                  type="number" min="1" max="180" step="1" placeholder="none"
+                  value={parDefault}
+                  onChange={(e) => setParDefault(e.target.value)}
+                  className="w-24 px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 dark:text-gray-100"
+                  aria-label="Default PAR interval in minutes"
+                />
+                <button
+                  type="button"
+                  onClick={saveParDefault}
+                  disabled={parSaving}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                >
+                  {parSaving ? <Loader2 size={14} className="animate-spin" /> : null}
+                  Save
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Status timers (0046) */}
+          <div className="pt-4 border-t border-gray-100 dark:border-gray-800">
+            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
+              Status timers (minutes)
+            </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+              A unit sitting in a status past its threshold flashes on the board with a
+              <span className="font-semibold"> Status check</span> button — radio the rig, confirm,
+              click; the check is recorded and the timer resets. Blank = default shown, 0 = off.
+              Nothing ever changes a status automatically.
+            </p>
+            {timerCfg === null ? (
+              <div className="flex items-center gap-2 text-gray-400 text-sm">
+                <Loader2 size={14} className="animate-spin" /> Loading…
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-end gap-3">
+                {Object.keys(TIMER_DEFAULTS).map((k) => (
+                  <div key={k}>
+                    <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-0.5">{TIMER_LABELS[k]}</label>
+                    <input
+                      type="number" min="0" max="1440"
+                      placeholder={String(TIMER_DEFAULTS[k])}
+                      value={timerCfg[k] ?? ''}
+                      onChange={(e) => setTimerCfg((c) => ({ ...c, [k]: e.target.value }))}
+                      className="w-20 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 px-2 py-1.5"
+                    />
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  disabled={timerSaving}
+                  onClick={saveTimerCfg}
+                  className="px-3 py-2 rounded-lg text-sm font-semibold bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-700 hover:border-gray-300 disabled:opacity-50"
+                >
+                  {timerSaving ? 'Saving…' : 'Save timers'}
+                </button>
+              </div>
+            )}
+          </div>
+
+        </div>
+      </div>
+
+      {/* ── NERIS Reporting (Track B) — entity id, submission gate, enrollment ── */}
+      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+        <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-950">
+          <Shield size={16} className="text-sky-600 dark:text-sky-400" />
+          <h2 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">NERIS Reporting</h2>
+          {nerisInfo && (
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+              nerisInfo.environment === 'live'
+                ? 'bg-green-100 dark:bg-green-950/50 text-green-700 dark:text-green-300'
+                : 'bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300'
+            }`}>
+              {nerisInfo.environment === 'live' ? 'LIVE environment' : 'TEST environment'}
+            </span>
+          )}
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            When enabled, an <span className="font-semibold">approved</span> incident report submits to
+            NERIS automatically (and re-submits when an approved report is edited). Rejections and
+            failures surface on the report itself; retries run hourly. Submission is OFF by default —
+            nothing leaves this system until you turn it on. (Chief-only.)
+          </p>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">Your department in NERIS</label>
+
+            {nerisId === null ? (
+              <div className="flex items-center gap-2 text-gray-400 text-sm"><Loader2 size={14} className="animate-spin" /> Loading…</div>
+            ) : String(nerisId).trim() && !nerisManual ? (
+              /* ── Already connected: show WHO, not just a code the chief can't read ── */
+              <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-950 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
+                      {nerisPicked?.name || nerisCheck?.name || 'Entity set'}
+                    </p>
+                    {(nerisPicked?.address_line_1 || nerisPicked?.city) && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        {[nerisPicked.address_line_1, [nerisPicked.city, nerisPicked.state].filter(Boolean).join(', ')]
+                          .filter(Boolean).join(' · ')}
+                      </p>
+                    )}
+                    <p className="mt-1 text-xs font-mono text-gray-600 dark:text-gray-300">{nerisId}</p>
+                    {!nerisCheck?.ok && (
+                      <p className="mt-1.5 text-xs text-gray-600 dark:text-gray-300">
+                        <span className="font-semibold">Next:</span> do the one-time enrollment below in the NERIS portal, then Check connection.
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-1.5 shrink-0">
+                    <button type="button" onClick={runNerisCheck} disabled={nerisChecking}
+                      className="px-3 py-1.5 rounded-full text-[11px] font-semibold border bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-900 hover:bg-sky-100 dark:hover:bg-sky-950/70 transition-colors disabled:opacity-50">
+                      {nerisChecking ? 'Checking…' : 'Check connection'}
+                    </button>
+                    <button type="button" onClick={() => { setNerisId(''); setNerisPicked(null); setNerisCheck(null); }}
+                      className="px-3 py-1.5 rounded-full text-[11px] font-medium border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                      Change
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : nerisManual ? (
+              /* ── Manual fallback: search is down, or the department registered with
+                   NERIS too recently to be searchable yet. ── */
+              <div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  From your NERIS onboarding (or your State Fire Marshal) — looks like FD12345678.
+                </p>
+                <div className="flex items-center gap-2">
+                  <input type="text" value={nerisId} placeholder="FD12345678" maxLength={10}
+                    onChange={(e) => setNerisId(e.target.value.toUpperCase())}
+                    aria-label="NERIS entity ID"
+                    className="w-40 px-3 py-2 text-sm font-mono border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 dark:text-gray-100" />
+                  <button type="button" onClick={saveNerisId} disabled={nerisSaving}
+                    className="px-4 py-2 rounded-xl text-sm font-semibold border bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors disabled:opacity-50">
+                    {nerisSaving ? 'Saving…' : 'Save'}
+                  </button>
+                  <button type="button" onClick={runNerisCheck} disabled={nerisChecking || !String(nerisId || '').trim()}
+                    className="px-4 py-2 rounded-xl text-sm font-semibold border bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-900 hover:bg-sky-100 dark:hover:bg-sky-950/70 transition-colors disabled:opacity-50">
+                    {nerisChecking ? 'Checking…' : 'Check connection'}
+                  </button>
+                </div>
+                <button type="button" onClick={() => { setNerisManual(false); setNerisSearchError(null); }}
+                  className="mt-2 text-xs text-sky-700 dark:text-sky-400 hover:underline">
+                  Search for my department instead
+                </button>
+              </div>
+            ) : (
+              /* ── Default: find the department, don't type its id ── */
+              <div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  Search the national NERIS registry and pick your department — we'll store its ID for you.
+                </p>
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1 min-w-0">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input type="text" value={nerisQuery}
+                      onChange={(e) => setNerisQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        const list = nerisResults?.results || [];
+                        if (!list.length) return;
+                        if (e.key === 'ArrowDown') {
+                          e.preventDefault();
+                          setNerisActiveIdx((i) => (i + 1) % list.length);
+                        } else if (e.key === 'ArrowUp') {
+                          e.preventDefault();
+                          setNerisActiveIdx((i) => (i <= 0 ? list.length - 1 : i - 1));
+                        } else if (e.key === 'Enter' && nerisActiveIdx >= 0) {
+                          e.preventDefault();
+                          pickNerisEntity(list[nerisActiveIdx]);
+                        } else if (e.key === 'Escape') {
+                          setNerisResults(null); setNerisActiveIdx(-1);
+                        }
+                      }}
+                      placeholder="Department name — e.g. Maplewood"
+                      aria-label="Search NERIS for your department"
+                      role="combobox"
+                      aria-expanded={Boolean(nerisResults?.results?.length)}
+                      aria-controls="neris-entity-listbox"
+                      aria-autocomplete="list"
+                      aria-activedescendant={nerisActiveIdx >= 0 ? `neris-opt-${nerisActiveIdx}` : undefined}
+                      className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 dark:text-gray-100" />
+                  </div>
+                  <input type="text" value={nerisStateFilter} maxLength={2}
+                    onChange={(e) => setNerisStateFilter(e.target.value.toUpperCase())}
+                    placeholder="ST" aria-label="Narrow by state (2-letter code)"
+                    className="w-16 px-3 py-2 text-sm font-mono text-center border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 dark:text-gray-100" />
+                </div>
+
+                {nerisQuery.trim().length > 0 && nerisQuery.trim().length < NERIS_SEARCH_MIN_Q && (
+                  <p className="mt-2 text-xs text-gray-400">Keep typing — at least {NERIS_SEARCH_MIN_Q} characters.</p>
+                )}
+                {nerisSearching && (
+                  <p className="mt-2 flex items-center gap-2 text-xs text-gray-400"><Loader2 size={12} className="animate-spin" /> Searching NERIS…</p>
+                )}
+                {nerisSearchError && (
+                  <p className="mt-2 text-xs text-red-600 dark:text-red-400">{nerisSearchError}</p>
+                )}
+                {nerisResults && !nerisSearching && (
+                  nerisResults.results.length === 0 ? (
+                    /* An empty result is USUALLY not a search problem — it is a department
+                       that has not completed NERIS onboarding. Verified 2026-08-03: the
+                       registry holds 30,829 entities and "Maplewood"+NJ returns nothing,
+                       while "Richland"+NJ returns FD34001022, so coverage is high but not
+                       universal. Telling that chief to "enter the ID manually" is a dead
+                       end: an unregistered department HAS no entity id, and no RMS can
+                       substitute for registering with FSRI. Name both cases honestly. */
+                    <div className="mt-2 text-xs text-gray-600 dark:text-gray-300 space-y-1">
+                      <p className="font-semibold">No match in the NERIS registry.</p>
+                      {/* NOT a hyperlink, deliberately. NERIS Terms of Use §5 requires UL
+                          Research Institutes' prior written approval to "establish a hyperlink
+                          to NERIS", and only with text/images they approve, in the location they
+                          specify. We have approval to display the V1 badge; we have no link
+                          approval. Plain text naming the site is not a hyperlink. Do not turn
+                          this into an anchor without asking FSRI first. */}
+                      <p>
+                        If your department hasn&apos;t completed NERIS onboarding yet, it has to register
+                        with FSRI first — no reporting software can do that step for you. Onboarding
+                        starts from the NERIS site (neris.fsri.org).
+                      </p>
+                      <p>Already registered and you know your ID? Enter it manually below.</p>
+                    </div>
+                  ) : (
+                    <>
+                      {/* The count is ALWAYS shown, not only when truncated. The list
+                          scrolls, and a chief who can't see that a 5th row exists may
+                          pick the wrong one — searching "Maplewood" returns two
+                          departments with the IDENTICAL name in different states
+                          (verified live 2026-08-03). Knowing how many matched is part
+                          of picking correctly. */}
+                      <p className={`mt-2 text-xs ${nerisResults.truncated ? 'text-amber-700 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                        {nerisResults.truncated
+                          ? `${nerisResults.total} departments match — showing the first ${nerisResults.results.length}. Add your state or more of the name.`
+                          : `${nerisResults.total} ${nerisResults.total === 1 ? 'department matches' : 'departments match'}${nerisResults.results.length > 3 ? ' — scroll for all of them' : ''}.`}
+                      </p>
+                      <div id="neris-entity-listbox" role="listbox" aria-label="Matching NERIS departments"
+                        className="relative mt-1 space-y-1 max-h-96 overflow-y-auto">
+                        {nerisResults.results.map((r, idx) => {
+                          // When two rows share a name, the name is NOT the discriminator —
+                          // the location is. Promote it to the same weight so the thing that
+                          // actually tells them apart isn't the quietest text in the row.
+                          const dupName = nerisResults.results.filter((o) => o.name === r.name).length > 1;
+                          const where = [r.city, r.state].filter(Boolean).join(', ');
+                          const active = idx === nerisActiveIdx;
+                          return (
+                            <button key={r.neris_id} id={`neris-opt-${idx}`} type="button"
+                              role="option" aria-selected={active}
+                              onClick={() => pickNerisEntity(r)} onMouseEnter={() => setNerisActiveIdx(idx)}
+                              disabled={nerisSaving}
+                              className={`w-full text-left px-3 py-2 rounded-lg border transition-colors disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 ${
+                                active
+                                  ? 'border-sky-400 dark:border-sky-700 bg-sky-50 dark:bg-sky-950/40'
+                                  : 'border-gray-200 dark:border-gray-700 hover:border-sky-300 dark:hover:border-sky-800 hover:bg-sky-50 dark:hover:bg-sky-950/30'
+                              }`}>
+                              <div className="flex items-baseline justify-between gap-2">
+                                <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{r.name || r.neris_id}</span>
+                                {r.department_type && (
+                                  <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">{r.department_type}</span>
+                                )}
+                              </div>
+                              <div className={dupName
+                                ? 'text-sm font-semibold text-sky-800 dark:text-sky-300 truncate'
+                                : 'text-xs text-gray-500 dark:text-gray-400 truncate'}>
+                                {where || r.address_line_1 || ''}
+                              </div>
+                              {(dupName || !where) && r.address_line_1 && (
+                                <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{r.address_line_1}</div>
+                              )}
+                              {!dupName && where && r.address_line_1 && (
+                                <div className="text-xs text-gray-400 dark:text-gray-500 truncate">{r.address_line_1}</div>
+                              )}
+                              {/* gray-500/400, not gray-400/500: measured on prod 2026-08-03 the
+                                  lighter pair failed WCAG AA at 11px/400 in BOTH themes
+                                  (2.60:1 light, 3.67:1 dark, AA needs 4.5:1). Same pair the
+                                  address line already uses, which passes at 4.84 / 6.82. */}
+                              <div className="text-[11px] font-mono text-gray-500 dark:text-gray-400">{r.neris_id}</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )
+                )}
+                <button type="button" onClick={() => { setNerisManual(true); setNerisResults(null); }}
+                  className="mt-2 text-xs text-sky-700 dark:text-sky-400 hover:underline">
+                  Enter the ID manually instead
+                </button>
+              </div>
+            )}
+
+            {nerisCheck && (
+              <p className={`mt-2 text-xs ${nerisCheck.ok ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                {nerisCheck.ok
+                  ? `Connected — NERIS knows ${nerisCheck.name || nerisCheck.entity}.`
+                  : `Check failed: ${nerisCheck.reason || 'unknown'}. Verify the department and that it has enrolled the integration (below).`}
+              </p>
+            )}
+          </div>
+
+          <div className="pt-3 border-t border-gray-100 dark:border-gray-800">
+            <button type="button" onClick={toggleNerisEnabled} disabled={nerisSaving || nerisId === null}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border transition-colors disabled:opacity-50 ${
+                nerisEnabled
+                  ? 'bg-sky-700 text-white border-sky-700'
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700'
+              }`}>
+              {nerisSaving ? <Loader2 size={14} className="animate-spin" /> : <Shield size={14} />}
+              {nerisEnabled ? 'NERIS submission ENABLED — approved reports submit automatically' : 'NERIS submission OFF'}
+            </button>
+          </div>
+
+          <div className="pt-3 border-t border-gray-100 dark:border-gray-800">
+            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">One-time enrollment (in the NERIS portal)</label>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              A department admin signs into the NERIS portal → <span className="font-semibold">Enrollments</span> →
+              pastes OpenFirehouse's integration Client ID below → Enroll. That authorizes OpenFirehouse to
+              submit for your department (revocable there at any time).
+            </p>
+            <div className="mt-2 flex items-stretch gap-2">
+              <p className="flex-1 text-sm font-mono px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200 break-all">
+                {nerisInfo ? (nerisInfo.client_id || 'Not configured on this server yet') : '…'}
+              </p>
+              {nerisInfo?.client_id && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const ok = await copyTextToClipboard(nerisInfo.client_id);
+                    setNerisIdCopied(ok ? 'ok' : 'fail');
+                    setTimeout(() => setNerisIdCopied(false), 2500);
+                  }}
+                  className="flex items-center gap-1.5 px-3 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                  title="Copy the Client ID for the NERIS enrollment step"
+                >
+                  <Copy size={12} /> {nerisIdCopied === 'ok' ? 'Copied!' : nerisIdCopied === 'fail' ? 'Copy failed — select it manually' : 'Copy'}
+                </button>
+              )}
+            </div>
+            {nerisInfo && !nerisInfo.configured && (
+              <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+                Server credentials are not configured — submissions will hold (and retry) until they are.
+              </p>
+            )}
+          </div>
+
+          {/* Station & unit registration (SR) */}
+          <div className="pt-3 border-t border-gray-100 dark:border-gray-800">
+            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">Register your stations &amp; units in NERIS</label>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+              Registering from here keeps OpenFirehouse the single writer of your national records
+              (creating them directly in the NERIS portal causes duplicate or mismatched unit IDs).
+              Stations register first; each rig then registers under its house with its minimum
+              staffing. Registered units get clean national attribution on every submitted incident.
+              A rig deleted locally is <span className="font-semibold">never</span> auto-deleted from NERIS.
+            </p>
+            {regError && <p className="mb-2 text-xs text-red-600 dark:text-red-400">{regError}</p>}
+            {!nerisRegistry ? (
+              <div className="flex items-center gap-2 text-gray-400 text-sm"><Loader2 size={14} className="animate-spin" /> Loading…</div>
+            ) : (
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  {nerisRegistry.stations.map((s) => (
+                    <div key={s.id} className="flex items-center gap-2 text-sm">
+                      <span className="flex-1 text-gray-800 dark:text-gray-200 truncate">{s.name}</span>
+                      {s.registered ? (
+                        <>
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-950/50 text-green-700 dark:text-green-300" title={s.neris_station_id}>{s.neris_station_id}</span>
+                          <button type="button" disabled={regBusy === `station-${s.id}`} onClick={() => pushHouseUpdate(s.id)}
+                            title="Re-send this station's current local details to NERIS (after an address or name change)"
+                            className="px-2 py-0.5 rounded-full text-[10px] font-medium border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40">
+                            {regBusy === `station-${s.id}` ? '…' : 'Update in NERIS'}
+                          </button>
+                        </>
+                      ) : s.missing_fields.length ? (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300" title={`Missing: ${s.missing_fields.join(', ')}`}>needs {s.missing_fields.join(', ')}</span>
+                      ) : (
+                        <button type="button" disabled={regBusy === `station-${s.id}`} onClick={() => registerHouse(s.id)}
+                          className="px-2.5 py-1 rounded-full text-[11px] font-medium border border-sky-200 dark:border-sky-900 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/40 disabled:opacity-40">
+                          {regBusy === `station-${s.id}` ? 'Registering…' : 'Register station'}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="space-y-1 pt-2 border-t border-gray-100 dark:border-gray-800">
+                  {nerisRegistry.apparatus.map((a) => (
+                    <div key={a.id} className="flex items-center gap-2 text-sm">
+                      <span className="flex-1 text-gray-800 dark:text-gray-200 truncate">{a.designation} <span className="text-gray-500 dark:text-gray-400 text-xs">({a.type})</span></span>
+                      {a.registered ? (
+                        <>
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-950/50 text-green-700 dark:text-green-300" title={a.neris_unit_id}>{a.neris_unit_id}</span>
+                          <input type="number" min="0" step="1" placeholder="staffing"
+                            value={unitStaffing[a.id] ?? ''}
+                            onChange={(e) => setUnitStaffing((c) => ({ ...c, [a.id]: e.target.value }))}
+                            aria-label={`Minimum staffing for ${a.designation}`}
+                            className="w-16 px-2 py-0.5 text-[10px] border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 dark:text-gray-100" />
+                          <button type="button" disabled={regBusy === `unit-${a.id}`} onClick={() => pushRigUpdate(a.id)}
+                            title="Re-send this rig's current designation/type/staffing to NERIS (after a change)"
+                            className="px-2 py-0.5 rounded-full text-[10px] font-medium border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-40">
+                            {regBusy === `unit-${a.id}` ? '…' : 'Update in NERIS'}
+                          </button>
+                        </>
+                      ) : a.needs_type ? (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300" title="Choose the NERIS unit type on the Apparatus page — the legacy label is ambiguous and is never guessed.">needs NERIS type</span>
+                      ) : a.needs_station ? (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300">register its station first</span>
+                      ) : (
+                        <>
+                          <input type="number" min="0" step="1" placeholder="staffing"
+                            value={unitStaffing[a.id] ?? ''}
+                            onChange={(e) => setUnitStaffing((c) => ({ ...c, [a.id]: e.target.value }))}
+                            aria-label={`Minimum staffing for ${a.designation}`}
+                            className="w-20 px-2 py-1 text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-950 dark:text-gray-100" />
+                          <button type="button" disabled={regBusy === `unit-${a.id}`} onClick={() => registerRig(a.id)}
+                            className="px-2.5 py-1 rounded-full text-[11px] font-medium border border-sky-200 dark:border-sky-900 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/40 disabled:opacity-40">
+                            {regBusy === `unit-${a.id}` ? 'Registering…' : 'Register unit'}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1069,7 +2325,7 @@ export default function StationSettings({ onSettingsChange }) {
               </button>
             </div>
             {aiKeyError && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{aiKeyError}</p>}
-            <p className="text-xs text-gray-400 mt-1.5">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5">
               {aiKeySet
                 ? 'A key is currently configured. Enter a new key above to replace it.'
                 : 'No key configured. Get one at '}

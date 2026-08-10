@@ -9,9 +9,18 @@ function LogOTModal({ members, onSave, onClose }) {
   const [form, setForm] = useState({
     member_id: '', ot_date: new Date().toISOString().slice(0, 10),
     ot_hours: '', ot_type: 'callback', reason: '',
+    earn_code: '', regular_rate: '',
   });
 
   const OT_TYPES = ['callback', 'holdover', 'coverage', 'special_event', 'training', 'mandatory', 'voluntary', 'other'];
+  // FLSA basis (1.2f) — the axis that decides §225 qualified OT. Orthogonal to OT Type above.
+  const EARN_CODES = [
+    { value: '', label: 'Unclassified (set later)' },
+    { value: 'flsa_ot', label: 'FLSA-required OT — qualifies (§225)' },
+    { value: 'cba_ot', label: 'CBA / contractual OT' },
+    { value: 'other_premium', label: 'Holiday / callback / standby' },
+    { value: 'comp_cashout', label: 'FLSA comp-time cash-out — qualifies' },
+  ];
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
@@ -47,6 +56,22 @@ function LogOTModal({ members, onSave, onClose }) {
               {OT_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</option>)}
             </select>
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">FLSA basis <span className="font-normal text-gray-400">(tax)</span></label>
+              <select value={form.earn_code} onChange={e => setForm(f => ({ ...f, earn_code: e.target.value }))}
+                className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm dark:bg-gray-900 dark:text-gray-100">
+                {EARN_CODES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">Regular rate $/hr <span className="font-normal text-gray-400">(optional)</span></label>
+              <input type="number" step="0.01" min="0" value={form.regular_rate}
+                onChange={e => setForm(f => ({ ...f, regular_rate: e.target.value }))}
+                className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm dark:bg-gray-900 dark:text-gray-100" placeholder="e.g. 32.50" />
+            </div>
+          </div>
+          <p className="text-[11px] text-gray-500 dark:text-gray-400">Only FLSA-required OT counts toward the W-2 Box 12 (TT) qualified-overtime deduction — that's the premium on hours above your §7(k) work-period threshold, not contractual or sub-threshold OT. A rate lets us show the half-premium dollars; leave it blank to export qualifying hours for payroll.</p>
           <div>
             <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">Reason / Notes</label>
             <input value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}

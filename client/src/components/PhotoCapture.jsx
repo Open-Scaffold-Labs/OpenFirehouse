@@ -224,7 +224,7 @@ export default function PhotoCapture({ photos = [], onChange }) {
           {/* Upload spinners */}
           {uploading.map((id) => (
             <div key={id} className="aspect-square rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
-              <Loader2 size={24} className="text-gray-400 animate-spin" />
+              <Loader2 size={24} className="text-gray-500 dark:text-gray-400 animate-spin" />
             </div>
           ))}
         </div>
@@ -281,7 +281,7 @@ export default function PhotoCapture({ photos = [], onChange }) {
       </div>
 
       {/* Limits hint */}
-      <p className="mt-1.5 text-[11px] text-gray-400">
+      <p className="mt-1.5 text-[11px] text-gray-500 dark:text-gray-400">
         Video: max 60 seconds · 100 MB
       </p>
 

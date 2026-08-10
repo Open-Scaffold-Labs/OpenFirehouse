@@ -5,15 +5,23 @@ import {
   Download, Search, Edit,
 } from 'lucide-react';
 import { api } from '../utils/api';
+import { displayDay, localToday } from '../utils/localDay';
 import LinkedMeetings from './LinkedMeetings';
 import Attachments from './Attachments';
 import AIWriteTextarea from './AIWriteTextarea';
+import useDialog from '../hooks/useDialog';
 
 function AARModal({ onSave, onClose }) {
+  // Dialog semantics + focus management (see hooks/useDialog.js). NO Escape-to-close.
+  const dlg = useDialog();
+
   const [form, setForm] = useState({
     title: '', incident_date: '', incident_type: '', location: '',
     summary: '', conducted_by: '',
-    conducted_date: new Date().toISOString().slice(0, 10),
+    // localToday(), not toISOString(): the UTC day is tomorrow's date for the last
+    // hours of every local evening, and an AAR conducted at 21:00 was dated for the
+    // next day. Same class as the Incident Form's date prefill.
+    conducted_date: localToday(),
     strengths: [''], improvements: [''], action_items: [{ text: '', assigned: '', status: 'open' }],
     lessons_learned: '',
   });
@@ -31,8 +39,8 @@ function AARModal({ onSave, onClose }) {
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
-        <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">New After-Action Report</h3>
+      <div {...dlg.dialogProps} className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+        <h3 id={dlg.titleId} className="text-lg font-bold text-gray-900 dark:text-gray-100">New After-Action Report</h3>
         <div className="space-y-3">
           <div>
             <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">Title</label>
@@ -205,7 +213,7 @@ export default function AfterActionReports() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-24 text-gray-400">
+      <div className="flex items-center justify-center py-24 text-gray-500 dark:text-gray-400">
         <Loader2 className="h-8 w-8 animate-spin mr-3" /><span className="text-sm">Loading AARs…</span>
       </div>
     );
@@ -236,13 +244,13 @@ export default function AfterActionReports() {
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         {[
           { label: 'Total AARs', value: stats.total || 0, icon: FileSearch, color: 'text-gray-700 dark:text-gray-300' },
-          { label: 'Draft', value: stats.draft || 0, icon: Edit, color: (stats.draft || 0) > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-gray-400' },
+          { label: 'Draft', value: stats.draft || 0, icon: Edit, color: (stats.draft || 0) > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-gray-500 dark:text-gray-400' },
           { label: 'Open Action Items', value: stats.openActionItems || 0, icon: Target, color: (stats.openActionItems || 0) > 0 ? 'text-red-700 dark:text-red-300' : 'text-green-700 dark:text-green-300' },
         ].map(s => (
           <div key={s.label} className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm p-4">
             <div className="flex items-center gap-2 mb-1">
               <s.icon size={14} className={s.color} />
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{s.label}</span>
+              <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">{s.label}</span>
             </div>
             <p className={`text-2xl font-black ${s.color}`}>{s.value}</p>
           </div>
@@ -251,7 +259,7 @@ export default function AfterActionReports() {
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[200px]">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search AARs…" aria-label="Search after-action reports"
             className="w-full pl-9 pr-3 py-2 border border-gray-200 dark:border-gray-700 rounded-xl text-sm dark:bg-gray-900 dark:text-gray-100" />
         </div>
@@ -267,7 +275,7 @@ export default function AfterActionReports() {
         {filtered.length === 0 ? (
           <div className="bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-700 rounded-xl px-5 py-8 text-center">
             <FileSearch className="mx-auto h-8 w-8 text-gray-200 mb-2" />
-            <p className="text-sm text-gray-400">No after-action reports</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">No after-action reports</p>
           </div>
         ) : (
           filtered.map(r => {
@@ -286,15 +294,15 @@ export default function AfterActionReports() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold text-gray-900 dark:text-gray-100">{r.title}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">{r.incident_type} · {r.location} · {r.incident_date}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{r.incident_type} · {r.location} · {displayDay(r.incident_date)}</p>
                   </div>
                   <div className="text-right">
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${r.status === 'draft' ? 'bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300' : 'bg-green-100 dark:bg-green-950/50 text-green-800 dark:text-green-300'}`}>
+                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold uppercase ${r.status === 'draft' ? 'bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300' : 'bg-green-100 dark:bg-green-950/50 text-green-800 dark:text-green-300'}`}>
                       {r.status}
                     </span>
-                    <p className="text-[10px] text-gray-400 mt-0.5">{r.conducted_date}</p>
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">{displayDay(r.conducted_date)}</p>
                   </div>
-                  {isExpanded ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
+                  {isExpanded ? <ChevronUp size={14} className="text-gray-500 dark:text-gray-400" /> : <ChevronDown size={14} className="text-gray-500 dark:text-gray-400" />}
                 </div>
                 {isExpanded && (
                   <div className="px-4 py-3 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-950 space-y-3">
@@ -318,7 +326,7 @@ export default function AfterActionReports() {
                           <div key={i} className="flex items-center gap-2 text-xs pl-3 mb-0.5">
                             <span className={`w-2 h-2 rounded-full ${a.status === 'open' ? 'bg-red-400' : 'bg-green-400'}`} />
                             <span className="text-gray-700 dark:text-gray-300">{a.text}</span>
-                            {a.assigned && <span className="text-gray-400">— {a.assigned}</span>}
+                            {a.assigned && <span className="text-gray-500 dark:text-gray-400">— {a.assigned}</span>}
                           </div>
                         ))}
                       </div>

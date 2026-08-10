@@ -12,7 +12,7 @@ hiring (or becoming) a developer. The tool that does the heavy lifting is
 spreadsheets, and small projects.
 
 If you ARE a developer who wants to extend the codebase, read
-**[`CONTRIBUTING-WITH-CLAUDE.md`](CONTRIBUTING-WITH-CLAUDE.md)** instead.
+**[`CONTRIBUTING.md`](CONTRIBUTING.md)** instead.
 
 ---
 
@@ -54,7 +54,7 @@ without writing code.
 **Cowork is NOT the right tool for:**
 
 - Big architectural changes to OpenFirehouse itself (use Claude Code or hire a
-  developer — see `CONTRIBUTING-WITH-CLAUDE.md`)
+  developer — see `CONTRIBUTING.md`)
 - Anything involving the production database directly (data-loss risk)
 - Anything that requires CLI tools or build steps you're not comfortable
   reviewing

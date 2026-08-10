@@ -42,7 +42,69 @@ module.exports = {
   async parse(req) {
     const p = req.body || {};
 
-    const alertId = String(p.incident_number || p.id || p.alert_id || `gen-${Date.now()}`);
+    // ── Close/clear event (call-lifecycle parity, 2026-07-12) ────────────────
+    // CADs that emit lifecycle events can end a call by POSTing the same
+    // payload shape with `event` (or `type`/`status`) set to a close word and
+    // the SAME incident identifier they dispatched with. Requires an explicit
+    // id — a close event can never fall back to a generated one.
+    const evtWord = String(p.event || p.type || p.status || '').toLowerCase();
+    if (/^(clear|cleared|close|closed|clear_call|call_cleared|call_closed|end|ended)$/.test(evtWord)) {
+      const closeId = p.incident_number || p.id || p.alert_id;
+      if (!closeId) {
+        return { ok: false, status: 400, error: 'Close event requires incident_number / id / alert_id' };
+      }
+      return {
+        ok: true,
+        incident: {
+          close: true,
+          alertId: String(closeId),
+          stationId: resolveStationId('generic', p.agency_id),
+        },
+      };
+    }
+
+    // ── Unit-STATUS event (arrival parity, 2026-07-14) ───────────────────────
+    // How the market puts a real arrival time on the board: CAD reports a unit
+    // changed status (en route / on scene / available). Two accepted shapes:
+    //   { event: 'status', unit_statuses: [{ unit: 'E41', status: 'on scene' }] }
+    //   { event: 'status', unit: 'E41', status: 'on scene' }
+    // The unit-status vocabulary is normalised downstream (statusNormalize.js);
+    // an unrecognised status word or unmatched unit is skipped and REPORTED.
+    if (/^(status|unit_status|unitstatus|unit_update|status_update|update)$/.test(evtWord)) {
+      let statusUpdates = [];
+      if (Array.isArray(p.unit_statuses)) {
+        statusUpdates = p.unit_statuses.map((u) => ({
+          unit: String(u?.unit || u?.designation || ''),
+          status: String(u?.status || u?.state || ''),
+          at: u?.at || u?.timestamp || null,
+        }));
+      } else if (p.unit || p.designation) {
+        // A single unit's status. Note: p.status is the EVENT word here ('status'),
+        // so a single-unit update must carry the real status in unit_status/state.
+        statusUpdates = [{
+          unit: String(p.unit || p.designation || ''),
+          status: String(p.unit_status || p.new_status || p.state || ''),
+          at: p.at || p.timestamp || null,
+        }];
+      }
+      return {
+        ok: true,
+        incident: {
+          statusUpdate: true,
+          statusUpdates,
+          alertId: p.incident_number || p.id || p.alert_id ? String(p.incident_number || p.id || p.alert_id) : null,
+          stationId: resolveStationId('generic', p.agency_id),
+        },
+      };
+    }
+
+    // Raw vendor id ONLY — no fallback here. Synthesis moved to
+    // processDispatch (cad/alertIdentity.js), which is the one place the
+    // DEPARTMENT is known: NENA namespaces an identifier by the agency that
+    // created it, and the old `${prefix}-${Date.now()}` fallback was
+    // non-deterministic — a vendor retry minted a NEW id and defeated the
+    // duplicate guard exactly when it was needed.
+    const alertId = p.incident_number || p.id || p.alert_id || null;
     const address = String(p.address || p.location || p.addr || '');
     const units = String(p.units || p.unit || p.resources || '');
     const description = String(

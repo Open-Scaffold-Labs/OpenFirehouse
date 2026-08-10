@@ -8,10 +8,11 @@ const { expandRRule } = require('../utils/rrule');
 
 module.exports = async function eventFeed(start, end, options) {
   const { rows } = await pool.query(`
-    SELECT id, title, type, date, start_time, end_time, location, organizer, description, rrule, recurrence_id, original_date, is_cancelled
+    SELECT id, title, type, date, "startTime" AS start_time, "endTime" AS end_time,
+           location, organizer, description, rrule, recurrence_id, original_date, is_cancelled
     FROM events
     WHERE department_id = $1
-    ORDER BY date, start_time
+    ORDER BY date, "startTime"
   `, [options.stationId]);
 
   const TYPE_CATEGORY = {

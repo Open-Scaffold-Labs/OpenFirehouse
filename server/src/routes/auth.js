@@ -9,8 +9,22 @@ const { audit } = require('../utils/auditLog');
 const router = express.Router();
 
 const { ACCESS_SECRET, REFRESH_SECRET } = require('../config/jwtSecret');
+// Phase 5 / migration 0110: token lifetimes are now the DEPARTMENT's idle window
+// rather than a hardcoded '7d'. These two constants remain as the fallback used
+// when no department policy can be resolved — they are the pre-0110 behaviour.
 const ACCESS_TTL     = '7d';
 const REFRESH_TTL    = '7d';
+const {
+  getSessionPolicy,
+  idleMinutesFor,
+  isBeyondMaxAge,
+  normalizePlatform,
+} = require('../config/sessionPolicy');
+// Phase 5 / 0111 — TOTP second factor.
+const { verify: verifyTotp, hashRecoveryCode } = require('../utils/totp');
+// The MFA challenge window. Deliberately short: it is not a session, it is the
+// gap between typing a password and typing a code.
+const MFA_CHALLENGE_TTL = '5m';
 
 // W3.6 (roadmap 4.10): sameSite was 'none', which let any third-party site
 // send the refresh cookie (the ONE cookie-authed endpoint — everything else
@@ -23,9 +37,17 @@ const COOKIE_OPTS = {
   httpOnly: true,
   secure:   true,
   sameSite: ['lax', 'strict', 'none'].includes(SAMESITE) ? SAMESITE : 'lax',
-  maxAge:   7 * 24 * 60 * 60 * 1000, // 7 days in ms
+  maxAge:   7 * 24 * 60 * 60 * 1000, // 7 days in ms (pre-0110 default)
   path:     '/',
 };
+
+// Phase 5 / 0110: the refresh cookie is ROLLING — its lifetime is the
+// department's idle window and it is re-minted on every successful refresh.
+// An idle client's cookie simply expires; that IS the idle timeout, with no
+// server-side session table. Clearing still uses COOKIE_OPTS + maxAge: 0.
+function cookieOptsForWindow(idleMinutes) {
+  return { ...COOKIE_OPTS, maxAge: Math.max(1, Number(idleMinutes) || 10080) * 60 * 1000 };
+}
 
 // departmentId is the resolved ACTIVE department (Phase 2). It is carried in
 // the token for the client/transition, but requireAuth re-resolves it fresh
@@ -41,18 +63,37 @@ function normalizeClientKind(k) {
   return CLIENT_KINDS.includes(k) ? k : 'command';
 }
 
-function makeTokens(user, departmentId, clientKind = 'command') {
-  const payload = { sub: user.id, username: user.username, role: user.role, stationId: user.station_id, department_id: departmentId, client_kind: normalizeClientKind(clientKind) };
-  const accessToken  = jwt.sign(payload, ACCESS_SECRET,  { expiresIn: ACCESS_TTL });
-  const refreshToken = jwt.sign(payload, REFRESH_SECRET, { expiresIn: REFRESH_TTL });
-  return { accessToken, refreshToken };
+function makeTokens(user, departmentId, clientKind = 'command', opts = {}) {
+  // Phase 5 / 0110. `platform` selects the web vs mobile idle window; `idleMinutes`
+  // is the resolved window; `sessionStart` is the ABSOLUTE session anchor, preserved
+  // across rotations so session_max_hours can be enforced. Callers that pass none of
+  // these get exactly the pre-0110 behaviour (7d, no cap).
+  const platform     = normalizePlatform(opts.platform);
+  const idleMinutes  = Number(opts.idleMinutes) > 0 ? Number(opts.idleMinutes) : null;
+  const sessionStart = Number.isFinite(opts.sessionStart)
+    ? opts.sessionStart
+    : Math.floor(Date.now() / 1000);
+
+  const payload = {
+    sub: user.id, username: user.username, role: user.role, stationId: user.station_id,
+    department_id: departmentId, client_kind: normalizeClientKind(clientKind),
+    plat: platform,
+    sst:  sessionStart,
+  };
+  const ttl = idleMinutes ? `${idleMinutes}m` : ACCESS_TTL;
+  const accessToken  = jwt.sign(payload, ACCESS_SECRET,  { expiresIn: ttl });
+  const refreshToken = jwt.sign(payload, REFRESH_SECRET, { expiresIn: idleMinutes ? `${idleMinutes}m` : REFRESH_TTL });
+  return { accessToken, refreshToken, idleMinutes, platform, sessionStart };
 }
 
 function safeUser(user, departmentId) {
   return { id: user.id, username: user.username, name: user.name, initials: user.initials, role: user.role, stationId: user.station_id, department_id: departmentId, email_verified: !!user.email_verified,
     // Unit-login (migration 0025): non-null only for role='unit' in-cab accounts.
     // The client reads this to enter unit mode (rig-scoped nav + auto GPS reporting).
-    apparatus_id: user.apparatus_id ?? null };
+    apparatus_id: user.apparatus_id ?? null,
+    // 2.2 (0083): the mechanic capability grant — client-side gating only; the
+    // server enforces regardless. Refreshes on next login/refresh after a grant.
+    fleet_maintenance: user.fleet_maintenance === true };
 }
 
 function escapeHtml(s) {
@@ -94,6 +135,11 @@ const loginSchema = z.looseObject({
   // Optional: the mobile app sends 'companion' from a phone, 'command' from an
   // iPad. Absent → 'command' (web + every existing client is unchanged).
   clientKind: z.enum(['command', 'companion']).optional(),
+  // Phase 5 / 0110. Selects which of the department's two idle windows applies.
+  // The native apps (iPad command AND companion phone) send 'mobile'; the web
+  // client sends nothing and normalizes to 'web'. This is a timeout selector
+  // only — it is NOT a privilege boundary and grants no capability.
+  platform:   z.enum(['web', 'mobile']).optional(),
 });
 
 // POST /api/auth/login
@@ -120,9 +166,40 @@ router.post('/login', validate({ body: loginSchema }), async (req, res) => {
     }
 
     const departmentId = await db.users.resolveDepartmentId(user.id, user.station_id);
-    const { accessToken, refreshToken } = makeTokens(user, departmentId, req.body.clientKind);
-    res.cookie('refreshToken', refreshToken, COOKIE_OPTS);
-    res.json({ token: accessToken, user: safeUser(user, departmentId) });
+
+    // Phase 5 / 0111 — the second factor. Password was already checked above;
+    // if this account has MFA ACTIVE we stop here and issue NO session tokens.
+    // Instead we return a short-lived, single-purpose challenge token that can
+    // do exactly one thing: be exchanged at /api/auth/mfa for real tokens.
+    //
+    // A user without MFA falls straight through, byte-for-byte as before.
+    if (user.mfa_enabled === true && user.mfa_secret) {
+      const mfaToken = jwt.sign(
+        { sub: user.id, mfa: 'pending', client_kind: normalizeClientKind(req.body.clientKind),
+          plat: normalizePlatform(req.body.platform) },
+        ACCESS_SECRET,
+        { expiresIn: MFA_CHALLENGE_TTL }
+      );
+      return res.json({ mfaRequired: true, mfaToken });
+    }
+
+    // Phase 5 / 0110: resolve this department's idle window for the calling
+    // platform. `platform` is a client hint ('web' | 'mobile'); anything else,
+    // including absent, normalizes to 'web'. It selects a timeout only — it is
+    // NOT a privilege boundary and grants nothing.
+    const platform    = normalizePlatform(req.body.platform);
+    const policy      = await getSessionPolicy(departmentId);
+    const idleMinutes = idleMinutesFor(policy, platform);
+
+    const { accessToken, refreshToken } = makeTokens(user, departmentId, req.body.clientKind, {
+      platform, idleMinutes,
+    });
+    res.cookie('refreshToken', refreshToken, cookieOptsForWindow(idleMinutes));
+    res.json({
+      token: accessToken,
+      user: safeUser(user, departmentId),
+      session: { idleMinutes, platform, maxHours: policy.session_max_hours },
+    });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Login failed.' });
@@ -136,6 +213,109 @@ router.post('/logout', (_req, res) => {
 });
 
 // POST /api/auth/refresh
+// POST /api/auth/mfa — exchange a challenge token + TOTP (or recovery code) for a session.
+// Phase 5 / 0111. This is the ONLY thing an mfa:pending token can do.
+const mfaExchangeSchema = z.looseObject({
+  mfaToken: z.string().min(1).max(4096),
+  code:     z.string().min(6).max(20),
+});
+
+router.post('/mfa', validate({ body: mfaExchangeSchema }), async (req, res) => {
+  try {
+    let payload;
+    try {
+      payload = jwt.verify(req.body.mfaToken, ACCESS_SECRET);
+    } catch {
+      return res.status(401).json({ error: 'That sign-in attempt expired. Start again.', code: 'MFA_CHALLENGE_EXPIRED' });
+    }
+    // A full session token must NOT be accepted here, and a challenge token must
+    // never be accepted anywhere else. requireAuth reads no `mfa` claim, so a
+    // pending token cannot authenticate a normal route; this check closes the
+    // other direction.
+    if (payload.mfa !== 'pending') {
+      return res.status(401).json({ error: 'Invalid challenge.', code: 'MFA_BAD_CHALLENGE' });
+    }
+
+    const user = await db.users.findById(payload.sub);
+    if (!user) return res.status(401).json({ error: 'User not found.' });
+
+    // findById projects an explicit column list, so read the MFA state directly.
+    const { rows } = await db.pool.query(
+      'SELECT mfa_secret, mfa_enabled, mfa_last_step, mfa_recovery_codes FROM users WHERE id = $1',
+      [payload.sub]
+    );
+    const m = rows[0];
+    if (!m || !m.mfa_enabled || !m.mfa_secret) {
+      return res.status(409).json({ error: 'MFA is not active for this account.', code: 'MFA_NOT_ENABLED' });
+    }
+
+    const submitted = String(req.body.code || '').trim();
+    let accepted = false;
+    let usedRecovery = false;
+    let newStep = m.mfa_last_step;
+
+    const totp = verifyTotp(m.mfa_secret, submitted);
+    if (totp.valid) {
+      // REPLAY DEFENCE: a TOTP stays valid for its whole window, so a code whose
+      // step has already been consumed must be refused even though it verifies.
+      if (m.mfa_last_step != null && totp.step <= Number(m.mfa_last_step)) {
+        return res.status(401).json({
+          error: 'That code has already been used. Wait for the next one.',
+          code:  'MFA_CODE_REPLAYED',
+        });
+      }
+      accepted = true;
+      newStep = totp.step;
+    } else {
+      // Fall back to a single-use recovery code.
+      const codes = Array.isArray(m.mfa_recovery_codes) ? m.mfa_recovery_codes : [];
+      const hash  = hashRecoveryCode(submitted);
+      const idx   = codes.findIndex((c) => c && c.h === hash && !c.used_at);
+      if (idx !== -1) {
+        codes[idx].used_at = new Date().toISOString();
+        await db.pool.query('UPDATE users SET mfa_recovery_codes = $1 WHERE id = $2',
+          [JSON.stringify(codes), payload.sub]);
+        accepted = true;
+        usedRecovery = true;
+      }
+    }
+
+    if (!accepted) {
+      return res.status(401).json({ error: 'That code is not right.', code: 'MFA_INVALID_CODE' });
+    }
+
+    if (!usedRecovery) {
+      await db.pool.query('UPDATE users SET mfa_last_step = $1 WHERE id = $2', [newStep, payload.sub]);
+    }
+
+    if (!user.station_id) {
+      return res.status(403).json({ error: 'Account has no station assigned. Contact your chief.', code: 'NO_STATION' });
+    }
+    const departmentId = await db.users.resolveDepartmentId(user.id, user.station_id);
+
+    const platform    = normalizePlatform(payload.plat);
+    const policy      = await getSessionPolicy(departmentId);
+    const idleMinutes = idleMinutesFor(policy, platform);
+
+    const { accessToken, refreshToken } = makeTokens(user, departmentId, payload.client_kind, {
+      platform, idleMinutes,
+    });
+    res.cookie('refreshToken', refreshToken, cookieOptsForWindow(idleMinutes));
+    res.json({
+      token: accessToken,
+      user: safeUser(user, departmentId),
+      session: { idleMinutes, platform, maxHours: policy.session_max_hours },
+      usedRecoveryCode: usedRecovery,
+      recoveryCodesRemaining: usedRecovery
+        ? (Array.isArray(m.mfa_recovery_codes) ? m.mfa_recovery_codes : []).filter((c) => c && !c.used_at).length - 1
+        : undefined,
+    });
+  } catch (err) {
+    console.error('MFA exchange error:', err);
+    res.status(500).json({ error: 'Sign-in failed.' });
+  }
+});
+
 router.post('/refresh', async (req, res) => {
   const token = req.cookies?.refreshToken;
   if (!token) return res.status(401).json({ error: 'No refresh token.' });
@@ -147,10 +327,35 @@ router.post('/refresh', async (req, res) => {
     if (!user.station_id) return res.status(403).json({ error: 'Account has no station assigned. Contact your chief.', code: 'NO_STATION' });
 
     const departmentId = await db.users.resolveDepartmentId(user.id, user.station_id);
+
+    // Phase 5 / 0110 — the ABSOLUTE cap. `sst` (session start) is preserved across
+    // every rotation, so a continuously-active client is still forced to
+    // re-authenticate once session_max_hours is reached. Idle expiry needs no check
+    // here: an idle client's rolling refresh cookie has already expired, and
+    // jwt.verify above has already thrown.
+    const policy = await getSessionPolicy(departmentId);
+    if (isBeyondMaxAge(payload.sst, policy.session_max_hours)) {
+      res.clearCookie('refreshToken', { ...COOKIE_OPTS, maxAge: 0 });
+      return res.status(401).json({
+        error: 'Session expired. Please sign in again.',
+        code:  'SESSION_MAX_AGE',
+      });
+    }
+
     // Preserve client_kind across rotation — a companion phone stays a companion.
-    const { accessToken, refreshToken } = makeTokens(user, departmentId, payload.client_kind);
-    res.cookie('refreshToken', refreshToken, COOKIE_OPTS);
-    res.json({ token: accessToken, user: safeUser(user, departmentId) });
+    // Preserve the platform too, so the idle window doesn't silently switch tiers.
+    const platform    = normalizePlatform(payload.plat);
+    const idleMinutes = idleMinutesFor(policy, platform);
+
+    const { accessToken, refreshToken } = makeTokens(user, departmentId, payload.client_kind, {
+      platform, idleMinutes, sessionStart: payload.sst,
+    });
+    res.cookie('refreshToken', refreshToken, cookieOptsForWindow(idleMinutes));
+    res.json({
+      token: accessToken,
+      user: safeUser(user, departmentId),
+      session: { idleMinutes, platform, maxHours: policy.session_max_hours },
+    });
   } catch {
     res.clearCookie('refreshToken', { ...COOKIE_OPTS, maxAge: 0 });
     res.status(401).json({ error: 'Invalid or expired refresh token.' });

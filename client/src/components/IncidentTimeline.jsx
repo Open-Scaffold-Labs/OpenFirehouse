@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { X, Play } from 'lucide-react';
+import useDialog from '../hooks/useDialog';
 
 function parseIncidentNotes(notes) {
   if (!notes) return { milestones: [], apparatus: [], personnel: [], parHistory: [], commsLog: [] };
@@ -164,6 +165,9 @@ function createTimelineEvents(incident) {
 }
 
 export default function IncidentTimeline({ incident, onClose }) {
+  // Dialog semantics + focus management (see hooks/useDialog.js). NO Escape-to-close.
+  const dlg = useDialog();
+
   const [isReplaying, setIsReplaying] = useState(false);
   const [visibleCount, setVisibleCount] = useState(Infinity);
   const replayTimerRef = useRef(null);
@@ -206,11 +210,11 @@ export default function IncidentTimeline({ incident, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+      <div {...dlg.dialogProps} className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex-1">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Incident Timeline</h2>
+            <h2 id={dlg.titleId} className="text-xl font-bold text-gray-900 dark:text-gray-100">Incident Timeline</h2>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               {timeline.incidentType} · {timeline.address} · {timeline.date}
             </p>
@@ -233,7 +237,7 @@ export default function IncidentTimeline({ incident, onClose }) {
           <button
             onClick={handleReplay}
             disabled={isReplaying}
-            className="inline-flex items-center gap-2 px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white text-xs font-semibold rounded-lg transition-colors"
+            className="inline-flex items-center gap-2 px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:bg-gray-200 disabled:text-gray-600 dark:disabled:bg-gray-700 dark:disabled:text-gray-300 text-white text-xs font-semibold rounded-lg transition-colors"
           >
             <Play size={14} />
             {isReplaying ? 'Playing...' : 'Replay'}

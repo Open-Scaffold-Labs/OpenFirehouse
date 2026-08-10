@@ -9,9 +9,7 @@ import {
 } from '../data/nfirs';
 import NFIRSForm from './NFIRSForm';
 import { api } from '../utils/api';
-import {
-  toNerisIncident, validateNerisIncident, exportNerisBundle, downloadNerisJson,
-} from '../utils/nerisExport';
+import { downloadNerisJson } from '../utils/nerisExport';
 import { downloadNfirsFlatFile } from '../utils/nfirsFlatFile';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -40,19 +38,12 @@ function incidentLabel(code) {
   return INCIDENT_TYPE_CODES.find(c => c.code === code)?.label ?? code;
 }
 
-function exportSingleReport(report, format = 'nfirs') {
+async function exportSingleReport(report, format = 'nfirs') {
   if (format === 'neris') {
-    // Use real NERIS transformer
-    const neris = toNerisIncident(report, report, { fdid: report.fdid || FDID });
-    const bundle = {
-      neris_version: '1.0',
-      export_date: new Date().toISOString(),
-      source: 'OpenFirehouse',
-      fdid: report.fdid || FDID,
-      incident_count: 1,
-      incidents: [neris],
-    };
-    downloadNerisJson(bundle, `NERIS_${report.incidentNumber}_${report.incidentDate}.json`);
+    // D4: the NERIS payload is built by the ONE server-side transformer
+    // (live IncidentPayload shape) — the client only downloads it.
+    const res = await api.get(`/api/nfirs-reports/${report.id}/neris`);
+    downloadNerisJson(res.data, `NERIS_${report.incidentNumber}_${report.incidentDate}.json`);
   } else {
     // W4.1 (roadmap 2.5): real NFIRS 5.0 flat-file (caret-delimited Basic
     // Module transactions) — what state import clients actually ingest.
@@ -65,11 +56,11 @@ function exportSingleReport(report, format = 'nfirs') {
   }
 }
 
-function exportAllReports(reports, format = 'nfirs') {
+async function exportAllReports(reports, format = 'nfirs') {
   if (format === 'neris') {
-    // Use real NERIS bundle export
-    const bundle = exportNerisBundle(reports, reports, { fdid: FDID });
-    downloadNerisJson(bundle);
+    // D4: server-built bundle (live IncidentPayload shape per report).
+    const res = await api.get('/api/nfirs-reports/neris/export');
+    downloadNerisJson(res.data);
   } else {
     // W4.1 (roadmap 2.5): NFIRS 5.0 flat file for the whole set.
     downloadNfirsFlatFile(reports, { fdid: FDID });
@@ -106,8 +97,27 @@ function CompletenessBar({ pct: p }) {
 // ─── Expanded detail ──────────────────────────────────────────────────────────
 
 function NerisValidationCard({ report }) {
-  const neris = toNerisIncident(report, report, { fdid: report.fdid || FDID });
-  const result = validateNerisIncident(neris);
+  // D4: validation comes from the ONE server-side transformer's response.
+  const [result, setResult] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    api.get(`/api/nfirs-reports/${report.id}/neris`)
+      .then((res) => { if (alive) setResult(res.data?.validation || null); })
+      .catch(() => { if (alive) setResult(null); });
+    return () => { alive = false; };
+  }, [report.id]);
+
+  if (!result) {
+    return (
+      <div className="bg-purple-50 dark:bg-purple-950/50 border border-purple-200 dark:border-purple-900 rounded-xl px-4 py-3">
+        <div className="flex items-center gap-2">
+          <ShieldCheck size={14} className="text-purple-600 dark:text-purple-400" />
+          <p className="text-xs font-bold text-purple-900 dark:text-purple-200">NERIS Validation</p>
+          <span className="text-[10px] text-purple-500 dark:text-purple-400">checking…</span>
+        </div>
+      </div>
+    );
+  }
 
   const barColor = result.completeness === 100 ? 'bg-green-500'
     : result.completeness >= 70 ? 'bg-blue-500' : 'bg-amber-500';
@@ -463,7 +473,7 @@ export default function NFIRSReports() {
           {['All', ...NFIRS_STATUSES].map(s => (
             <button key={s} onClick={() => setStatusFlt(s)}
               className={`px-3 py-1 text-xs font-semibold rounded-lg transition-colors ${
-                statusFlt === s ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                statusFlt === s ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
               }`}>{s}</button>
           ))}
         </div>

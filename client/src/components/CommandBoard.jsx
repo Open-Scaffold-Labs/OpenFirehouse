@@ -1,6 +1,7 @@
 // CommandBoard.jsx — Combined Dispatch & Command Board
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import LiveDispatch from './LiveDispatch';
+import { tonePar } from '../utils/alertTones';
 import UnitStatusBoard from './UnitStatusBoard';
 import DemoTimeline from './DemoTimeline';
 import CommanderCam from './CommanderCam';
@@ -9,6 +10,9 @@ import ResourceTracker from './ResourceTracker';
 import PresenterOverlay from './PresenterOverlay';
 import ScreenErrorBoundary from './ScreenErrorBoundary';
 import { api } from '../utils/api';
+import { offlineQueue } from '../utils/offlineQueue';
+import { isDemoDispatch } from '../utils/demoProvenance';
+import { parRemainingSeconds, parChipLabel, parBasis, parBenchmarkTriggers, PAR_ANCHOR } from '../utils/parClock';
 import {
   Plus, X, Clock, Truck, Users, ShieldAlert,
   CheckCircle2, AlertTriangle, ChevronDown, ChevronUp,
@@ -24,11 +28,6 @@ import { toggleTheme } from '../utils/theme';
 import { NERIS_INCIDENT_TYPES, LEGACY_TYPE_MAP } from '../data/nerisTypes';
 
 // Demo scenarios for the one-click demo button (matches LiveDispatch scenarios)
-const DEMO_SCENARIOS = [
-  { description: 'Structure Fire - 2nd Alarm', address: '775 Route 22', city: 'Maplewood', state: 'NJ', units: 'Engine 1, Ladder 1, Rescue 1', details: 'Two-story commercial building, smoke showing from rear. Hannigan\'s Fuel & Auto.' },
-  { description: 'MVA with Entrapment', address: 'Route 15 & Bridge St', city: 'Maplewood', state: 'NJ', units: 'Engine 1, Rescue 1', details: 'Two-vehicle head-on, one occupant pinned. PD on scene.' },
-  { description: 'Hazmat - Gas Leak', address: '1200 Industrial Pkwy', city: 'Maplewood', state: 'NJ', units: 'Engine 1, Hazmat 1, Rescue 1', details: 'Natural gas odor, employees evacuating. Gas company en route.' },
-];
 
 // Quick-pick shortcuts map to NERIS codes for the Command Board
 const QUICK_PICKS = [
@@ -143,6 +142,27 @@ const PERSONNEL_STATUSES = ['On Scene', 'Staging', 'In Structure', 'Rehab', 'Ret
 const HAZMAT_TYPES       = ['Hazmat', 'Gas Leak'];
 
 // Per-type milestone timelines
+// ─── FIREGROUND EVENTS — the things that OWE YOU A PAR ───────────────────────
+// These are NOT progression milestones. "Water On" is routine; "Emergency
+// Evacuation" is not, and rendering them in the same strip would frame a
+// mayday-adjacent order as a normal step of the call. They get their own row.
+//
+// Each one stamps a milestone key that parClock's parBenchmarkTriggers() reads,
+// which raises the PAR REQUIRED prompt. This is the doctrinal core: New Jersey's
+// statewide reg (N.J.A.C. 5:75-2.4(f)) mandates these triggers and ZERO time
+// intervals. A board that only nags on a wall clock is doctrinally wrong.
+//
+// We PROMPT. We never run the PAR. A human calls the roll over the radio.
+//
+// `confirm: true` for the ones an accidental tap would be bad for — declaring an
+// emergency evacuation is an order, not a checkbox.
+const FIREGROUND_EVENTS = [
+  { key: 'evacuation',     label: 'EMERGENCY EVAC',   full: 'Emergency evacuation ordered',                 tone: 'red',   confirm: true },
+  { key: 'strategyChange', label: 'STRATEGY CHANGE',  full: 'Strategy change (offensive ⇄ defensive)',      tone: 'red',   confirm: true },
+  { key: 'collapse',       label: 'COLLAPSE / BLAST', full: 'Sudden hazardous event (collapse / flashover / explosion)', tone: 'red', confirm: true },
+  { key: 'allClear',       label: 'ALL CLEAR',        full: 'Primary search all-clear',                     tone: 'amber', confirm: false },
+];
+
 const MILESTONES_BY_TYPE = {
   'Structure Fire': [
     { key: 'dispatched',   label: 'Dispatched'    },
@@ -257,6 +277,37 @@ const UNIT_STATUS_COLORS = {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function nowIso() { return new Date().toISOString(); }
+
+// Collision-proof local id.
+// Date.now() was used as a primary key for personnel, units, roles, comms and
+// timeline events. Two people added inside the same millisecond — trivially
+// possible when seeding a crew from a roster — collided, which produced duplicate
+// React keys AND made updatePersonStatus/removePerson operate on BOTH records. On
+// an accountability board, "remove one firefighter and silently remove a second"
+// is not an acceptable failure mode.
+let _idSeq = 0;
+function newId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  // Fallback for any browser without crypto.randomUUID (and for non-secure
+  // contexts, where it is undefined even in modern browsers).
+  _idSeq += 1;
+  return `id-${Date.now()}-${_idSeq}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+// A real UUID for the PAR idempotency key (par_checks.client_id is a UUID column,
+// so the fallback must be UUID-SHAPED — the newId() fallback above is not).
+function newClientUuid() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  // RFC-4122 v4 fallback (non-secure contexts / old browsers).
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
 function timeStr(iso) {
   if (!iso) return '—';
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
@@ -570,7 +621,7 @@ function SetupScreen({ onActivate, onNavigate, members, locations, initialAlert,
         <button
           type="button"
           onClick={() => onNavigate('recall')}
-          className="flex-shrink-0 flex items-center gap-1.5 bg-orange-600 hover:bg-orange-700 text-white px-3 py-2 rounded-xl text-sm font-bold transition-colors"
+          className="flex-shrink-0 flex items-center gap-1.5 bg-orange-700 hover:bg-orange-800 text-white px-3 py-2 rounded-xl text-sm font-bold transition-colors"
         >
           <Siren size={14} /> Issue Recall
         </button>
@@ -589,7 +640,7 @@ function parseDispatchUnits(unitsStr) {
     .map(s => s.trim())
     .filter(Boolean)
     .map((designation, i) => ({
-      id: Date.now() + i + 1,
+      id: newId(),
       designation,
       officer: '',
       status: 'Dispatched',
@@ -597,7 +648,7 @@ function parseDispatchUnits(unitsStr) {
     }));
 }
 
-export default function CommandBoard({ onNavigate = () => {}, initialAlert = null, onAlertConsumed = () => {}, autoActivate = false, onAutoActivated = () => {}, currentUser = null, settings = {}, onRespond = () => {}, dispatches = [], onClearBadge = () => {}, onAddDispatch = () => {}, selectedStation = null }) {
+export default function CommandBoard({ onNavigate = () => {}, initialAlert = null, onAlertConsumed = () => {}, autoActivate = false, onAutoActivated = () => {}, currentUser = null, settings = {}, onRespond = () => {}, dispatches = [], onClearBadge = () => {}, onAddDispatch = () => {}, onCallCleared = null, onCallReopened = null, selectedStation = null }) {
   const [activeTab, setActiveTab] = useState('dispatch'); // 'dispatch' | 'board'
   const [incident, setIncident]           = useState(null);
   const [wind, setWind]                   = useState(null); // { speed, gusts, dir, compass, label, color }
@@ -606,83 +657,52 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
   const [showRoleModal, setShowRoleModal] = useState(false);
   const [showParModal, setShowParModal]   = useState(false);
   const [confirmClose, setConfirmClose]   = useState(false);
+
+  // ── 0062: the department's SOG default PAR interval ────────────────────────
+  // NULL/unset = today's behavior exactly (no timer until command sets one —
+  // there is NO NFPA-mandated interval; "every 20" is SOG convention). When the
+  // department has configured a default, a newly ACTIVATED board starts with it
+  // pre-selected and persisted (same /par-interval path the manual selector
+  // uses, so the TV and other surfaces agree). Command keeps the per-incident
+  // override — incident conditions vary, and command outranks a setting.
+  const deptParDefaultRef = useRef(0);
+  useEffect(() => {
+    api.get('/api/departments/me')
+      .then((d) => {
+        const v = Number(d?.data?.par_interval_default_min);
+        deptParDefaultRef.current = Number.isInteger(v) && v > 0 ? v : 0;
+      })
+      .catch(() => {});
+  }, []);
+  function applyParDefault(inc) {
+    const def = deptParDefaultRef.current;
+    if (!def || (Number(inc?.parInterval) || 0) > 0) return inc;
+    api.patch('/api/active-board/par-interval', { minutes: def }).catch(() => {});
+    return { ...inc, parInterval: def };
+  }
   const [showRecallBtn, setShowRecallBtn] = useState(false);
   const [showCommsModal, setShowCommsModal] = useState(false);
   const [showAllComms, setShowAllComms]   = useState(false);
-  const [saveStatus, setSaveStatus]       = useState(null); // null | 'saving' | 'saved' | 'error'
-  const [saveError, setSaveError]         = useState('');
   const [parCountdown, setParCountdown]   = useState(null); // seconds remaining
   const [showRehabModal, setShowRehabModal] = useState(false);
   const [showOrgChart, setShowOrgChart]   = useState(false);
   const [showTimelineModal, setShowTimelineModal] = useState(false);
   const [parChecks, setParChecks]         = useState({}); // { [personId]: boolean }
+  // A failed PAR write must be VISIBLE. The board must never render
+  // "All accounted for" over a write the server never received.
+  const [parSaveError, setParSaveError]   = useState(null);
+  const [maydayArm, setMaydayArm]         = useState(false);   // two-tap confirm for DECLARE MAYDAY
+  const [maydayError, setMaydayError]     = useState('');
+  const [maydayElapsed, setMaydayElapsed] = useState('00:00'); // ticking mm:ss since declaration
   const [showCommandModal, setShowCommandModal] = useState(false); // update IC via dispatcher
   const [demoRunning, setDemoRunning]   = useState(false);   // auto-sequence demo active
   const [demoStep, setDemoStep]         = useState('');       // current step label for banner
   const demoTimersRef                   = useRef([]);         // so we can cancel on unmount
-  const [demoFiring, setDemoFiring]     = useState(false);    // one-click demo in progress
   const [showDemoTimeline, setShowDemoTimeline] = useState(false); // Matt's full DemoTimeline player
   const [demoElapsed, setDemoElapsed] = useState(0); // for PresenterOverlay callouts
   const unitsRef = useRef(null);   // scroll target for unit changes
   const commsRef = useRef(null);   // scroll target for comms changes
 
-  // ─── One-click Demo: fire dispatch → switch to board → auto-activate ────────
-  // Fully synchronous — no awaits. API calls are fire-and-forget so the demo
-  // activates instantly even if the server is slow or unreachable.
-  const handleOneClickDemo = useCallback(() => {
-    if (demoFiring || incident) return;
-    setDemoFiring(true);
-    const scenario = DEMO_SCENARIOS[Math.floor(Math.random() * DEMO_SCENARIOS.length)];
-    const now = new Date();
-    const demoId = `demo-${Date.now()}`;
-
-    // Fire-and-forget API persistence (non-blocking)
-    api.post('/api/cad/active911', {
-      id: demoId, ...scenario,
-      timestamp: String(Math.floor(now.getTime() / 1000)),
-    }).catch(() => {});
-
-    // Build the dispatch object
-    const address = [scenario.address, scenario.city, scenario.state].filter(Boolean).join(', ');
-    const dispatch = {
-      id: demoId, alert_id: demoId,
-      description: scenario.description, address,
-      units: scenario.units, details: scenario.details,
-      dispatched_at: now.toISOString(), status: 'dispatched', priority: 'high',
-    };
-
-    // Inject into the live dispatch list
-    onAddDispatch(dispatch);
-
-    // Build the incident object and auto-activate the board
-    const unitList = scenario.units.split(',').map(u => u.trim()).filter(Boolean);
-    const inc = {
-      type:     scenario.description,
-      address,
-      units:    unitList.map((u, i) => ({ id: Date.now() + i + 1, designation: u, status: 'Dispatched', fromDispatch: true })),
-      milestones: { dispatched: now.toISOString() },
-      personnel: [],
-      roles: [],
-      commsLog: [],
-      rehabLog: [],
-      timelineEvents: [
-        { id: Date.now(), time: now.toISOString(), event: `Incident activated — ${scenario.description} @ ${address}`, type: 'activation', auto: true },
-      ],
-    };
-    setIncident(inc);
-    onAlertConsumed();
-
-    // Persist to active board (fire-and-forget)
-    api.put('/api/active-board', {
-      type: inc.type, address: inc.address,
-      dispatched_at: inc.milestones.dispatched,
-      personnel_count: 0, units_count: 0,
-    }).catch(() => {});
-
-    // Switch to the board tab immediately
-    setActiveTab('board');
-    setDemoFiring(false);
-  }, [demoFiring, incident, onAddDispatch, onAlertConsumed]);
 
   // Live data from the database — fall back to static lists if API unavailable
   const [liveMembers,   setLiveMembers]   = useState(MEMBERS);
@@ -812,6 +832,21 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
       address:        initialAlert.address || 'Unknown Location',
       ic:             '', // No IC yet — awaiting radio confirmation to dispatch
       commandAssumed: false,
+      // PROVENANCE (2026-07-14). The scripted auto-sequence below fabricates radio
+      // traffic, unit statuses, milestones, an IC and a PAR. That is exactly what
+      // it is FOR — it is the hands-free demo, and it is triggered by a dispatch.
+      //
+      // But it used to be gated on "did this incident come from a dispatch?", which
+      // a REAL CAD webhook also satisfies: /api/cad/simulate and a live Active911
+      // feed produce the same shape. Today every dispatch is a demo dispatch, so
+      // nothing has gone wrong — but the day a department wires a real CAD feed, a
+      // real fire would have triggered the script.
+      //
+      // The demo dispatch already identifies itself in the data (LiveDispatch's
+      // fireDispatch mints `demo-<ts>` ids). Carry that provenance onto the incident
+      // and gate the script on THAT, not on "came from a dispatch". A real CAD alert
+      // never sets it. The demo is unchanged.
+      isDemo:         isDemoDispatch(initialAlert),
       milestones:     { dispatched: dispatchedAt },
       units:          parsedUnits,
       personnel:      [],
@@ -823,13 +858,13 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
       icsNotes:       {},
       rehabLog:       [],
       timelineEvents: [
-        { id: Date.now(),     time: dispatchedAt, event: `Dispatched: ${initialAlert.description || guessedType} @ ${initialAlert.address || 'Unknown'}`, type: 'activation', auto: true },
-        ...(parsedUnits.length ? [{ id: Date.now()+1, time: dispatchedAt, event: `Units dispatched: ${parsedUnits.map(u => u.designation).join(', ')} — awaiting en route confirmation`, type: 'unit', auto: true }] : []),
+        { id: newId(), time: dispatchedAt, event: `Dispatched: ${initialAlert.description || guessedType} @ ${initialAlert.address || 'Unknown'}`, type: 'activation', auto: true },
+        ...(parsedUnits.length ? [{ id: newId(), time: dispatchedAt, event: `Units dispatched: ${parsedUnits.map(u => u.designation).join(', ')} — awaiting en route confirmation`, type: 'unit', auto: true }] : []),
       ],
     };
 
     onAlertConsumed();
-    setIncident(inc);
+    setIncident(applyParDefault(inc));
     setActiveTab('board'); // auto-switch to command board when incident activates
     onAutoActivated();
     api.put('/api/active-board', {
@@ -842,8 +877,22 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
   }, [autoActivate, initialAlert]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Auto-sequence demo timer ────────────────────────────────────────────────
-  // When a dispatch auto-creates an incident, this effect runs a timed sequence
-  // that simulates the full radio traffic of a real incident — hands-free demo.
+  // When a DEMO dispatch auto-creates an incident, this effect runs a timed
+  // sequence that simulates the full radio traffic of a real incident — the
+  // hands-free demo. It fabricates comms, unit statuses, milestones, an IC and a
+  // PAR, which is precisely its job.
+  //
+  // 🛑 IT MUST NEVER RUN ON A REAL INCIDENT. The gate is `incident.isDemo`, set
+  // from the dispatch's own `demo-` provenance at auto-activate. It used to be
+  // gated on "did this incident come from a dispatch?" — which a live CAD feed
+  // satisfies just as well as the Simulate Dispatch button does. Nothing has ever
+  // gone wrong (every dispatch in prod today is a demo dispatch, and the prod
+  // incident records are clean — checked), but the day a department wires a real
+  // Active911 feed, a real fire would have triggered this script and written
+  // fabricated radio traffic and fabricated NFIRS times into a legal record.
+  //
+  // If you are tempted to relax this gate: don't. Add a new explicit demo entry
+  // point instead.
   const demoTriggeredRef = useRef(false);
   useEffect(() => {
     // Auto-scroll to relevant section during demo when events fire
@@ -858,9 +907,11 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
       }
     }
 
-    // Only trigger once per incident, and only for auto-activated dispatches
-    // Skip if DemoTimeline is driving the demo — it handles its own events
+    // Skip if DemoTimeline is driving the demo — it handles its own events.
     if (showDemoTimeline) return;
+    // THE GATE: scripted fiction runs ONLY on a dispatch that identified itself as
+    // a demo. A real CAD alert never sets isDemo.
+    if (!incident?.isDemo) return;
     if (!incident || !incident.units?.length || demoTriggeredRef.current) return;
     // Only run if this is a fresh auto-activated incident (no milestones beyond dispatched)
     const msKeys = Object.keys(incident.milestones || {});
@@ -1124,55 +1175,167 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
 
   const elapsed = useElapsed(incident?.milestones?.dispatched);
 
-  // PAR countdown timer
+  // PAR overdue tone.
+  // Was: a rising-edge detector that fired only on the exact 0 transition. Two
+  // ways that missed a genuinely overdue PAR: (a) if the component remounted while
+  // already overdue, prevParCountdownRef started null and NO tone ever fired;
+  // (b) the countdown used to clamp at 0, so a backgrounded tab whose interval was
+  // throttled could skip the edge. Now the countdown goes NEGATIVE when overdue
+  // (see below), so we fire on the STATE (just crossed into overdue) and re-arm
+  // only once it's satisfied. Never infer safety from an edge you might miss.
+  const parOverdueTonedRef = useRef(false);
+  useEffect(() => {
+    if (parCountdown == null) { parOverdueTonedRef.current = false; return; }
+    if (parCountdown <= 0 && !parOverdueTonedRef.current) {
+      parOverdueTonedRef.current = true;
+      tonePar();
+    } else if (parCountdown > 0) {
+      parOverdueTonedRef.current = false;   // re-arm after a PAR resets the clock
+    }
+  }, [parCountdown]);
+
+  // The department's PAR anchor, from GET /api/active-board (`par_anchor`).
+  // DEFAULT = dispatch: present on every call, so the clock always starts, and it
+  // matches the market-leading board (anchors to call creation). on_scene is the
+  // explicit long-travel / volunteer choice (Annex A.8.2.4) — honoured when the
+  // department sets it, but never the fail-open default, because on-scene time is
+  // not guaranteed to exist. (Read the snake_case field the server actually
+  // sends; tolerate a camelCase alias.)
+  const parAnchor = (incident?.par_anchor ?? incident?.parAnchor) === PAR_ANCHOR.ON_SCENE
+    ? PAR_ANCHOR.ON_SCENE
+    : PAR_ANCHOR.DISPATCH;
+
+  // PAR countdown timer.
+  // NOTE: this deliberately does NOT clamp at zero. It used to — which meant an
+  // overdue PAR read "PAR OVERDUE" forever, and the IC could not tell whether it
+  // was 30 seconds late or 11 minutes late. On a fireground that difference is the
+  // whole point of the tool. A negative value = seconds overdue, and the chip
+  // renders it counting UP.
   useEffect(() => {
     if (!incident || !incident.parInterval || incident.parInterval <= 0) {
       setParCountdown(null);
       return;
     }
 
-    const tick = () => {
-      // Get the last PAR check time or use dispatch time
-      const lastParTime = incident.parHistory?.at(-1)?.time || incident.milestones?.dispatched;
-      if (!lastParTime) return;
-
-      const elapsedSinceParMs = Date.now() - new Date(lastParTime).getTime();
-      const elapsedSincePar = Math.floor(elapsedSinceParMs / 1000);
-      const parIntervalSeconds = incident.parInterval * 60;
-      const remaining = parIntervalSeconds - elapsedSincePar;
-
-      setParCountdown(Math.max(0, remaining));
-    };
+    // The math lives in utils/parClock.js so the fireground's most time-critical
+    // number is unit-tested and cannot regress unnoticed. Do not inline it back.
+    // `firstOnSceneAt` is DERIVED server-side from the moment dispatch flipped the
+    // first unit to on_scene over the radio — see GET /api/active-board.
+    const tick = () => setParCountdown(parRemainingSeconds(incident, Date.now(), parAnchor));
 
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [incident?.parInterval, incident?.parHistory, incident?.milestones?.dispatched]);
+  }, [incident?.parInterval, incident?.parHistory, incident?.milestones?.dispatched, incident?.firstOnSceneAt, parAnchor]);
 
   function setMilestone(key) {
     const ts = nowIso();
     setIncident(inc => {
       if (inc.milestones[key]) return inc; // already stamped
-      const label = getMilestones(inc.type).find(m => m.key === key)?.label || key;
+      // Fireground events (evacuation, strategy change, collapse, all-clear) are
+      // NOT in MILESTONES_BY_TYPE, so look them up too — otherwise the incident
+      // record would read "Milestone: evacuation" (a variable name) instead of
+      // "Emergency evacuation ordered". This text becomes the legal narrative.
+      const fg = FIREGROUND_EVENTS.find(e => e.key === key);
+      const label = fg
+        ? fg.full
+        : (getMilestones(inc.type).find(m => m.key === key)?.label || key);
       return {
         ...inc,
         milestones: { ...inc.milestones, [key]: ts },
         timelineEvents: [
           ...(inc.timelineEvents || []),
-          { id: Date.now(), time: ts, event: `Milestone: ${label}`, type: 'milestone', auto: true },
+          { id: newId(), time: ts, event: fg ? `⚠ ${label}` : `Milestone: ${label}`, type: fg ? 'par_alert' : 'milestone', auto: true },
         ],
       };
     });
+  }
+
+  // ── MAYDAY (Phase 4): tap-and-snapshot. One tap freezes a snapshot server-side,
+  // starts the clock, and auto-orders a PAR (stamps milestones.mayday → the same
+  // benchmark trigger the fireground events use). No typed LUNAR / air / channel
+  // (decisions log 2026-07-15) — the market pattern, and the only thing usable on a
+  // chaotic scene.
+  const maydayActive = Boolean(incident?.milestones?.mayday && !incident?.maydayResolvedAt);
+
+  useEffect(() => {
+    if (!maydayActive || !incident?.milestones?.mayday) { setMaydayElapsed('00:00'); setMaydayError(''); return; }
+    const start = new Date(incident.milestones.mayday).getTime();
+    const upd = () => {
+      const s = Math.max(0, Math.floor((Date.now() - start) / 1000));
+      setMaydayElapsed(`${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`);
+    };
+    upd();
+    const id = setInterval(upd, 1000);
+    return () => clearInterval(id);
+  }, [maydayActive, incident?.milestones?.mayday]);
+
+  async function declareMayday() {
+    if (!incident || maydayActive) return;
+    setMaydayArm(false);
+    const clientId = (window.crypto?.randomUUID?.()) || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const ts = nowIso();
+    // Stamp the milestone (raises PAR REQUIRED via parBenchmarkTriggers) + go red,
+    // in one update. auto:false — a real MAYDAY belongs in the legal record.
+    setIncident(inc => {
+      if (!inc || inc.milestones?.mayday) return inc;
+      return {
+        ...inc,
+        milestones: { ...inc.milestones, mayday: ts },
+        maydayId: clientId,
+        maydayResolvedAt: null,
+        timelineEvents: [...(inc.timelineEvents || []),
+          { id: newId(), time: ts, event: '🆘 MAYDAY DECLARED', type: 'par_alert', auto: false }],
+      };
+    });
+    setMaydayError('');
+    // Seal the snapshot server-side. Surface failure — never a silent write on a
+    // life-safety record.
+    const snapshot = {
+      type: incident.type, address: incident.address,
+      units: (incident.units || []).map(u => ({ designation: u.designation, status: u.status })),
+      milestones: incident.milestones,
+    };
+    try {
+      await api.post('/api/active-board/mayday', {
+        client_id: clientId, scene_snapshot: snapshot, client_recorded_at: ts,
+      });
+    } catch (e) {
+      setMaydayError('MAYDAY is active on the board, but the sealed server record did not save — it will retry on reconnect.');
+    }
+  }
+
+  async function resolveMayday() {
+    if (!incident?.maydayId) return;
+    const evId = (window.crypto?.randomUUID?.()) || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    try {
+      const res = await api.post(`/api/active-board/mayday/${incident.maydayId}/events`, {
+        events: [{ client_id: evId, kind: 'resolved' }],
+      });
+      const r = res?.data?.results?.[0];
+      if (r?.status === 'rejected') {
+        setMaydayError('Cannot resolve yet — run a whole-scene PAR (all accounted) first.');
+        return;
+      }
+      setMaydayError('');
+      setIncident(inc => inc ? ({
+        ...inc, maydayResolvedAt: nowIso(),
+        timelineEvents: [...(inc.timelineEvents || []),
+          { id: newId(), time: nowIso(), event: 'MAYDAY resolved — all accounted', type: 'milestone', auto: false }],
+      }) : inc);
+    } catch (e) {
+      setMaydayError('Could not record MAYDAY resolution — check connection and retry.');
+    }
   }
 
   function addUnit(unit) {
     const ts = nowIso();
     setIncident(inc => ({
       ...inc,
-      units: [...inc.units, { ...unit, id: Date.now() }],
+      units: [...inc.units, { ...unit, id: newId() }],
       timelineEvents: [
         ...(inc.timelineEvents || []),
-        { id: Date.now() + 1, time: ts, event: `Unit added: ${unit.designation} (${unit.status})`, type: 'unit', auto: true },
+        { id: newId(), time: ts, event: `Unit added: ${unit.designation} (${unit.status})`, type: 'unit', auto: true },
       ],
     }));
     setShowUnitModal(false);
@@ -1187,7 +1350,22 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
   }
 
   function addPerson(p) {
-    setIncident(inc => ({ ...inc, personnel: [...inc.personnel, { ...p, id: Date.now(), lastPar: nowIso() }] }));
+    // lastPar starts NULL, not now(). It used to be stamped at ADD time, so a
+    // firefighter who had never been in a single PAR displayed "PAR 0m ago" — the
+    // board asserting an accountability check that never happened. Never show a
+    // life-safety value that isn't true; "never" is a legitimate state and the UI
+    // renders it as such.
+    setIncident(inc => ({
+      ...inc,
+      personnel: [...inc.personnel, {
+        ...p,
+        id: newId(),
+        lastPar: null,
+        // The accountability fact: which rig did they ride in on? null = POV.
+        unitId: p.unitId ?? null,
+        pov: !!p.pov,
+      }],
+    }));
     setShowPersonModal(false);
   }
 
@@ -1200,7 +1378,7 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
   }
 
   function addRole(role) {
-    setIncident(inc => ({ ...inc, roles: [...inc.roles, { ...role, id: Date.now() }] }));
+    setIncident(inc => ({ ...inc, roles: [...inc.roles, { ...role, id: newId() }] }));
     setShowRoleModal(false);
   }
 
@@ -1212,20 +1390,57 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
     const ts = nowIso();
     const onScene = (incident.personnel || []).filter(p => p.status !== 'Returned');
     const total   = onScene.length;
-    const accounted = checkedIds ? onScene.filter(p => checkedIds.has(p.id)).length : total;
+    // A person is accounted for ONLY if they were affirmatively checked. There is
+    // no "no list supplied = everyone is fine" shortcut any more — see the PAR
+    // modal note. An empty set means nobody has been accounted for yet, and that
+    // is the honest reading.
+    const checked   = checkedIds instanceof Set ? checkedIds : new Set();
+    const accounted = onScene.filter(p => checked.has(p.id)).length;
     const missing   = total - accounted;
+
+    // A completed PAR is a REPLAYABLE append-only record (0058). It carries:
+    //   • client_id — a UUID minted here. The server dedupes on it, so a retry
+    //     after an outage cannot double-record.
+    //   • ran_at — the real time the PAR happened (this ts), so a LATE write
+    //     records when it actually occurred, not when the network came back.
+    //   • an incident snapshot, so the PAR still records if the call has closed.
+    //
+    // On failure we do NOT tell the IC to "re-run it" — nobody re-runs a PAR on a
+    // fireground because an app asked. We QUEUE it (offlineQueue, localStorage-
+    // backed, auto-flushed on reconnect by OfflineBanner). The PAR survives the
+    // outage and lands itself; the idempotency key makes replay safe.
+    const parBody = {
+      client_id: newClientUuid(),
+      ran_at: ts,
+      accounted, missing, total,
+      results: onScene.map(p => ({ name: p.name, accounted: checked.has(p.id) })),
+      incident_id:   Number.isInteger(incident?.id) ? incident.id : null,
+      incident_type: incident?.type || '',
+      address:       incident?.address || '',
+    };
+    api.post('/api/active-board/par', parBody)
+      .then(() => setParSaveError(null))
+      .catch(() => {
+        // Durable queue — replays on reconnect, idempotent via client_id.
+        const queued = offlineQueue.push({
+          method: 'POST', url: '/api/active-board/par', body: parBody,
+          label: `PAR ${accounted}/${total} @ ${timeStr(ts)}`,
+        });
+        setParSaveError(queued
+          ? null   // queued successfully — it will sync; no alarm needed
+          : 'PAR could not be saved OR queued (device storage full). Note it manually.');
+      });
+
     setIncident(inc => ({
       ...inc,
-      personnel: inc.personnel.map(p =>
-        (!checkedIds || checkedIds.has(p.id)) ? { ...p, lastPar: ts } : p
-      ),
+      personnel: inc.personnel.map(p => (checked.has(p.id) ? { ...p, lastPar: ts } : p)),
       parHistory: [...(inc.parHistory || []), { time: ts, count: accounted, missing, total }],
       timelineEvents: [
         ...(inc.timelineEvents || []),
         {
-          id: Date.now(), time: ts,
+          id: newId(), time: ts,
           event: missing > 0
-            ? `PAR — ${accounted}/${total} accounted · ⚠ ${missing} NOT checked in`
+            ? `PAR — ${accounted}/${total} accounted · ⚠ ${missing} NOT accounted for`
             : `PAR — All ${accounted} accounted for`,
           type: missing > 0 ? 'par_alert' : 'par', auto: true,
         },
@@ -1243,7 +1458,7 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
   function addCommsEntry(entry) {
     setIncident(inc => ({
       ...inc,
-      commsLog: [{ ...entry, id: Date.now(), time: nowIso() }, ...(inc.commsLog || [])],
+      commsLog: [{ ...entry, id: newId(), time: nowIso() }, ...(inc.commsLog || [])],
     }));
     setShowCommsModal(false);
   }
@@ -1263,7 +1478,7 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
       milestones: { ...inc.milestones, onScene: inc.milestones.onScene || ts },
       timelineEvents: [
         ...(inc.timelineEvents || []),
-        { id: Date.now(), time: ts, event: eventText, type: 'milestone', auto: false },
+        { id: newId(), time: ts, event: eventText, type: 'milestone', auto: false },
       ],
     }));
     setShowCommandModal(false);
@@ -1275,7 +1490,7 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
       ...inc,
       timelineEvents: [
         ...(inc.timelineEvents || []),
-        { id: Date.now(), time: ts, event, type, auto: false },
+        { id: newId(), time: ts, event, type, auto: false },
       ],
     }));
   }
@@ -1286,10 +1501,10 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
       const cycle = (inc.rehabLog || []).filter(r => r.name === name).length + 1;
       return {
         ...inc,
-        rehabLog: [...(inc.rehabLog || []), { id: Date.now(), name, enteredAt: ts, exitedAt: null, cycle }],
+        rehabLog: [...(inc.rehabLog || []), { id: newId(), name, enteredAt: ts, exitedAt: null, cycle }],
         timelineEvents: [
           ...(inc.timelineEvents || []),
-          { id: Date.now() + 1, time: ts, event: `${name} entered Rehab (Cycle ${cycle})`, type: 'rehab', auto: true },
+          { id: newId(), time: ts, event: `${name} entered Rehab (Cycle ${cycle})`, type: 'rehab', auto: true },
         ],
       };
     });
@@ -1303,114 +1518,9 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
       rehabLog: inc.rehabLog.map(r => r.id === id ? { ...r, exitedAt: ts } : r),
       timelineEvents: [
         ...(inc.timelineEvents || []),
-        { id: Date.now(), time: ts, event: `${entry?.name || 'Member'} released from Rehab`, type: 'rehab', auto: true },
+        { id: newId(), time: ts, event: `${entry?.name || 'Member'} released from Rehab`, type: 'rehab', auto: true },
       ],
     }));
-  }
-
-  async function saveToIncidentLog(inc) {
-    // Build a rich narrative from all board data
-    const fmtTime = iso => iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—';
-    const fmtDate = iso => iso ? new Date(iso).toLocaleDateString() : new Date().toLocaleDateString();
-
-    const lines = [];
-    lines.push(`IC: ${inc.ic}`);
-
-    // Timeline
-    if (inc.milestones && Object.keys(inc.milestones).length) {
-      lines.push('\n--- TIMELINE ---');
-      Object.entries(inc.milestones).forEach(([k, v]) => {
-        lines.push(`${k.replace(/([A-Z])/g, ' $1').trim()}: ${fmtTime(v)}`);
-      });
-    }
-
-    // Units
-    if (inc.units?.length) {
-      lines.push('\n--- UNITS ---');
-      inc.units.forEach(u => lines.push(`${u.designation} — Officer: ${u.officer} — Status: ${u.status}`));
-    }
-
-    // Personnel
-    if (inc.personnel?.length) {
-      lines.push('\n--- PERSONNEL ---');
-      inc.personnel.forEach(p => lines.push(`${p.name} — ${p.assignment} — ${p.status}`));
-    }
-
-    // ICS Roles
-    if (inc.roles?.length) {
-      lines.push('\n--- ICS ROLES ---');
-      inc.roles.forEach(r => lines.push(`${r.role}: ${r.assignee}`));
-    }
-
-    // PAR History
-    if (inc.parHistory?.length) {
-      lines.push('\n--- PAR HISTORY ---');
-      inc.parHistory.forEach(p => lines.push(`${fmtTime(p.time)} — ${p.count} personnel on scene`));
-    }
-
-    // Comms Log (oldest first for narrative)
-    if (inc.commsLog?.length) {
-      lines.push('\n--- RADIO / COMMS LOG ---');
-      [...inc.commsLog].reverse().forEach(e =>
-        lines.push(`${fmtTime(e.time)} [${e.channel}] ${e.from}: ${e.message}`)
-      );
-    }
-
-    // Rehab Log
-    if (inc.rehabLog?.length) {
-      lines.push('\n--- REHAB LOG ---');
-      inc.rehabLog.forEach(r => {
-        const dur = r.exitedAt ? `${Math.floor((new Date(r.exitedAt) - new Date(r.enteredAt)) / 60000)}m` : 'ongoing';
-        lines.push(`${r.name} — Cycle ${r.cycle} — Entered: ${fmtTime(r.enteredAt)} · Duration: ${dur}`);
-      });
-    }
-
-    // Incident Timeline
-    if (inc.timelineEvents?.length) {
-      lines.push('\n--- INCIDENT TIMELINE ---');
-      [...inc.timelineEvents]
-        .sort((a, b) => new Date(a.time) - new Date(b.time))
-        .forEach(e => lines.push(`${fmtTime(e.time)} — ${e.event}`));
-    }
-
-    // Incident notes
-    if (inc.notes?.trim()) {
-      lines.push('\n--- NOTES ---');
-      lines.push(inc.notes.trim());
-    }
-
-    const dispatchedAt = inc.milestones?.dispatched || new Date().toISOString();
-    const payload = {
-      incidentNumber: inc.incidentNumber,
-      date:           fmtDate(dispatchedAt).split('/').reverse().join('-').replace(/(\d+)-(\d+)-(\d+)/, '$3-$1-$2') || new Date().toISOString().slice(0, 10),
-      time:           fmtTime(dispatchedAt),
-      type:           inc.type,
-      alarmLevel:     'Still',
-      address:        inc.address,
-      units:          (inc.units || []).map(u => u.designation),
-      personnel:      (inc.personnel || []).map(p => p.name),
-      notes:          lines.join('\n'),
-    };
-
-    // Normalize date to YYYY-MM-DD
-    try {
-      payload.date = new Date(dispatchedAt).toISOString().slice(0, 10);
-    } catch (_) {
-      payload.date = new Date().toISOString().slice(0, 10);
-    }
-
-    const data = await api.post('/api/incidents', payload);
-    if (data.error) throw new Error(data.error);
-    // Link this saved incident to the active call so its per-apparatus status
-    // history (NFIRS dispatched/en route/arrival/clear times) is attributed to
-    // it. Must happen while the active board still exists (before close).
-    // Non-fatal: a link failure must not block saving the incident.
-    const incidentId = data?.data?.id;
-    if (incidentId) {
-      try { await api.post('/api/active-board/link-incident', { incident_id: incidentId }); }
-      catch (_) { /* best-effort */ }
-    }
-    return data;
   }
 
   const isHazmat          = incident ? HAZMAT_TYPES.includes(incident.type) : false;
@@ -1419,6 +1529,65 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
   const availableMembers  = liveMembers.filter(m => !assignedNames.has(m));
   const inRehab           = (incident?.rehabLog || []).filter(r => !r.exitedAt);
   const pastRehab         = (incident?.rehabLog || []).filter(r => r.exitedAt).slice(-6).reverse();
+  // PERSONNEL GROUPED BY THE RIG THEY RODE IN ON.
+  // A firefighter does not appear on a fireground unattached — they arrive on
+  // apparatus, in a seat. The exception is the volunteer who arrives POV, and they
+  // are NOT "just on scene": they go in a LOUD pool until Command gives them a job.
+  // Assigned to a rig, or in the pool. No third state. (Freelancing must be
+  // impossible to hide.)
+  // What the PAR clock counts from — surfaced on screen. A life-safety value
+  // never travels without its provenance.
+  const parBasisInfo = useMemo(
+    () => (incident ? parBasis(incident, parAnchor) : null),
+    [incident, parAnchor]
+  );
+  // Benchmarks that fired after the last PAR. These OWE the IC a PAR regardless of
+  // what the wall clock says. (NJ mandates the benchmarks and ZERO intervals.)
+  const parOwed = useMemo(() => (incident ? parBenchmarkTriggers(incident) : []), [incident]);
+
+  // ── ACCOUNTABILITY COHERENCE ────────────────────────────────────────────────
+  // You cannot have personnel on scene from a rig that never arrived. The only
+  // legitimate exception is the volunteer who came POV. Anything else is a
+  // contradiction, and a contradiction on an accountability board is not something
+  // to render quietly — it means the board and the fireground disagree, and the
+  // board is the one that's wrong. SURFACE IT.
+  const unitsOnScene = useMemo(
+    () => (incident?.units || []).filter(u => u.status === 'On Scene'),
+    [incident?.units]
+  );
+  const povCount = useMemo(
+    () => (incident?.personnel || []).filter(p => p.status !== 'Returned' && !p.unitId).length,
+    [incident?.personnel]
+  );
+  // People marked on scene whose RIG is not on scene, and who did not arrive POV.
+  // Either the rig's status is stale, or the person's is. Command must reconcile it
+  // over the radio — we will not guess which.
+  const ghostPersonnel = useMemo(() => {
+    const units = incident?.units || [];
+    return (incident?.personnel || []).filter(p => {
+      if (p.status === 'Returned' || !p.unitId) return false;   // POV is handled above
+      const rig = units.find(u => u.id === p.unitId);
+      return !rig || rig.status !== 'On Scene';
+    });
+  }, [incident?.personnel, incident?.units]);
+
+  const personnelByUnit = useMemo(() => {
+    const people = incident?.personnel || [];
+    const units  = incident?.units || [];
+    const groups = [];
+    for (const u of units) {
+      const crew = people.filter(p => p.unitId === u.id);
+      if (crew.length) groups.push({ key: `u-${u.id}`, label: u.designation, people: crew, pov: false });
+    }
+    // Anyone with no rig: POV arrivals, plus any legacy person added before the
+    // board modelled apparatus at all. Both need Command's attention.
+    const orphans = people.filter(p => !p.unitId || !units.some(u => u.id === p.unitId));
+    if (orphans.length) {
+      groups.push({ key: 'pov', label: 'POV / UNASSIGNED — no apparatus', people: orphans, pov: true });
+    }
+    return groups;
+  }, [incident?.personnel, incident?.units]);
+
   const allTimelineEvents = [...(incident?.timelineEvents || [])].sort((a, b) => new Date(b.time) - new Date(a.time));
 
   // Dispatch and command-level officers (Chief, Deputy Chief, Battalion Chief) can edit the board.
@@ -1427,7 +1596,7 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
   const canEdit = EDIT_ROLES.includes(currentUser?.role);
 
   return (
-    <div className="glove-friendly max-w-[1600px] mx-auto px-4 py-4 space-y-4">
+    <div className={`glove-friendly max-w-[1600px] mx-auto px-4 py-4 space-y-4 ${maydayActive ? 'ring-4 ring-red-600 rounded-2xl' : ''}`}>
 
       {/* ── Tab Bar ── */}
       <div className="flex rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 p-1 gap-1">
@@ -1436,14 +1605,14 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
           className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-colors ${
             activeTab === 'dispatch'
               ? 'bg-white dark:bg-gray-900 text-red-700 dark:text-red-300 shadow-sm'
-              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+              : 'text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
           }`}
         >
           <Radio size={15} />
           Live Dispatch
           {dispatches.length > 0 && (
             <span className={`text-xs font-black px-1.5 py-0.5 rounded-full ${
-              activeTab === 'dispatch' ? 'bg-red-100 dark:bg-red-950/50 text-red-600 dark:text-red-400' : 'bg-red-500 text-white animate-pulse'
+              activeTab === 'dispatch' ? 'bg-red-100 dark:bg-red-950/50 text-red-700 dark:text-red-400' : 'bg-red-500 text-white animate-pulse'
             }`}>
               {dispatches.length}
             </span>
@@ -1454,14 +1623,14 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
           className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-colors ${
             activeTab === 'board'
               ? 'bg-white dark:bg-gray-900 text-red-700 dark:text-red-300 shadow-sm'
-              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+              : 'text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
           }`}
         >
           <Siren size={15} />
           Command Board
           {incident && (
             <span className={`text-xs font-black px-1.5 py-0.5 rounded-full ${
-              activeTab === 'board' ? 'bg-red-100 dark:bg-red-950/50 text-red-600 dark:text-red-400' : 'bg-red-600 text-white animate-pulse'
+              activeTab === 'board' ? 'bg-red-100 dark:bg-red-950/50 text-red-700 dark:text-red-400' : 'bg-red-600 text-white animate-pulse'
             }`}>
               ACTIVE
             </span>
@@ -1501,56 +1670,13 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
             onAlertConsumed();
             setActiveTab('board');
           }}
-          onEvent={(ev) => {
-            setIncident(prev => {
-              if (!prev) return prev;
-              const now = new Date().toISOString();
-              let updated = { ...prev };
-
-              if (ev.type === 'comms') {
-                updated.commsLog = [
-                  { id: Date.now() + Math.random(), time: now, from: ev.from, message: ev.message, channel: ev.channel || 'Tac 1' },
-                  ...(prev.commsLog || []),
-                ];
-              }
-              if (ev.type === 'unit_status') {
-                const idx = ev.unit ?? ev.unitIndex;
-                if (idx != null && updated.units[idx]) {
-                  const units = [...updated.units];
-                  units[idx] = { ...units[idx], status: ev.status };
-                  updated.units = units;
-                }
-              }
-              if (ev.type === 'milestone') {
-                updated.milestones = { ...updated.milestones, [ev.key]: ev.value || now };
-              }
-              if (ev.type === 'timeline_event') {
-                updated.timelineEvents = [
-                  ...(updated.timelineEvents || []),
-                  { id: Date.now() + Math.random(), time: now, event: ev.event, type: ev.eventType || 'radio', auto: true },
-                ];
-              }
-              if (ev.type === 'command_established') {
-                updated.commandAssumed = true;
-                updated.commandOfficer = ev.ic || ev.officer || '';
-                updated.commandName = ev.commandName || '';
-                updated.milestones = { ...updated.milestones, commandEstablished: now };
-                // Add IC to roles
-                updated.roles = [
-                  ...(updated.roles || []),
-                  { id: Date.now(), role: 'Incident Commander', assignee: ev.ic || ev.officer || 'Unknown' },
-                ];
-              }
-              if (ev.type === 'par_complete') {
-                updated.milestones = { ...updated.milestones, parComplete: now };
-                updated.timelineEvents = [
-                  ...(updated.timelineEvents || []),
-                  { id: Date.now() + Math.random(), time: now, event: `PAR complete — ${ev.count || 0} personnel, ${ev.missing || 0} missing`, type: 'par', auto: true },
-                ];
-              }
-              return updated;
-            });
-          }}
+          // NO onEvent HANDLER HERE — ON PURPOSE. DemoTimeline is the SINGLE owner of
+          // demo event application: it applies every event through the `setIncident`
+          // prop above and stamps `_demoFlash` for the visual flashes this file reads.
+          // CommandBoard used to ALSO apply the same events via an `onEvent` callback,
+          // so every Radio Log entry and timeline event was written twice and the ICS
+          // chart rendered two Incident Commander cards (this file's copy pushed the IC
+          // role with no already-present guard). One event, one writer. Do not re-add.
           onClose={() => {
             setShowDemoTimeline(false);
             setIncident(null);
@@ -1573,6 +1699,9 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
               onAddDispatch={onAddDispatch}
               onSetupCAD={() => onNavigate('cad')}
               departmentId={currentUser?.department_id}
+              currentUser={currentUser}
+              onCallCleared={onCallCleared}
+              onCallReopened={onCallReopened}
             />
           </ScreenErrorBoundary>
           {/* Live apparatus status alongside the incoming-call feed (Phase 2) */}
@@ -1588,13 +1717,13 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
           onActivate={(inc) => {
             onAlertConsumed();
             const activatedAt = inc.milestones?.dispatched || nowIso();
-            setIncident({
+            setIncident(applyParDefault({
               ...inc,
               rehabLog: [],
               timelineEvents: [
                 { id: Date.now(), time: activatedAt, event: `Incident activated — ${inc.type} @ ${inc.address}`, type: 'activation', auto: true },
               ],
-            });
+            }));
             api.put('/api/active-board', {
               type: inc.type,
               address: inc.address,
@@ -1614,6 +1743,20 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
       {activeTab === 'board' && incident && <div className={showDemoTimeline ? 'space-y-2' : 'space-y-4'}>
 
       {/* ── Demo Mode Banner ── */}
+      {/* A demo incident stays visibly a demo for its WHOLE life — not just while
+          the auto-sequence is playing. The old banner was tied to `demoRunning`, so
+          the moment the 80-second script finished, a board full of fabricated radio
+          traffic, a fabricated IC and a fabricated PAR looked exactly like a real
+          incident. Anyone walking up to the screen mid-demo could not tell. */}
+      {incident?.isDemo && !demoRunning && (
+        <div className="bg-amber-500 rounded-2xl px-4 py-2 flex items-center gap-2 shadow-lg">
+          <Radio size={16} className="text-white shrink-0" />
+          <p className="text-xs font-black text-white">
+            DEMO INCIDENT — simulated data. This will not be saved to the incident log.
+          </p>
+        </div>
+      )}
+
       {demoRunning && (
         <div className="bg-gradient-to-r from-amber-500 to-orange-500 rounded-2xl px-4 py-3 flex items-center gap-3 shadow-lg animate-pulse">
           <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
@@ -1671,7 +1814,9 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
                 id: incident.id || Date.now(),
                 type: incident.type || 'Unknown',
                 address: incident.address || '',
-                units: incident.units?.map(u => u.name).join(', ') || '',
+                // `designation`, not `name` — units have never had a `name` field, so
+                // this used to emit ",," and the responder payload carried no units.
+                units: incident.units?.map(u => u.designation).filter(Boolean).join(', ') || '',
                 dispatched_at: incident.milestones?.dispatched || new Date().toISOString(),
               })}
               className="px-3 py-1.5 bg-green-500 hover:bg-green-400 text-white text-xs font-black rounded-lg flex items-center gap-1 shadow-lg"
@@ -1698,10 +1843,24 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
             )}
           </div>
         </div>
-        {/* Stats */}
+        {/* Stats.
+            This row used to read "0 on scene · 3 personnel", which is not a thing:
+            firefighters arrive ON APPARATUS. The units count was unlabelled, so it
+            read as a contradiction on a red bar at 0300. Both counts are now
+            explicit, and any state that IS genuinely incoherent gets SURFACED
+            rather than quietly rendered (see the accountability warning below). */}
         <div className="mt-3 flex flex-wrap gap-4 text-sm items-center">
-          <span className="flex items-center gap-1"><Truck size={14} /> {incident.units.filter(u => u.status === 'On Scene').length} on scene</span>
-          <span className="flex items-center gap-1"><Users size={14} /> {onScenePersonnel.length} personnel</span>
+          <span className="flex items-center gap-1">
+            <Truck size={14} /> {unitsOnScene.length} {unitsOnScene.length === 1 ? 'unit' : 'units'} on scene
+          </span>
+          <span className="flex items-center gap-1">
+            <Users size={14} /> {onScenePersonnel.length} personnel
+          </span>
+          {povCount > 0 && (
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500 text-white text-xs font-black">
+              <AlertTriangle size={13} /> {povCount} POV — UNASSIGNED
+            </span>
+          )}
           {incident.parHistory?.length > 0 && (
             <span className="flex items-center gap-1 text-red-200">
               <UserCheck size={14} /> PAR {timeStr(incident.parHistory.at(-1)?.time)}
@@ -1725,7 +1884,14 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
             <div className="flex items-center gap-2 ml-auto">
               <select
                 value={incident.parInterval || 0}
-                onChange={e => setIncident(inc => ({ ...inc, parInterval: parseInt(e.target.value) }))}
+                onChange={e => {
+                  const minutes = parseInt(e.target.value);
+                  setIncident(inc => ({ ...inc, parInterval: minutes }));
+                  // PAR spine (0048): persist so every surface (TV, a second
+                  // console) shares the countdown. Best-effort — local UI is
+                  // never blocked on the write.
+                  api.patch('/api/active-board/par-interval', { minutes: minutes > 0 ? minutes : null }).catch(() => {});
+                }}
                 aria-label="PAR check interval"
                 className="text-xs bg-red-600 text-white border border-red-400 rounded-lg px-2 py-1 font-semibold"
               >
@@ -1738,7 +1904,11 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
             </div>
           )}
 
-          {/* PAR Countdown Display */}
+          {/* PAR Countdown Display.
+              Overdue now counts UP. It used to clamp at zero and read a flat
+              "PAR OVERDUE" forever — so the IC could not tell 30 seconds late from
+              11 minutes late, which is the entire decision the number exists to
+              support. Never show a life-safety value without its magnitude. */}
           {incident.parInterval > 0 && parCountdown !== null && (
             <div className={`flex items-center gap-1 font-bold text-xs px-3 py-1 rounded-lg ${
               parCountdown <= 0
@@ -1748,13 +1918,134 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
                 : 'bg-green-500 text-white'
             }`}>
               <Clock size={13} />
-              {parCountdown <= 0
-                ? 'PAR OVERDUE'
-                : `PAR in ${Math.floor(parCountdown / 60)}:${String(parCountdown % 60).padStart(2, '0')}`
-              }
+              {parChipLabel(parCountdown)}
             </div>
           )}
         </div>
+
+        {/* WHAT THE CLOCK COUNTS FROM. Never show a life-safety value without its
+            provenance. This matters more than it looks: in most jurisdictions
+            DISPATCH is already announcing 10-minute elapsed-time notifications over
+            the radio (NFPA 1500 §8.2.4 makes it their job). If our clock is
+            anchored differently from theirs, the IC hears two different numbers for
+            the same fire. Saying the anchor out loud is what makes them reconcile. */}
+        {incident.parInterval > 0 && parBasisInfo && (
+          <p className="mt-1.5 text-[11px] text-red-100/80 font-semibold">
+            PAR clock: {parBasisInfo.from}
+            {incident.firstOnSceneUnit && parBasisInfo.from.includes('on scene')
+              ? ` (${incident.firstOnSceneUnit}, ${timeStr(parBasisInfo.time)})`
+              : ` (${timeStr(parBasisInfo.time)})`}
+          </p>
+        )}
+        {incident.parInterval > 0 && !parBasisInfo && (
+          <p className="mt-1.5 text-[11px] text-amber-200 font-bold">
+            PAR clock not started — no unit on scene yet. Crews are still responding.
+          </p>
+        )}
+
+        {/* ── A BENCHMARK OWES YOU A PAR ────────────────────────────────────────
+            PAR is BENCHMARK-driven first and clock-driven second. New Jersey's
+            statewide regulation (N.J.A.C. 5:75-2.4(f)) mandates five triggers and
+            ZERO time intervals — an entire state says the benchmarks ARE the
+            doctrine and the clock is optional. A board that only nags on a wall
+            clock is doctrinally wrong.
+
+            We PROMPT. We never run it. Same rule as unit status: the machine does
+            not perform a roll call — a human does, over the radio, and then tells
+            us. A PAR the system "completed" is not a PAR. */}
+        {/* ── MAYDAY — the whole board goes red. Two-tap DECLARE; then a snapshot is
+            frozen server-side, the clock runs, and a PAR is auto-ordered (the mayday
+            milestone raises PAR REQUIRED below). No typed LUNAR / air / channel. ── */}
+        {canEdit && incident && (maydayActive ? (
+          <div className="mt-2 rounded-lg border-4 border-red-600 bg-red-700 px-3 py-2 shadow-lg">
+            <div className="flex items-center gap-3 flex-wrap">
+              <Siren size={18} className="text-white shrink-0 animate-pulse" />
+              <p className="text-sm font-black text-white flex-1 min-w-0 tracking-wide">
+                MAYDAY ACTIVE · {maydayElapsed}
+                {incident.milestones?.mayday && (
+                  <span className="opacity-70 font-semibold"> · declared {timeStr(incident.milestones.mayday)}</span>
+                )}
+              </p>
+              <button
+                onClick={resolveMayday}
+                className="shrink-0 px-3 py-1.5 bg-white text-red-700 text-xs font-black rounded-lg hover:bg-red-50"
+              >
+                MAYDAY RESOLVED
+              </button>
+            </div>
+            {maydayError && <p className="text-[11px] font-bold text-white/90 mt-1">{maydayError}</p>}
+          </div>
+        ) : (
+          <div className="mt-2">
+            <button
+              onClick={() => {
+                if (maydayArm) { declareMayday(); }
+                else { setMaydayArm(true); setTimeout(() => setMaydayArm(false), 3000); }
+              }}
+              className={`w-full flex items-center justify-center gap-2 px-3 py-3 rounded-lg border-2 font-black text-sm tracking-wide transition-colors ${
+                maydayArm
+                  ? 'border-red-700 bg-red-700 text-white animate-pulse'
+                  : 'border-red-600 bg-red-600 text-white hover:bg-red-700'
+              }`}
+            >
+              <Siren size={18} /> {maydayArm ? 'TAP AGAIN TO CONFIRM MAYDAY' : 'DECLARE MAYDAY'}
+            </button>
+            {maydayError && <p className="text-[11px] font-bold text-red-700 dark:text-red-400 mt-1">{maydayError}</p>}
+          </div>
+        ))}
+
+        {parOwed.length > 0 && (
+          <div className="mt-2 rounded-lg border-2 border-amber-300 bg-amber-500/90 px-3 py-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <AlertTriangle size={15} className="text-white shrink-0" />
+              <p className="text-xs font-black text-white flex-1 min-w-0">
+                PAR REQUIRED — {parOwed.map(b => b.label).join(' · ')}
+              </p>
+              {canEdit && (
+                <button
+                  onClick={() => setShowParModal(true)}
+                  className="shrink-0 px-3 py-1 bg-white text-amber-700 text-xs font-black rounded-lg hover:bg-amber-50"
+                >
+                  RUN PAR
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── THE BOARD AND THE FIREGROUND DISAGREE ─────────────────────────────
+            Personnel marked on scene from a rig that is not on scene, who did not
+            arrive POV. One of the two statuses is stale. We do NOT guess which, and
+            we do NOT quietly render a number we can't stand behind — we tell
+            Command to reconcile it over the radio. */}
+        {ghostPersonnel.length > 0 && (
+          <div className="mt-2 rounded-lg border border-amber-300 bg-amber-900/50 px-3 py-2">
+            <div className="flex items-start gap-2">
+              <AlertTriangle size={14} className="text-amber-200 shrink-0 mt-0.5" />
+              <p className="text-[11px] font-bold text-amber-100">
+                {ghostPersonnel.length} on scene from {ghostPersonnel.length === 1 ? 'a unit' : 'units'} not marked on scene
+                {' '}({[...new Set(ghostPersonnel.map(p => (incident.units.find(u => u.id === p.unitId)?.designation) || '?'))].join(', ')}).
+                {' '}Confirm over the radio and correct the unit status — the accountability count is only as good as this.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* A PAR that did not reach the server is NOT a PAR. This used to be a
+            `.catch(() => {})`: the board would render "All accounted for" over a
+            write the server never received. */}
+        {parSaveError && (
+          <div className="mt-2 flex items-center gap-2 bg-red-900/60 border border-red-400 rounded-lg px-3 py-2">
+            <AlertTriangle size={14} className="text-red-200 shrink-0" />
+            <p className="text-xs font-bold text-red-100 flex-1">{parSaveError}</p>
+            <button
+              onClick={() => setParSaveError(null)}
+              className="text-[10px] font-black text-red-200 hover:text-white underline shrink-0"
+            >
+              DISMISS
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── View-only banner for non-dispatch members ── */}
@@ -1835,6 +2126,60 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
             );
           })}
         </div>
+
+        {/* ── FIREGROUND EVENTS — the things that OWE YOU A PAR ────────────────
+            Kept OUT of the milestone strip above on purpose. Those are the normal
+            arc of a call; these are the moments the fireground changes under you.
+            Rendering "Emergency Evacuation" next to "Water On" would frame an
+            order to get everyone out as a routine step.
+
+            Each stamps a milestone that raises the PAR REQUIRED prompt in the
+            header (parBenchmarkTriggers). We prompt — a human calls the roll over
+            the radio. The board never runs a PAR for you.
+
+            N.J.A.C. 5:75-2.4(f) mandates these triggers and ZERO time intervals.
+            The clock is the backstop; THESE are the doctrine. */}
+        {canEdit && (
+          <>
+            <div className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
+              <p className="text-xs font-black text-red-700 dark:text-red-400 uppercase tracking-wide mb-2">
+                Fireground Events — declare, then run a PAR
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {FIREGROUND_EVENTS.map(({ key, label, full, tone, confirm }) => {
+                  const ts = incident.milestones[key];
+                  const red = tone === 'red';
+                  return (
+                    <button
+                      key={key}
+                      title={full}
+                      disabled={Boolean(ts)}
+                      onClick={() => {
+                        if (ts) return;
+                        // An emergency evacuation is an ORDER, not a checkbox. A
+                        // mis-tap on a fireground must not declare one.
+                        if (confirm && !window.confirm(`Declare: ${full}?\n\nThis is timestamped into the incident record and will require a PAR.`)) return;
+                        setMilestone(key);
+                        setShowParModal(true);   // the prompt IS the point
+                      }}
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border-2 font-black text-xs transition-colors ${
+                        ts
+                          ? 'border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-default'
+                          : red
+                          ? 'border-red-500 bg-red-600 text-white hover:bg-red-700'
+                          : 'border-amber-400 bg-amber-500 text-white hover:bg-amber-600'
+                      }`}
+                    >
+                      <AlertTriangle size={13} />
+                      {label}
+                      {ts && <span className="font-semibold opacity-70">· {timeStr(ts)}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* During demo: reorder sections into a 2x2 grid — ICS Roles, Units, Personnel, Comms */}
@@ -1901,22 +2246,22 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
             </div>
 
             <div ref={commsRef}>
-            <SectionCard icon={Radio} iconColor="bg-indigo-600" title={`Radio Log (${(incident.commsLog || []).length})`}>
+            <SectionCard icon={Radio} iconColor="bg-sky-700" title={`Radio Log (${(incident.commsLog || []).length})`}>
               <div className="space-y-1.5 max-h-52 overflow-y-auto">
                 {(incident.commsLog || []).length === 0
                   ? <p className="text-xs text-gray-400 text-center py-1">No radio traffic</p>
                   : (incident.commsLog || []).slice(0, 8).map((entry, i) => {
                     const isNew = i === 0 && incident._demoFlash?.type === 'comms' && Date.now() - (incident._demoFlash?.time || 0) < 4000;
                     return (
-                    <div key={entry.id} className={`rounded-lg px-2.5 py-1.5 text-xs transition-all duration-700 ${isNew ? 'bg-indigo-100 dark:bg-indigo-950/50 border border-indigo-300 dark:border-indigo-800 shadow-sm' : 'bg-gray-50 dark:bg-gray-950 border border-transparent'}`}>
+                    <div key={entry.id} className={`rounded-lg px-2.5 py-1.5 text-xs transition-all duration-700 ${isNew ? 'bg-sky-100 dark:bg-sky-950/50 border border-sky-300 dark:border-sky-800 shadow-sm' : 'bg-gray-50 dark:bg-gray-950 border border-transparent'}`}>
                       <div className="flex items-center gap-1.5">
-                        {isNew && <Radio size={10} className="text-indigo-600 animate-pulse" />}
-                        <span className="font-bold text-indigo-700 dark:text-indigo-300">{entry.from}</span>
+                        {isNew && <Radio size={10} className="text-sky-700 animate-pulse" />}
+                        <span className="font-bold text-sky-700 dark:text-sky-300">{entry.from}</span>
                         <span className="text-gray-400">·</span>
                         <span className="text-gray-400">{entry.channel}</span>
                         <span className="text-gray-400 ml-auto text-[10px]">{new Date(entry.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
                       </div>
-                      <p className={`mt-0.5 leading-snug ${isNew ? 'text-indigo-900 dark:text-indigo-200 font-semibold' : 'text-gray-700 dark:text-gray-300'}`}>{entry.message}</p>
+                      <p className={`mt-0.5 leading-snug ${isNew ? 'text-sky-900 dark:text-sky-200 font-semibold' : 'text-gray-700 dark:text-gray-300'}`}>{entry.message}</p>
                     </div>
                     );
                   })
@@ -2071,11 +2416,37 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
 
         {/* ── Personnel Accountability ── */}
         <ScreenErrorBoundary label="Personnel Accountability">
+        {/* PERSONNEL, GROUPED BY THE RIG THEY RODE IN ON.
+            This is how the market renders it and how a passport system works:
+            "Engine 1: Captain Jones, FF Smith, FF Baker." A flat list of names with
+            no apparatus is not an accountability system — if you have to find
+            someone, the first question is which rig they came in on.
+            POV arrivals get their own LOUD block. */}
         <SectionCard icon={Users} iconColor="bg-green-600" title={`Personnel (${onScenePersonnel.length} on scene)`}>
           <div className="space-y-2 mb-3">
             {(incident.personnel || []).length === 0
               ? <p className="text-sm text-gray-400 text-center py-2">No personnel logged</p>
-              : (incident.personnel || []).map(p => {
+              : personnelByUnit.map(group => (
+                <div key={group.key} className={group.pov
+                  ? 'rounded-xl border-2 border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-950/40 p-2'
+                  : ''}>
+                  <div className="flex items-center gap-1.5 px-1 pb-1">
+                    {group.pov
+                      ? <AlertTriangle size={13} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                      : <Truck size={13} className="text-gray-400 shrink-0" />}
+                    <p className={`text-[11px] font-black uppercase tracking-wide ${
+                      group.pov ? 'text-amber-800 dark:text-amber-300' : 'text-gray-500 dark:text-gray-400'
+                    }`}>
+                      {group.label} · {group.people.length}
+                    </p>
+                  </div>
+                  {group.pov && (
+                    <p className="text-[11px] text-amber-800 dark:text-amber-300 px-1 pb-1.5 font-semibold">
+                      Arrived POV — no apparatus. Assign them a job or they are freelancing.
+                    </p>
+                  )}
+                  <div className="space-y-2">
+                  {group.people.map(p => {
                 const parAge    = p.lastPar ? Math.floor((Date.now() - new Date(p.lastPar)) / 60000) : null;
                 const parAlert  = parAge !== null && parAge > 30;
                 return (
@@ -2085,7 +2456,12 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
                         <p className="text-sm font-bold text-gray-900 dark:text-gray-100">{p.name}</p>
                         {parAlert && <AlertTriangle size={12} className="text-red-500" />}
                       </div>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">{p.assignment}{parAge !== null ? ` · PAR ${parAge}m ago` : ''}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {p.assignment}
+                        {/* "never PAR'd" is a real state and it is NOT the same as
+                            "PAR 0m ago". Say which. */}
+                        {parAge !== null ? ` · PAR ${parAge}m ago` : ' · no PAR yet'}
+                      </p>
                     </div>
                     {canEdit ? (
                       <select
@@ -2106,7 +2482,10 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
                     )}
                   </div>
                 );
-              })
+                  })}
+                  </div>
+                </div>
+              ))
             }
           </div>
           <div className="flex gap-3">
@@ -2118,6 +2497,7 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
             )}
             {canEdit && (
               <button onClick={() => setShowParModal(true)}
+                data-testid="par-start"
                 className="flex items-center gap-1 text-xs text-blue-700 dark:text-blue-300 font-bold hover:underline">
                 <UserCheck size={13} /> Run PAR
               </button>
@@ -2198,7 +2578,7 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
         {/* ── Radio / Comms Log ── */}
         <div ref={commsRef}>
         <ScreenErrorBoundary label="Radio / Comms Log">
-        <SectionCard icon={Radio} iconColor="bg-indigo-600" title="Radio / Comms Log">
+        <SectionCard icon={Radio} iconColor="bg-sky-700" title="Radio / Comms Log">
           <div className="space-y-2">
             {(incident.commsLog || []).length === 0 && (
               <p className="text-sm text-gray-400 text-center py-2">No radio traffic logged</p>
@@ -2206,17 +2586,17 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
             {(showAllComms ? (incident.commsLog || []) : (incident.commsLog || []).slice(0, 6)).map((entry, i) => {
               const isNew = i === 0 && incident._demoFlash?.type === 'comms' && Date.now() - (incident._demoFlash?.time || 0) < 4000;
               return (
-              <div key={entry.id} className={`flex items-start gap-2 rounded-xl px-3 py-2 transition-all duration-700 ${isNew ? 'bg-indigo-100 dark:bg-indigo-950/50 border-2 border-indigo-300 dark:border-indigo-800 shadow-md' : 'bg-gray-50 dark:bg-gray-950 border-2 border-transparent'}`}>
+              <div key={entry.id} className={`flex items-start gap-2 rounded-xl px-3 py-2 transition-all duration-700 ${isNew ? 'bg-sky-100 dark:bg-sky-950/50 border-2 border-sky-300 dark:border-sky-800 shadow-md' : 'bg-gray-50 dark:bg-gray-950 border-2 border-transparent'}`}>
                 <div className="flex-shrink-0 mt-0.5">
-                  {isNew ? <Radio size={13} className="text-indigo-600 animate-pulse" /> : <MessageSquare size={13} className="text-indigo-400" />}
+                  {isNew ? <Radio size={13} className="text-sky-700 animate-pulse" /> : <MessageSquare size={13} className="text-sky-600" />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`text-xs font-bold ${isNew ? 'text-indigo-800 dark:text-indigo-300' : 'text-indigo-700 dark:text-indigo-300'}`}>{entry.channel}</span>
-                    {entry.from && <span className={`text-xs ${isNew ? 'text-indigo-600 dark:text-indigo-400 font-bold' : 'text-gray-500 dark:text-gray-400'}`}>· {entry.from}</span>}
+                    <span className={`text-xs font-bold ${isNew ? 'text-sky-800 dark:text-sky-300' : 'text-sky-700 dark:text-sky-300'}`}>{entry.channel}</span>
+                    {entry.from && <span className={`text-xs ${isNew ? 'text-sky-700 dark:text-sky-400 font-bold' : 'text-gray-500 dark:text-gray-400'}`}>· {entry.from}</span>}
                     <span className="text-xs text-gray-400 ml-auto">{new Date(entry.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
                   </div>
-                  <p className={`text-sm mt-0.5 ${isNew ? 'text-indigo-900 dark:text-indigo-200 font-semibold' : 'text-gray-800 dark:text-gray-100'}`}>{entry.message}</p>
+                  <p className={`text-sm mt-0.5 ${isNew ? 'text-sky-900 dark:text-sky-200 font-semibold' : 'text-gray-800 dark:text-gray-100'}`}>{entry.message}</p>
                 </div>
               </div>
               );
@@ -2225,7 +2605,7 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
               <button
                 type="button"
                 onClick={() => setShowAllComms(v => !v)}
-                className="text-xs text-indigo-600 dark:text-indigo-400 font-bold hover:underline w-full text-center py-1"
+                className="text-xs text-sky-700 dark:text-sky-400 font-bold hover:underline w-full text-center py-1"
               >
                 {showAllComms ? 'Show less' : `Show all ${(incident.commsLog || []).length} entries`}
               </button>
@@ -2235,7 +2615,7 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
             <button
               type="button"
               onClick={() => setShowCommsModal(true)}
-              className="mt-3 flex items-center gap-1 text-xs text-indigo-700 dark:text-indigo-300 font-bold hover:underline"
+              className="mt-3 flex items-center gap-1 text-xs text-sky-700 dark:text-sky-300 font-bold hover:underline"
             >
               <Plus size={13} /> Log Radio Traffic
             </button>
@@ -2316,7 +2696,7 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
       {/* ── Add Personnel Modal ── */}
       {showPersonModal && (
         <Modal title="Add Personnel" onClose={() => setShowPersonModal(false)}>
-          <AddPersonForm availableMembers={availableMembers} allMembers={liveMembers} onSave={addPerson} onClose={() => setShowPersonModal(false)} />
+          <AddPersonForm availableMembers={availableMembers} allMembers={liveMembers} units={incident.units || []} onSave={addPerson} onClose={() => setShowPersonModal(false)} />
         </Modal>
       )}
 
@@ -2327,21 +2707,40 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
         </Modal>
       )}
 
-      {/* ── PAR Modal ── */}
-      {showParModal && (
+      {/* ── PAR Modal ──────────────────────────────────────────────────────────
+          THE DEFAULT IS INVERTED (2026-07-14). It used to be
+          `parChecks[p.id] !== false` — i.e. EVERY person rendered pre-checked and
+          green, and an IC who opened this modal and hit "Submit PAR" without
+          reading recorded a 100%-accounted-for PAR for the whole fireground
+          without a single affirmative check.
+
+          A personnel accountability report is the tool you reach for when you
+          think you may have lost someone. Its default answer cannot be "everyone
+          is fine." Accounting for a firefighter is now an AFFIRMATIVE ACT: nobody
+          is accounted for until a human says they are, and the Submit button
+          refuses to pretend otherwise. */}
+      {showParModal && (() => {
+        const accountedCount = onScenePersonnel.filter(p => parChecks[p.id] === true).length;
+        const missingCount   = onScenePersonnel.length - accountedCount;
+        return (
         <Modal title="Run PAR Check" onClose={() => { setShowParModal(false); setParChecks({}); }}>
           <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">
-            Check in each person — <strong>{onScenePersonnel.length}</strong> on scene. Unchecked will be flagged missing.
+            Account for each person — <strong>{onScenePersonnel.length}</strong> on scene.
+            <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              Nobody is accounted for until you check them in.
+            </span>
           </p>
           <div className="bg-gray-50 dark:bg-gray-950 rounded-xl p-3 space-y-2 max-h-64 overflow-y-auto mb-3">
             {onScenePersonnel.length === 0 ? (
               <p className="text-sm text-gray-400 text-center py-2">No personnel on scene</p>
             ) : onScenePersonnel.map(p => {
-              const checked = parChecks[p.id] !== false; // default = checked
+              const checked = parChecks[p.id] === true; // DEFAULT = NOT accounted for
               return (
                 <label key={p.id} className={`flex items-center gap-3 cursor-pointer rounded-lg px-2 py-1.5 transition-colors ${checked ? 'bg-green-50 dark:bg-green-950/50' : 'bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900'}`}>
                   <input
                     type="checkbox"
+                    data-testid="par-account"
+                    data-member={p.id}
                     checked={checked}
                     onChange={e => setParChecks(prev => ({ ...prev, [p.id]: e.target.checked }))}
                     className="w-4 h-4 accent-green-600"
@@ -2355,23 +2754,26 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
               );
             })}
           </div>
-          {Object.values(parChecks).some(v => v === false) && (
+          {missingCount > 0 && onScenePersonnel.length > 0 && (
             <div className="bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900 rounded-lg px-3 py-2 mb-3 text-xs text-red-700 dark:text-red-300 font-bold">
-              ⚠ {Object.values(parChecks).filter(v => v === false).length} personnel NOT accounted for
+              ⚠ {missingCount} of {onScenePersonnel.length} NOT accounted for
             </div>
           )}
           <div className="flex gap-2">
             <button
+              data-testid="par-complete"
               onClick={() => {
                 const checkedSet = new Set(
-                  onScenePersonnel.filter(p => parChecks[p.id] !== false).map(p => p.id)
+                  onScenePersonnel.filter(p => parChecks[p.id] === true).map(p => p.id)
                 );
                 runPar(checkedSet);
               }}
               className="flex-1 py-2.5 bg-red-700 text-white font-black rounded-xl hover:bg-red-800 text-sm"
             >
-              Submit PAR
+              Submit PAR{missingCount > 0 ? ` — ⚠ ${missingCount} MISSING` : ''}
             </button>
+            {/* "All ✓" is retained — a fast all-clear is a real fireground need — but
+                it is now an explicit, deliberate tap rather than the silent default. */}
             <button
               onClick={() => {
                 const all = {};
@@ -2384,7 +2786,8 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
             </button>
           </div>
         </Modal>
-      )}
+        );
+      })()}
 
       {/* ── Recall shortcut ── */}
       {showRecallBtn && (
@@ -2456,73 +2859,43 @@ export default function CommandBoard({ onNavigate = () => {}, initialAlert = nul
       )}
 
       {/* ── Close Confirm ── */}
+      {/* THE BOARD DOES NOT WRITE THE INCIDENT RECORD. Matt, 2026-07-26, re-affirmed
+          2026-08-08: "the Command Board is just a separate tool, it is not meant to be
+          the activation of this information, it only should reflect it."
+          A "Save to Incident Log & Close" button used to live here. It minted the legal
+          record out of board state and stamped incidents.time from milestones.dispatched
+          — on a manual activation, the instant someone clicked Activate — which then
+          became the NERIS `call_create`, i.e. the 911 call time, on a subpoenable record.
+          The incident record is authored by an officer in the Incident Log; the call is
+          associated to it by CAD run number (utils/callAssociation.js). Every NERIS time
+          comes from the CAD integration. Do not rebuild a writer here. */}
       {confirmClose && (
-        <Modal title="Close Incident" onClose={() => { setConfirmClose(false); setSaveStatus(null); setSaveError(''); }}>
-          {saveStatus === 'saved' ? (
-            <div className="text-center space-y-3 py-2">
-              <div className="w-12 h-12 rounded-full bg-green-100 dark:bg-green-950/50 flex items-center justify-center mx-auto">
-                <CheckCircle2 size={24} className="text-green-600 dark:text-green-400" />
-              </div>
-              <p className="text-sm font-bold text-gray-900 dark:text-gray-100">Saved to Incident Log</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">#{incident.incidentNumber} has been saved as a draft. You can edit it in the Incident Log.</p>
-              <button onClick={() => {
-                api.delete('/api/active-board').catch(() => {});
-                setIncident(null);
-                setConfirmClose(false);
-                setSaveStatus(null);
-                demoTriggeredRef.current = false;
-                demoTimersRef.current.forEach(t => clearTimeout(t));
-                setDemoRunning(false);
-              }}
-                className="w-full py-2.5 bg-red-700 text-white font-black rounded-xl hover:bg-red-800 text-sm">
-                Close Board
-              </button>
-            </div>
-          ) : (
-            <>
-              <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
-                Save a draft to the Incident Log before closing, or close without saving.
-              </p>
-              {saveStatus === 'error' && (
-                <div className="bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900 rounded-lg px-3 py-2 text-xs text-red-700 dark:text-red-300 mb-3">
-                  Save failed: {saveError}
-                </div>
-              )}
-              <div className="space-y-2">
-                <button
-                  type="button"
-                  disabled={saveStatus === 'saving'}
-                  onClick={async () => {
-                    setSaveStatus('saving');
-                    setSaveError('');
-                    try {
-                      await saveToIncidentLog(incident);
-                      setSaveStatus('saved');
-                    } catch (e) {
-                      setSaveStatus('error');
-                      setSaveError(e.message);
-                    }
-                  }}
-                  className="w-full py-2.5 bg-green-700 text-white font-black rounded-xl hover:bg-green-800 text-sm flex items-center justify-center gap-2 disabled:opacity-60"
-                >
-                  {saveStatus === 'saving' ? 'Saving…' : '💾 Save to Incident Log & Close'}
-                </button>
-                <button onClick={() => {
-                  api.delete('/api/active-board').catch(() => {});
-                  setIncident(null);
-                  setConfirmClose(false);
-                  setSaveStatus(null);
-                }}
-                  className="w-full py-2 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
-                  Close Without Saving
-                </button>
-                <button onClick={() => { setConfirmClose(false); setSaveStatus(null); setSaveError(''); }}
-                  className="w-full py-2 text-xs text-gray-400 hover:text-gray-600">
-                  Cancel — Stay on Board
-                </button>
-              </div>
-            </>
-          )}
+        <Modal title="Close Incident" onClose={() => setConfirmClose(false)}>
+          <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
+            Closing ends this incident’s command view. The board is a live command
+            tool — it does not write the incident record.
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+            File the incident in the Incident Log, where the officer authors the
+            narrative and the call is matched by its CAD run number.
+          </p>
+          <div className="space-y-2">
+            <button onClick={() => {
+              api.delete('/api/active-board').catch(() => {});
+              setIncident(null);
+              setConfirmClose(false);
+              demoTriggeredRef.current = false;
+              demoTimersRef.current.forEach(t => clearTimeout(t));
+              setDemoRunning(false);
+            }}
+              className="w-full py-2.5 bg-red-700 text-white font-black rounded-xl hover:bg-red-800 text-sm">
+              Close Board
+            </button>
+            <button onClick={() => setConfirmClose(false)}
+              className="w-full py-2 text-xs text-gray-400 hover:text-gray-600">
+              Cancel — Stay on Board
+            </button>
+          </div>
         </Modal>
       )}
       </div>}
@@ -2573,9 +2946,29 @@ function AddUnitForm({ apparatus, members, onSave, onClose }) {
 
 // ─── Add Personnel Form ───────────────────────────────────────────────────────
 
-function AddPersonForm({ availableMembers, allMembers, onSave, onClose }) {
+// ── A PERSON RIDES A RIG. ────────────────────────────────────────────────────
+// Firefighters do not materialise on a fireground. They arrive ON APPARATUS, IN A
+// SEAT. The board used to model a person as { name, assignment, status } with NO
+// link to a unit at all — so you could have "0 units on scene · 3 personnel on
+// scene", which is not a thing. The header wasn't lying; the DATA MODEL allowed an
+// incoherent state and the header faithfully reported it.
+//
+// Two facts were being collapsed into one field:
+//   • WHICH RIG YOU CAME IN ON  → accountability. Who do I look for, and where?
+//   • WHAT JOB YOU ARE DOING    → tactical. Entry Team A, Roof Group, RIC.
+// `assignment` was only ever the second. Now we carry both.
+//
+// The ONE legitimate case of a firefighter with no apparatus is the VOLUNTEER WHO
+// ARRIVES POV. That is real and it is the volunteer fireground's daily reality —
+// but they are NOT "just on scene". They land in a LOUD UNASSIGNED POOL until
+// Command gives them a job. Assigned to a rig, or in the pool. There is no third
+// state, and freelancing must be impossible to hide.
+const POV = '__POV__';
+
+function AddPersonForm({ availableMembers, allMembers, units, onSave, onClose }) {
   const list = availableMembers.length > 0 ? availableMembers : (allMembers ?? MEMBERS);
   const [name, setName]           = useState(list[0] ?? '');
+  const [unitId, setUnitId]       = useState(units?.[0]?.id ?? POV);
   const [assignment, setAssignment] = useState(ASSIGNMENTS[0]);
   const [status, setStatus]         = useState('On Scene');
   return (
@@ -2586,8 +2979,34 @@ function AddPersonForm({ availableMembers, allMembers, onSave, onClose }) {
           {list.map(m => <option key={m}>{m}</option>)}
         </select>
       </div>
+
+      {/* RIDING ON — the accountability fact. Which rig did this firefighter arrive
+          on? That is what tells you where to look for them. It is NOT the same as
+          the tactical assignment below, and collapsing the two is how you end up
+          with personnel on scene from units that aren't. */}
       <div>
-        <label className={labelCls}>Assignment</label>
+        <label className={labelCls}>Riding on</label>
+        <select className={selectCls} value={unitId} onChange={e => setUnitId(e.target.value === POV ? POV : Number(e.target.value))}>
+          {(units ?? []).map(u => (
+            <option key={u.id} value={u.id}>{u.designation}</option>
+          ))}
+          <option value={POV}>⚠ Arrived POV — no apparatus</option>
+        </select>
+        {unitId === POV && (
+          <p className="text-[11px] text-amber-700 dark:text-amber-300 font-bold mt-1">
+            Goes to the UNASSIGNED pool until Command gives them a job.
+          </p>
+        )}
+        {(units ?? []).length === 0 && (
+          <p className="text-[11px] text-amber-700 dark:text-amber-300 font-bold mt-1">
+            No units on the board yet — add apparatus first, or log this member as POV.
+          </p>
+        )}
+      </div>
+
+      {/* TACTICAL ASSIGNMENT — the job. Separate fact, separate field. */}
+      <div>
+        <label className={labelCls}>Assignment (tactical)</label>
         <select className={selectCls} value={assignment} onChange={e => setAssignment(e.target.value)}>
           {ASSIGNMENTS.map(a => <option key={a}>{a}</option>)}
         </select>
@@ -2603,7 +3022,16 @@ function AddPersonForm({ availableMembers, allMembers, onSave, onClose }) {
           className="flex-1 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800">
           Cancel
         </button>
-        <button onClick={() => onSave({ name, assignment, status })}
+        <button
+          onClick={() => onSave({
+            name,
+            unitId: unitId === POV ? null : unitId,
+            pov: unitId === POV,
+            // A POV arrival is UNASSIGNED until Command says otherwise. We do not
+            // let the form's default quietly give them a job they were never given.
+            assignment: unitId === POV ? 'Unassigned' : assignment,
+            status,
+          })}
           className="flex-1 py-2.5 bg-red-700 text-white font-black rounded-xl hover:bg-red-800 text-sm">
           Add
         </button>
@@ -2872,7 +3300,7 @@ function CommsEntryForm({ members, onSave, onClose }) {
           type="button"
           onClick={() => { if (message.trim()) onSave({ channel, from, message: message.trim() }); }}
           disabled={!message.trim()}
-          className="flex-1 py-2.5 bg-indigo-700 text-white font-black rounded-xl hover:bg-indigo-800 text-sm disabled:opacity-40"
+          className="flex-1 py-2.5 bg-sky-700 text-white font-black rounded-xl hover:bg-sky-800 text-sm disabled:opacity-40"
         >
           Log Entry
         </button>

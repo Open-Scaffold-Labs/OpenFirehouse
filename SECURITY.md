@@ -4,6 +4,11 @@ OpenFirehouse handles operationally sensitive data — personnel records,
 incident details, scene locations, pre-incident plans, Knox Box
 contents. We take security reports seriously.
 
+> Looking for how the product protects data — tenant isolation, sign-in
+> controls, the audit trail, data export, and which certifications we do
+> and do not hold? See **[SECURITY-POSTURE.md](SECURITY-POSTURE.md)**.
+> This file is the vulnerability disclosure policy.
+
 ## Supported versions
 
 This project is at `v0.13`. Security patches will be released against

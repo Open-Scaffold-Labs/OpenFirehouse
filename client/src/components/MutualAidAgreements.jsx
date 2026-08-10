@@ -111,7 +111,7 @@ function AgreementDetail({ agreement: a, onEdit, onDelete, onNavigateToMeetings 
         {tabs.map(tab => (
           <button key={tab.id} onClick={e => { e.stopPropagation(); setActiveTab(tab.id); }}
             className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold whitespace-nowrap border-b-2 transition-colors ${
-              activeTab === tab.id ? 'border-red-600 text-red-700 dark:text-red-300' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+              activeTab === tab.id ? 'border-red-600 text-red-700 dark:text-red-300' : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
             }`}>
             <tab.icon size={12} /> {tab.label}
           </button>
@@ -390,7 +390,7 @@ function AgreementFormModal({ record, onSave, onClose }) {
           {formTabs.map(tab => (
             <button key={tab.id} onClick={() => setFormTab(tab.id)}
               className={`px-4 py-2.5 text-xs font-semibold whitespace-nowrap border-b-2 transition-colors ${
-                formTab === tab.id ? 'border-red-600 text-red-700 dark:text-red-300' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                formTab === tab.id ? 'border-red-600 text-red-700 dark:text-red-300' : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
               }`}>
               {tab.label}
             </button>

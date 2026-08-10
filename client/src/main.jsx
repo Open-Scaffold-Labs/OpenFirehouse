@@ -7,6 +7,22 @@ import { initTheme } from './utils/theme'
 // W4.2: apply saved/OS theme before first paint (no light flash at night)
 initTheme()
 
+// ── Recover from stale lazy-chunk imports after a deploy ──────────────────────
+// Every build gives each lazy route a new hashed chunk filename. A user whose tab
+// or installed PWA still holds the OLD index will fail to import() a chunk that the
+// new deploy replaced — "importing a module script failed" on the first lazy route
+// (e.g. Pre-Plans). Vite fires 'vite:preloadError' for exactly this. Reload ONCE to
+// pick up the fresh index + chunks; guard against a loop so a genuinely-missing
+// chunk still surfaces the error boundary instead of reloading forever.
+window.addEventListener('vite:preloadError', (event) => {
+  const KEY = 'of_preload_reload_at'
+  const last = Number(sessionStorage.getItem(KEY) || 0)
+  if (Date.now() - last < 10000) return  // reloaded within 10s already — let it surface
+  sessionStorage.setItem(KEY, String(Date.now()))
+  event.preventDefault?.()
+  window.location.reload()
+})
+
 // ── Error boundary ────────────────────────────────────────────────────────────
 // Catches any uncaught render error in the whole tree and shows a recovery
 // screen instead of a blank white page.

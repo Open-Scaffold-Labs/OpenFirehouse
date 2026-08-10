@@ -6,11 +6,11 @@ const { pool } = require('../db');
 
 module.exports = async function drillFeed(start, end, options) {
   const { rows } = await pool.query(`
-    SELECT id, title, drill_type, date, start_time, end_time,
-           location, lead_instructor, status
+    SELECT id, title, type AS drill_type, date, "startTime" AS start_time,
+           location, instructor AS lead_instructor
     FROM drills
     WHERE department_id = $3 AND date BETWEEN $1 AND $2
-    ORDER BY date, start_time
+    ORDER BY date, "startTime"
   `, [start, end, options.stationId]);
 
   return rows.map(r => {

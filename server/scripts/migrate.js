@@ -21,6 +21,7 @@
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
+const { buildSslConfig } = require('../src/sslConfig');
 
 const MIGRATIONS_DIR = path.join(__dirname, '../../docs/migrations');
 const LOCK_KEY = 4815162342; // arbitrary, stable advisory-lock id for OF migrations
@@ -37,7 +38,7 @@ function fail(msg, err) {
   const remote = !url.includes('localhost') && !url.includes('127.0.0.1');
   const pool = new Pool({
     connectionString: url,
-    ssl: remote ? { rejectUnauthorized: false } : false,
+    ssl: buildSslConfig(remote), // pin Supabase CA when DATABASE_CA is set; see docs/ops/prod-db-tls-ca-pinning.md
     max: 1,
     connectionTimeoutMillis: 8000,
   });

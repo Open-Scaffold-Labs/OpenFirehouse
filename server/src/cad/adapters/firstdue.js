@@ -96,7 +96,13 @@ module.exports = {
     const inc = p.incident || p.data || p;
 
     // TODO: confirm against real webhook capture.
-    const alertId = String(inc.incident_number || inc.id || `fd-${Date.now()}`);
+    // Raw vendor id ONLY — no fallback here. Synthesis moved to
+    // processDispatch (cad/alertIdentity.js), which is the one place the
+    // DEPARTMENT is known: NENA namespaces an identifier by the agency that
+    // created it, and the old `${prefix}-${Date.now()}` fallback was
+    // non-deterministic — a vendor retry minted a NEW id and defeated the
+    // duplicate guard exactly when it was needed.
+    const alertId = inc.incident_number || inc.id || null;
     const address = String(inc.address || inc.location || '');
     const units = Array.isArray(inc.units) ? inc.units.join(',') : String(inc.units || '');
     const description = String(inc.incident_type || inc.call_type || inc.nature || 'Dispatch');

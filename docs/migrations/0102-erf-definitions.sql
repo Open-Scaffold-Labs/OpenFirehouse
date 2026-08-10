@@ -1,0 +1,53 @@
+-- 0102-erf-definitions.sql
+-- ⛔ RETIRED STUB — NUMBER BURNED, DELIBERATELY. NO SQL WILL BE WRITTEN HERE.
+--
+-- Claimed 2026-07-26 for the ERF (Effective Response Force) definition tables.
+-- CUT by Matt on 2026-07-26 after he asked the question that settled it: would
+-- every department have to do this, or is it optional? It is optional — it
+-- depends on the department having completed a critical task analysis, which is
+-- a consulting artifact most departments do not have. His call: "i think it
+-- sounds like a waste of time and something that nobody will use or need."
+--
+-- The number is NOT reused. A future session looking for the next free number
+-- takes 0106+; reusing 0102 would put two different meanings on one migration
+-- number in the ledger, which is the collision this convention exists to stop.
+--
+-- The original intent is preserved below for the record ONLY. Do not build from
+-- it without a fresh ruling from Matt — it describes CUT work.
+-- ─────────────────────────────────────────────────────────────────────────────
+--
+-- Claim-by-stub per HARDEN-THE-TAIL gameplan F4 + §5b.
+--
+-- WILL ADD: the department's Effective Response Force DEFINITION -- the stored
+-- RESULT of its critical task analysis. CFAI classifies this as numerical data the
+-- RMS must hold (CC 2C.4, a Core Competency): "Number of personnel/apparatus
+-- responding to a particular incident as effective response force based on agency's
+-- own critical task analysis for each risk class and category (concentration)".
+--
+-- Tables cover (spec §5.5):
+--   1. risk classifications (CFAI's seven programs + other)
+--   2. risk categories (agency-defined: low / moderate / high / maximum)
+--   3. critical task list per (class x category): task name + minimum personnel
+--   4. total ERF personnel per cell -- the threshold the clock counts up to
+--   5. apparatus composition per cell (11th Ed. requires responders AND vehicles)
+--   6. per-apparatus staffing -- what each unit contributes on arrival
+--   7. incident-type -> risk-class mapping (11th Ed. "Determinate Code")
+--   8. apparatus capability attributes (pump/GPM, aerial, medical)
+--
+-- WE STORE THE RESULT OF A CRITICAL TASK ANALYSIS. WE NEVER GENERATE ONE.
+-- No product in the surveyed market ships a CTA engine; it is a human/consulting
+-- artifact. And this is NOT a run card -- run cards are CAD's, PSAP-owned, and
+-- departments submit them as a signed spreadsheet. Measurement, not dispatch.
+--
+-- DEFERRED, deliberately, with a date: Principal/Secondary/Tertiary incident-type
+-- escalation (each escalation mints a new ERF measurement set) -- CPSE IT Specs
+-- 11th Ed., effective Spring 2027.
+--
+-- Writes are CHIEF-gated, zod-validated, audited. RLS dept_isolation on every table.
+--
+-- Spec: docs/PHASE4-ANALYTICS-SPEC-2026-07-26.md §5, §7.
+-- D6 ORDER: prod first, ledgered, verified by live query, THEN dependent code.
+--
+-- OPEN before writing this SQL: the QIFES manual (paid, unread) is the normative
+-- source for CPSE's ERF glossary definition. If an exact definition drives a schema
+-- choice here, obtain it first rather than inferring.

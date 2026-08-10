@@ -1,116 +1,23 @@
 'use strict';
 const express = require('express');
 const router  = express.Router();
-const { nfirsReports: db, incidents: incDb } = require('../db');
+const { nfirsReports: db, incidents: incDb, pool } = require('../db');
 const { autoCompleteNfirs, createAndAutoComplete } = require('../utils/nfirsAutoComplete');
 const aiActions = require('../utils/aiActionRegistry');
+// D4 (docs/NERIS-BULLETPROOF-BUILD-2026-07-16.md): the ONE NERIS transformer.
+// The old inline copy here (hardcoded 'NJ14-001' FDID, csop_state:'NJ',
+// fake-UTC `${date}T${time}:00Z` timestamps) was deleted 2026-07-16 — do not
+// reintroduce a second transformer.
+const { buildNerisIncidentPayload } = require('../utils/nerisPayload');
 
-// ─── NERIS Export Helpers (server-side mirror of client/utils/nerisExport.js) ──
-
-function generateNerisId(fdid, incidentDate) {
-  const epoch = incidentDate ? new Date(incidentDate).getTime() : Date.now();
-  return `${fdid}:${epoch}`;
-}
-
-function parseCivicLocation(report) {
-  return {
-    an_number: report.streetNumber || '',
-    an_complete: report.streetNumber || '',
-    sn_prefix: report.streetPrefix || '',
-    sn_street_name: report.streetName || '',
-    sn_suffix: report.streetSuffix || '',
-    sn_type: report.streetType || '',
-    csop_postal_comm: report.city || '',
-    csop_state: report.state || 'NJ',
-    csop_postal_code: report.zip || '',
-    csop_country: 'US',
-  };
-}
-
-function toNerisIncident(report, incident = {}) {
-  const fdid = report.fdid || 'NJ14-001';
-  const merged = { ...incident, ...report };
-
-  const neris = {
-    incident_neris_id: generateNerisId(fdid, merged.incidentDate),
-    incident_internal_id: merged.incidentNumber || '',
-    incident_final_type: merged.neris_type
-      ? [merged.neris_type.split('.')]
-      : [['PUBSERV', 'CITIZEN_ASSIST', 'CITIZEN_ASSIST_SERVICE_CALL']],
-    incident_final_type_primary: [true],
-    incident_point: null,
-    incident_location: parseCivicLocation(merged),
-    incident_people_present: (merged.civilianDeaths > 0 || merged.civilianInjuries > 0 || merged.fsDeaths > 0 || merged.fsInjuries > 0),
-    incident_displaced_number: 0,
-    incident_rescue_animal: 0,
-    incident_actions_taken: (merged.actions_taken || []).map(a => a.split('.')),
-    unit_response: [],
-    risk_reduction: {
-      detector_present: merged.detectorPresence || null,
-      detector_operation: merged.detectorOperation || null,
-      sprinkler_present: merged.sprinklerPresence || null,
-      sprinkler_operation: merged.sprinklerOperation || null,
-    },
-    incident_aid_direction: merged.aidCode || null,
-    incident_narrative_outcome: merged.narrativeStatement || merged.notes || '',
-    rescue_ff: [],
-    rescue_nonff: [],
-    _meta: {
-      neris_version: '1.0',
-      export_date: new Date().toISOString(),
-      source: 'OpenFirehouse',
-      fdid,
-      original_incident_number: merged.incidentNumber || '',
-    },
-  };
-
-  // GPS
-  if (merged.latitude && merged.longitude) {
-    neris.incident_point = {
-      type: 'Point',
-      coordinates: [parseFloat(merged.longitude), parseFloat(merged.latitude)],
-    };
-  }
-
-  // Unit response
-  const units = merged.respondingUnits
-    ? merged.respondingUnits.split(',').map(u => u.trim()).filter(Boolean)
-    : (incident.units || []);
-  if (units.length) {
-    neris.unit_response = units.map(uid => {
-      const resp = { unit_id_reported: uid };
-      const date = merged.incidentDate;
-      if (date) {
-        if (merged.dispatchTime || merged.alarmTime) resp.time_dispatch = `${date}T${merged.dispatchTime || merged.alarmTime}:00Z`;
-        if (merged.onSceneTime || merged.arrivalTime) resp.time_on_scene = `${date}T${merged.onSceneTime || merged.arrivalTime}:00Z`;
-        if (merged.unitClearTime || merged.clearedTime) resp.time_unit_clear = `${date}T${merged.unitClearTime || merged.clearedTime}:00Z`;
-      }
-      return resp;
-    });
-  }
-
-  // Casualties
-  if (merged.fsDeaths > 0 || merged.fsInjuries > 0) {
-    neris.rescue_ff.push({ ff_deaths: parseInt(merged.fsDeaths) || 0, ff_injuries: parseInt(merged.fsInjuries) || 0 });
-  }
-  if (merged.civilianDeaths > 0 || merged.civilianInjuries > 0) {
-    neris.rescue_nonff.push({ civilian_deaths: parseInt(merged.civilianDeaths) || 0, civilian_injuries: parseInt(merged.civilianInjuries) || 0 });
-  }
-
-  // Fire module
-  if (merged.isStructureFire) {
-    neris.fire = {
-      structure_type: merged.structureType || null,
-      stories_above_grade: merged.storiesAboveGrade ? parseInt(merged.storiesAboveGrade) : null,
-      stories_below_grade: merged.storiesBelowGrade ? parseInt(merged.storiesBelowGrade) : null,
-      fire_origin: merged.fireOriginCode || null,
-      fire_cause: merged.fireCauseCode || null,
-      property_loss: merged.propertyLoss ? parseFloat(merged.propertyLoss) : null,
-      contents_loss: merged.contentsLoss ? parseFloat(merged.contentsLoss) : null,
-    };
-  }
-
-  return neris;
+/** Fetch the caller's department row for NERIS id/name (single query,
+ *  through the shared pool chokepoint — pool is max:1, never a second client). */
+async function departmentRow(departmentId) {
+  const { rows } = await pool.query(
+    'SELECT id, name, fdid FROM departments WHERE id = $1',
+    [departmentId]
+  );
+  return rows[0] || {};
 }
 
 // ─── Routes ────────────────────────────────────────────────────────────────────
@@ -129,6 +36,7 @@ router.get('/neris/export', async (req, res) => {
   try {
     const reports = await db.all(req.user.department_id);
     const incidents = await incDb.all(req.user.department_id);
+    const department = await departmentRow(req.user.department_id);
 
     const incMap = {};
     (incidents || []).forEach(inc => {
@@ -136,15 +44,17 @@ router.get('/neris/export', async (req, res) => {
     });
 
     const nerisIncidents = reports.map(report => {
-      const inc = incMap[report.incidentNumber] || {};
-      return toNerisIncident(report, inc);
+      const incident = incMap[report.incidentNumber] || {};
+      return buildNerisIncidentPayload({ incident, nfirsReport: report, department });
     });
 
     const bundle = {
-      neris_version: '1.0',
+      spec_version: nerisIncidents[0]?._meta?.spec_version || null,
+      payload_shape: 'IncidentPayload/v1',
       export_date: new Date().toISOString(),
       source: 'OpenFirehouse',
-      fdid: reports[0]?.fdid || 'NJ14-001',
+      department_neris_id: nerisIncidents[0]?.payload?.base?.department_neris_id || '',
+      department_name: department.name || '',
       incident_count: nerisIncidents.length,
       incidents: nerisIncidents,
     };
@@ -203,8 +113,9 @@ router.get('/:id/neris', async (req, res) => {
     if (report.incidentNumber) {
       incident = await incDb.findByNumber(report.incidentNumber, req.user.department_id) || {};
     }
+    const department = await departmentRow(req.user.department_id);
 
-    const neris = toNerisIncident(report, incident);
+    const neris = buildNerisIncidentPayload({ incident, nfirsReport: report, department });
     res.json({ data: neris });
   } catch (e) {
     console.error('NERIS single export error:', e);

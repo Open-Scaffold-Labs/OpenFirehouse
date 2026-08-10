@@ -14,6 +14,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Mic, MicOff, Volume2, VolumeX, X, Loader2, MessageSquare, AlertTriangle, Headphones } from 'lucide-react';
 import { api } from '../utils/api';
+import { fabSlotCls } from '../utils/fabRail';
 
 // ─── Speech Recognition wrapper ──────────────────────────────────────────────
 
@@ -249,7 +250,7 @@ export default function VoiceAssistant({ incident, minimized = false }) {
     return (
       <button
         onClick={handleMicClick}
-        className={`fixed bottom-20 left-4 z-40 w-14 h-14 rounded-full ${bg} ${ring} shadow-2xl flex items-center justify-center transition-all`}
+        className={`${fabSlotCls('voice')} z-40 w-14 h-14 rounded-full ${bg} ${ring} shadow-2xl flex items-center justify-center transition-all`}
         title="Hey Firehouse — Voice Assistant"
         aria-label="Hey Firehouse voice assistant"
       >
@@ -265,7 +266,7 @@ export default function VoiceAssistant({ incident, minimized = false }) {
       <button
         onClick={() => isActive ? handleMicClick() : setExpanded(e => !e)}
         onDoubleClick={handleMicClick}
-        className={`fixed bottom-20 left-4 z-40 w-14 h-14 rounded-full ${bg} ${ring} shadow-2xl flex items-center justify-center transition-all`}
+        className={`${fabSlotCls('voice')} z-40 w-14 h-14 rounded-full ${bg} ${ring} shadow-2xl flex items-center justify-center transition-all`}
         title={isActive ? (state === STATE.LISTENING ? 'Stop listening' : state === STATE.SPEAKING ? 'Stop speaking' : 'Processing...') : 'Hey Firehouse — tap to ask'}
         aria-label={isActive ? (state === STATE.LISTENING ? 'Stop listening' : state === STATE.SPEAKING ? 'Stop speaking' : 'Processing') : 'Open voice assistant'}
       >
@@ -274,7 +275,7 @@ export default function VoiceAssistant({ incident, minimized = false }) {
 
       {/* Panel */}
       {expanded && (
-        <div className="fixed bottom-36 left-4 z-40 w-80 bg-gray-950 rounded-2xl shadow-2xl border border-gray-700 overflow-hidden">
+        <div className="fixed bottom-[10rem] right-20 z-40 w-80 bg-gray-950 rounded-2xl shadow-2xl border border-gray-700 overflow-hidden">
           {/* Header */}
           <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-800">
             <Mic size={14} className="text-red-400" />

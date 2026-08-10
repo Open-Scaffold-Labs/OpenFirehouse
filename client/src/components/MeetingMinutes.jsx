@@ -409,7 +409,7 @@ function RecordingPanel({ onComplete, onClose, setup }) {
           <button
             onClick={summarize}
             disabled={summarizing || (!transcript.trim())}
-            className="flex items-center gap-2 px-5 py-2 text-sm bg-gradient-to-r from-violet-600 to-blue-600 text-white rounded-lg hover:from-violet-700 hover:to-blue-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-5 py-2 text-sm bg-violet-700 text-white rounded-lg hover:bg-violet-800 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {summarizing ? <><Loader2 size={16} className="animate-spin" /> Summarizing...</> : <><Sparkles size={16} /> AI Summarize</>}
           </button>
@@ -729,8 +729,11 @@ export default function MeetingMinutes() {
           <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Meeting Minutes</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Record meetings with AI transcription, or create minutes manually</p>
         </div>
+        {/* Blue: neutral create/save. Violet is reserved for AI surfaces (the AI
+            Summarize action inside this same file keeps it) and red for live mission
+            actions — creating a minutes record is neither. */}
         <button onClick={() => setSetupOpen(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-red-600 to-violet-600 text-white rounded-lg hover:from-red-700 hover:to-violet-700 text-sm font-medium">
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">
           <Plus size={16} /> New Meeting
         </button>
       </div>
@@ -752,7 +755,7 @@ export default function MeetingMinutes() {
       </div>
 
       {/* AI info banner */}
-      <div className="bg-gradient-to-r from-violet-50 to-blue-50 dark:from-violet-950/50 dark:to-blue-950/50 border border-violet-200 dark:border-violet-900 rounded-xl p-4 flex items-start gap-3">
+      <div className="bg-violet-50 dark:bg-violet-950/50 border border-violet-200 dark:border-violet-900 rounded-xl p-4 flex items-start gap-3">
         <Sparkles size={20} className="text-violet-600 dark:text-violet-400 flex-shrink-0 mt-0.5" />
         <div>
           <p className="text-sm font-semibold text-violet-900 dark:text-violet-200">AI-Powered Meeting Minutes</p>

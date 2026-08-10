@@ -19,9 +19,34 @@ Contributors push directly to the **main** branch on GitHub. Every push to main 
 
 ### Key URLs
 
-- **Live App:** [openfirehouse.openscaffoldlabs.com](https://openfirehouse.openscaffoldlabs.com)
+- **Live App:** [app.openfirehouse.openscaffoldlabs.com](https://app.openfirehouse.openscaffoldlabs.com)
+  — note the **`app.`** prefix. Corrected 2026-08-01: this link was missing it, so it did not
+  reach the app.
 - **GitHub:** [github.com/Open-Scaffold-Labs/OpenFirehouse](https://github.com/Open-Scaffold-Labs/OpenFirehouse)
 - **API:** Vercel serverless functions (deployed on the same Vercel project)
+- **Health check:** `curl -s https://app.openfirehouse.openscaffoldlabs.com/health` →
+  `{"status":"ok","db":true,...,"commit":"<sha>"}`. The `commit` field is the fastest way to
+  confirm *which* build is actually live.
+
+> ⚠️ **Do browser passes on the `app.` custom domain, NEVER on the `open-firehouse.vercel.app`
+> alias.** Apple MapKit's token is **domain-locked** to `app.openfirehouse.openscaffoldlabs.com`.
+> On the Vercel alias it refuses to initialize — `[MapKit] Initialization failed … Origin does
+> not match`, four times per page load — so **every map renders blank there**. Same build, same
+> commit, same data; the map simply cannot start. On 2026-08-01 this produced a false "nothing is
+> showing on the map" bug report. The alias is fine for `/health`, API calls and bundle greps; it
+> is not fine for looking at the app.
+
+> ⚠️ **A hash-route change does not reload the document.** This app uses hash routing
+> (`#/command`, `#/portal`), so navigating within it after a redeploy keeps running the *old*
+> bundle. Before concluding a fix did not land, compare the `index-*.js` referenced in the page
+> against what the server serves:
+> `curl -s https://app.openfirehouse.openscaffoldlabs.com/ | grep -oE '/assets/index-[^"]+\.js'`
+
+> ⚠️ **Some surfaces only mount under conditions you have to reproduce.** TV mode is the real
+> path `/tv?pin=XXXX-XXXX` (the pin is `departments.tv_pin`), not a hash route. `ResponseMap`
+> renders **only in Demo mode with the demo timeline playing** — not merely when an incident
+> exists. Three verification attempts missed it before that was found. If a component seems not
+> to render, read its render condition before concluding it is broken.
 
 ---
 
@@ -185,7 +210,7 @@ Open Scaffold Labs uses Claude in Cowork mode for parts of this workflow. Claude
 
 If you're sharing the repo with a Claude-driven workflow alongside human contributors, the same rule applies: always have Claude run `git pull` at the start of a session so it picks up everyone else's work.
 
-See `docs/CONTRIBUTING-WITH-CLAUDE.md` for the patterns the team uses when working with Claude on this codebase.
+See the "Working method" section of `CONTRIBUTING.md` for the disciplines the team uses on this codebase.
 
 ---
 

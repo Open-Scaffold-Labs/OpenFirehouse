@@ -33,6 +33,17 @@ const COMPANION_WRITE_ALLOWLIST = [
   // dispatch on a locked phone) — not an OF-data write; scoped to the caller's JWT.
   { method: 'POST',   pattern: /^\/api\/push\/expo-register\/?$/ },
   { method: 'DELETE', pattern: /^\/api\/push\/expo-register\/?$/ },
+  // ── 1.7 member self-service (spec §2) — every route below derives the acting member
+  // from the JWT and enforces self-only/ownership internally (1.2e/1.3/1.5 suites).
+  // The phone PROPOSES; command DISPOSES: vacancy fill/hire, trade approve/deny, and
+  // leave PATCH stay OFF this list deliberately (the market ceiling).
+  { method: 'POST',   pattern: /^\/api\/hiring\/offers\/\d+\/accept\/?$/ },   // own OT offer
+  { method: 'POST',   pattern: /^\/api\/hiring\/offers\/\d+\/decline\/?$/ },
+  { method: 'POST',   pattern: /^\/api\/shift-trades\/?$/ },                  // file own trade
+  { method: 'POST',   pattern: /^\/api\/shift-trades\/\d+\/accept\/?$/ },     // peer accept
+  { method: 'POST',   pattern: /^\/api\/shift-trades\/\d+\/withdraw\/?$/ },   // own withdraw
+  { method: 'POST',   pattern: /^\/api\/shift-trades\/\d+\/settle\/?$/ },     // payback settle
+  { method: 'POST',   pattern: /^\/api\/leave\/?$/ },                         // own leave request
 ];
 
 function isAllowlisted(method, path) {

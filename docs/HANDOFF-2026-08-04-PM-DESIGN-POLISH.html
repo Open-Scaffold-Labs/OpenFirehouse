@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>OpenFirehouse handoff — 2026-08-04 PM (design-polish + setup wizard)</title>
+  <style>
+
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+
+ul.task-list[class]{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+font-size: inherit;
+width: 0.8em;
+margin: 0 0.8em 0.2em -1.6em;
+vertical-align: middle;
+}
+.display.math{display: block; text-align: center; margin: 0.5rem auto;}
+</style>
+  <style type="text/css"></style>
+
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 15px/1.62 -apple-system,BlinkMacSystemFont,"SF Pro Text",Helvetica,Arial,sans-serif;
+         max-width: 62rem; margin: 3rem auto; padding: 0 1.6rem; color:#111827; background:#fff; }
+  h1 { font-size:1.9rem; border-bottom:3px solid #b91c1c; padding-bottom:.4rem; }
+  h2 { font-size:1.35rem; margin-top:2.4rem; border-bottom:1px solid #e5e7eb; padding-bottom:.25rem; }
+  h3 { font-size:1.08rem; margin-top:1.6rem; }
+  code { font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; background:#f3f4f6;
+         padding:.12em .35em; border-radius:4px; }
+  pre { background:#0f172a; color:#e5e7eb; padding:1rem; border-radius:8px; overflow-x:auto; }
+  pre code { background:none; color:inherit; padding:0; }
+  table { border-collapse:collapse; width:100%; margin:1rem 0; font-size:14px; }
+  th,td { border:1px solid #d1d5db; padding:.5rem .7rem; text-align:left; vertical-align:top; }
+  th { background:#f9fafb; }
+  blockquote { border-left:4px solid #b91c1c; margin:0; padding:.2rem 0 .2rem 1rem; color:#374151; }
+  strong { color:#111827; }
+  hr { border:0; border-top:1px solid #e5e7eb; margin:2.2rem 0; }
+  @media (prefers-color-scheme: dark) {
+    body { background:#0b1020; color:#e5e7eb; }
+    h1,h2,h3,strong { color:#f9fafb; }
+    h2 { border-bottom-color:#374151; }
+    code { background:#1f2937; }
+    th { background:#111827; } th,td { border-color:#374151; }
+    blockquote { color:#d1d5db; }
+    hr { border-top-color:#374151; }
+  }
+  @media print { body { max-width:none; margin:0; font-size:11pt; } pre { background:#f3f4f6; color:#111; } }
+</style>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">OpenFirehouse handoff — 2026-08-04 PM (design-polish +
+setup wizard)</h1>
+</header>
+<h1 id="handoff-2026-08-04-pm-design-polish-the-setup-wizard">HANDOFF —
+2026-08-04 PM · design-polish + the setup wizard</h1>
+<p><strong>Read §0 before touching anything.</strong> The design work
+shipped; the more useful content of this handoff is <em>how five of my
+own checks were wrong</em>, because every one of them looked like a
+pass.</p>
+<p>Session predecessor:
+<code>docs/HANDOFF-2026-08-04-DESIGN-POLISH-SESSION.md</code> (AM).
+Program trust anchor:
+<code>docs/DESIGN-POLISH-GAMEPLAN-2026-08-04.md</code>. Critique
+snapshot:
+<code>.impeccable/critique/2026-08-04T21-58-49Z__client-src-components-departmentsetupwizard-jsx.md</code>.</p>
+<hr />
+<h2 id="stop-the-rules-this-session-broke-in-order-of-cost">0. STOP —
+the rules this session broke, in order of cost</h2>
+<p><strong>1. Grepping a filename is not reading the file. Check whether
+TODAY already solved it.</strong> Wiki anti-pattern
+<strong>#60</strong>, five instances in one evening. Two worth
+internalising:</p>
+<ul>
+<li>I hand-rolled an OKLCH→sRGB converter and reported <strong>38
+confident false failures</strong> to Matt. <code>3ea090c</code> —
+<em>that same morning</em> — records the identical mistake on the NERIS
+panel and its fix: <strong>let the browser convert via canvas</strong>,
+sanity-checked white-on-black = 21.0.</li>
+<li>I escalated <code>text-gray-400</code> to Matt as a design-token
+decision needing his ruling. The same commit had already measured it
+(2.60 light / 3.67 dark), chosen
+<code>text-gray-500 dark:text-gray-400</code>, and verified it (4.84 /
+6.82). <strong>The decision existed, with numbers.</strong></li>
+</ul>
+<p>Before building a mechanism or escalating a decision:
+<code>git log --since=&quot;3 days ago&quot; -- &lt;paths&gt;</code> and
+<strong>read the commit bodies</strong> — in this repo they carry the
+reasoning and the measurements. Before editing any file:
+<code>git log -3 -- &lt;file&gt;</code>.</p>
+<p><strong>2. A tool that writes must not describe itself as
+read-only.</strong> <code>e2e/scripts/contrast-report.mjs</code> said
+“reporting tool, not a gate” in its header and documented the prod
+<code>BASE</code> eleven lines above. Auditing the wizard means
+<em>advancing</em> it, and every <code>Next</code> runs
+<code>persistStep</code> → <code>PATCH /api/departments/:id</code>.
+<strong>It renamed prod department 1 to “Contrast Audit FD”.</strong>
+Restored by hand. The walk now refuses a non-localhost BASE unless
+<code>ALLOW_WRITES=1</code>.</p>
+<p><strong>3. Never commit a blocking gate you cannot pass.</strong>
+<code>e2e.yml</code> gates pushes AND PRs to <code>main</code> and calls
+that suite BLOCKING. I landed <code>09-contrast-sweep.spec.js</code>
+asserting zero failures; it failed <strong>10/10</strong> on a real,
+still-open defect. A red-on-arrival gate teaches everyone to ignore a
+red E2E, and the nine other journeys (incident lifecycle, inspection
+lifecycle, tenancy isolation) lose their signal with it. It is now a
+<strong>ratchet</strong> with baselines written down.</p>
+<p><strong>4. Do not baseline from an instrument you have not
+validated.</strong> My first ratchet numbers came from a run where
+<code>isFloating()</code> walked to the document root, so anything under
+a positioned ancestor was filed <code>uncertain</code>. Fixing it moved
+<strong>16 real dark-mode failures per surface</strong> into
+<code>failures</code> and immediately failed baselines I had written
+myself.</p>
+<p><strong>5. A silent bucket is how a defect hides.</strong> Four times
+in one file. See §3.</p>
+<hr />
+<h2 id="what-shipped-all-live-on-prod-all-verified-from-served-assets">1.
+What shipped (all live on prod, all verified from served assets)</h2>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Area</th>
+<th>Change</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Demo</td>
+<td>Every event was applied <strong>twice</strong> —
+<code>DemoTimeline</code> applied via <code>setIncident</code> AND
+bubbled to an <code>onEvent</code> CommandBoard re-applied. Doubled
+Radio Log, two IC cards. One writer now; <code>onEvent</code> plumbing
+deleted so it cannot return</td>
+</tr>
+<tr>
+<td>ResponseMap</td>
+<td>Opened on continental North America and never framed a CAD incident,
+because <code>typeof lat === &#39;number&#39;</code> fails on Postgres
+NUMERIC-as-string. Frames the call, else the district</td>
+</tr>
+<tr>
+<td><strong>Forms app-wide</strong></td>
+<td><code>color-scheme</code> was never declared, so Chrome styled every
+control for a light page: wizard inputs were <strong>#000 on #101828 =
+1.18:1</strong>, and every native <code>&lt;select&gt;</code> list
+rendered near-white options on a light OS popup ≈
+<strong>1.1:1</strong>. Two lines in <code>index.css</code> bound to the
+<code>.dark</code> class</td>
+</tr>
+<tr>
+<td>Setup wizard</td>
+<td>Demo “Quick Setup” card (which wrote a fictional department into the
+real one) gated to <code>?demo=1</code>/dev · half-filled
+apparatus/partner rows no longer silently discarded · station removal
+confirms and names the rigs it will move · HQ address/city/state now
+persist · all 10 step-1 controls <code>id</code>/<code>htmlFor</code>
+associated · 14px remove buttons → 44px · <code>focus-visible</code>
+rings (buttons had none) · type floor 10px → 11px</td>
+</tr>
+<tr>
+<td>Login</td>
+<td>Hardcoded <code>initials: &#39;DR&#39;</code> on Sarah Chen → derived from
+the name · unreadable <code>gray-400</code> body text · hover states had
+no dark variants · card list widened so highlights stop wrapping
+mid-phrase</td>
+</tr>
+<tr>
+<td>Top bar</td>
+<td>Assistant badge was absolutely positioned at the button’s own
+corner, covering its label — read <strong>“Assistan”</strong>. Now
+inline; <code>purple-500</code> → <code>violet-600</code></td>
+</tr>
+<tr>
+<td>Violet vocabulary</td>
+<td><code>data/auth.js</code> role palette
+(<code>training_captain</code> was violet), “New Meeting” red→violet
+gradient, PersonalAssistant <code>purple-600</code></td>
+</tr>
+<tr>
+<td>Radio Log</td>
+<td>indigo → sky, with contrast <strong>measured</strong>:
+<code>sky-600</code> on white is 4.09:1 and fails, so tokens are
+<code>sky-700</code></td>
+</tr>
+<tr>
+<td>Tooling</td>
+<td><code>client/src/lib/a11y/contrastAudit.js</code> +
+<code>e2e/journeys/09-contrast-sweep.spec.js</code> (ratchet gate) +
+<code>e2e/scripts/contrast-report.mjs</code> (grouped report)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Reverted deliberately:</strong> my edits to
+<code>StationSettings.jsx</code> and <code>NFIRSForm.jsx</code>
+(<code>7643cc0</code>). See §4.</p>
+<hr />
+<h2 id="pick-up-here">2. PICK UP HERE</h2>
+<p><strong>Highest value, in order:</strong></p>
+<ol type="1">
+<li><p><strong>Wizard steps 5–9 have no measured pass.</strong> Steps
+1–4 measured (281/268/379 nodes; 16 dark / 49 light). The walk stopped
+at a deadlock I had introduced; that is fixed, so re-run and it should
+reach Launch:</p>
+<pre><code>cd e2e &amp;&amp; BASE=http://localhost:5173 node scripts/contrast-report.mjs</code></pre>
+<p><strong>Localhost only</strong> — the walk writes. Do not claim any
+step clean without a number.</p></li>
+<li><p><strong>Close <code>text-gray-400</code> against the established
+pair.</strong> Not a decision — precedent from <code>3ea090c</code> is
+<code>text-gray-500 dark:text-gray-400</code> (4.84 / 6.82). It is the
+dominant remaining cluster (2.49–2.6:1 on light surfaces, many files,
+10–12px). Fix by cluster, per-instance verified; <strong>never a codemod
+from detector output</strong> (gameplan ruling #4). Lower the ratchet
+caps as you go.</p></li>
+<li><p><strong>Light mode carries ~3× the failures of dark</strong> (49
+vs 16 on the wizard). The app is dark-first and light is
+under-exercised.</p></li>
+<li><p><strong><code>Feed down · polling</code> on prod Live
+Dispatch</strong>, seen twice today. Per the repo’s own realtime notes
+this outranks cosmetics if real — verify from the served bundle + a live
+probe, never from a green deploy.</p></li>
+</ol>
+<p><strong>Open decisions for Matt (do not invent answers):</strong> -
+Bell badge (47) vs Notifications card (36) — legitimately different
+definitions, same apparent label. Fix by <strong>labelling</strong>;
+never change the arithmetic. - Version renders <code>v0.13.0.13</code>
+(semver + <code>buildNumber</code> 13, deliberate). Reads as a typo;
+proposed <code>v0.13.0+13</code>. - <strong>The nine-step wizard
+shape.</strong> The <code>/impeccable critique</code> scored it
+<strong>18/40 (Poor)</strong> and argued a volunteer department has one
+answer to six of the nine steps. <code>singleStation</code> already
+proves the wizard can reshape itself; it does so twice. This is a
+product conversation, not a design pass. - <strong>FDID: resolve, don’t
+type.</strong> <code>7e720af</code> replaced a hand-typed NERIS entity
+ID with a registry-backed picker because <em>“a transcription slip
+either fails at submit or resolves to ANOTHER department, putting this
+department’s reports on a stranger’s national record.”</em> FDID is the
+same class of field and today only got help text. The pattern already
+exists in this codebase.</p>
+<hr />
+<h2 id="the-auditors-four-buckets-do-not-collapse-them">3. The auditor’s
+four buckets — do not collapse them</h2>
+<p><code>failures</code> (normal flow, DOM backdrop IS the painted
+backdrop — trustworthy) · <code>uncertain</code> (fixed/sticky/absolute
+— GO LOOK) · <code>exempt</code> (disabled controls, WCAG 1.4.3 excludes
+them) · <code>unmeasurable</code> (native <code>&lt;select&gt;</code>
+chrome is OS-painted and cannot be read from the DOM at all, plus an
+assertion that <code>color-scheme</code> is declared).</p>
+<p>Each bucket exists because that category was, at some point in one
+afternoon, reported as a defect or as a pass when it was neither.
+<strong>Known remaining limits, documented so they are not mistaken for
+covered cases:</strong> <code>opacity</code>,
+<code>mix-blend-mode</code> and <code>backdrop-filter</code> are
+ignored; <code>color()</code> / <code>lab()</code> / <code>lch()</code>
+are unparsed (they now fail closed rather than guessing). The audit’s
+recommendation for the parser is the <strong>canvas normaliser</strong>
+— which is also what <code>3ea090c</code> used. Use that, not more
+regex.</p>
+<hr />
+<h2 id="do-not-re-do-these">4. Do not re-do these</h2>
+<ul>
+<li><strong><code>StationSettings.jsx</code> and
+<code>NFIRSForm.jsx</code> are reverted on purpose.</strong>
+<code>StationSettings</code> is the NERIS department picker (seven
+commits on 08-03/04, incl. ToU §5 hyperlink and ToU §2
+automated-retrieval decisions). <code>NFIRSForm</code> is gated
+<code>status: &#39;planned&#39;</code> — <code>moduleRegistry.js:36</code>,
+<em>“NFIRS retired nationally 2026-01”</em>. <strong>NERIS is the
+authoritative record, not NFIRS.</strong> I called that file “the legal
+record” and was wrong.</li>
+<li><code>constants/usStates.js</code> stays, used <strong>only</strong>
+by the setup wizard. Do not “unify” the other lists without a reason
+that survives those seven commits.</li>
+<li>The impeccable detector reports 3 findings on
+<code>DepartmentSetupWizard.jsx</code> — <strong>all verified false
+positives</strong> (line 54 pairs a base text colour with a
+<em>hover</em> background; line 916 is a three-branch ternary whose
+flagged pairs are mutually exclusive on <code>i</code> vs
+<code>step</code>).</li>
+<li>Side-tab status stripes are waived (gameplan ruling #1). Violet = AI
+only (#2).</li>
+</ul>
+<hr />
+<h2 id="state-of-the-world">5. State of the world</h2>
+<ul>
+<li><strong>Server suite: 1069 tests, 1067 pass, 0 fail</strong>
+(<code>TENANCY_TEST_DB</code> set). Client build green. Contrast gate
+11/11 against prod.</li>
+<li>Migration head <strong>0124</strong>. This session created
+none.</li>
+<li><strong>Pinecone: OVER ITS MONTHLY EMBEDDING QUOTA. Do not run the
+sync or a search, do not retry, do not “check if it’s back.”</strong>
+The corpus is stale and the four-tool lookup is down to three. When the
+wiki is thin, say the corpus search was unavailable — a 429 is not “no
+hits”.</li>
+<li><strong>NotebookLM: use <code>Skill(notebooklm)</code> for any
+NotebookLM operation</strong>, and route the CLI through
+<code>mcp__desktop-commander__start_process</code>. Never pip-install it
+or run <code>notebooklm login</code> in the sandbox (anti-pattern #10).
+<code>9c8f</code> refreshed this session:
+<code>refreshed: 1, unchanged: 21, verify_failed: 0</code>.</li>
+<li>Prod department name <strong>restored</strong> to “Maplewood VFD”
+and read back after my tool renamed it.</li>
+<li>Concurrent session: another Claude was working the
+permits/prevention register in this repo all evening. Stage explicit
+paths only; <strong>never <code>git commit -a</code></strong>.</li>
+</ul>
+</body>
+</html>

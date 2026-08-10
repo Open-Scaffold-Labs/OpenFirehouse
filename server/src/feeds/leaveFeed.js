@@ -6,16 +6,22 @@
 const { pool } = require('../db');
 
 module.exports = async function leaveFeed(start, end, options) {
+  // leave_requests uses quoted camelCase columns ("memberId","startDate","endDate")
+  // and a canonical Title-Case status ('Approved') — see 0067. The old snake_case /
+  // lowercase query silently matched nothing, so approved leave never reached the
+  // calendar feed (the same defect class 1.1a fixed in timesheets). Alias back to the
+  // snake_case shape the mapper below expects.
   const { rows } = await pool.query(`
-    SELECT lr.id, lr.member_id, lr.leave_type, lr.start_date, lr.end_date,
+    SELECT lr.id, lr."memberId" AS member_id, lr.type AS leave_type,
+           lr."startDate" AS start_date, lr."endDate" AS end_date,
            lr.status, lr.reason,
            m.name AS member_name
     FROM leave_requests lr
-    LEFT JOIN members m ON m.id = lr.member_id
+    LEFT JOIN members m ON m.id = lr."memberId"
     WHERE lr.department_id = $3
-      AND lr.status = 'approved'
-      AND lr.start_date <= $2 AND lr.end_date >= $1
-    ORDER BY lr.start_date
+      AND lr.status = 'Approved'
+      AND lr."startDate" <= $2 AND lr."endDate" >= $1
+    ORDER BY lr."startDate"
   `, [start, end, options.stationId]);
 
   return rows.map(r => {

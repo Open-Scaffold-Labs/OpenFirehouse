@@ -17,6 +17,7 @@ import {
   AlertTriangle, Settings, RefreshCw, Flame,
 } from 'lucide-react';
 import { api } from '../utils/api';
+import { fabSlotCls } from '../utils/fabRail';
 
 // ─── suggested starters by page ──────────────────────────────────────────────
 const PAGE_STARTERS = {
@@ -212,7 +213,7 @@ export default function AssistantWidget({ user, activePage, onNavigate }) {
       {/* ── floating button ── */}
       <button
         onClick={() => setOpen((v) => !v)}
-        className={`fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all ${
+        className={`${fabSlotCls('assistant')} z-40 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all ${
           open ? 'bg-gray-700 rotate-12' : 'bg-red-600 hover:bg-red-700'
         }`}
         title="AI Assistant"
@@ -228,7 +229,7 @@ export default function AssistantWidget({ user, activePage, onNavigate }) {
 
       {/* ── chat panel ── */}
       {open && (
-        <div className="fixed bottom-24 right-6 z-50 w-80 sm:w-96 bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden"
+        <div className="fixed bottom-24 right-20 z-50 w-80 sm:w-96 bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden"
           style={{ maxHeight: 'calc(100vh - 120px)' }}>
 
           {/* header */}

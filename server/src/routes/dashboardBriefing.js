@@ -80,17 +80,22 @@ async function assembleSituationPacket(stationId) {
     safeQuery('shifts', `SELECT s.id, s."shiftType" AS shift_type, s."memberIds" AS member_ids FROM shifts s WHERE s.department_id = $2 AND s.date = $1`, [todayStr, stationId]),
     // "memberName" lives on leave_requests — no members JOIN needed
     safeQuery('leave_requests', `SELECT lr.id, lr."memberName" AS name, lr.type AS leave_type FROM leave_requests lr WHERE lr.department_id = $2 AND LOWER(lr.status) = 'approved' AND lr."startDate" <= $1 AND lr."endDate" >= $1`, [todayStr, stationId]),
-    // qualifications table ships later — degrades to empty until then
-    safeQuery('qualifications-expired', `SELECT q.cert_name, q.expiry_date, m.name FROM qualifications q LEFT JOIN members m ON m.id = q.member_id WHERE q.department_id = $2 AND q.expiry_date IS NOT NULL AND q.expiry_date < $1 ORDER BY q.expiry_date LIMIT 10`, [todayStr, stationId]),
-    safeQuery('qualifications-soon', `SELECT q.cert_name, q.expiry_date, m.name FROM qualifications q LEFT JOIN members m ON m.id = q.member_id WHERE q.department_id = $3 AND q.expiry_date BETWEEN $1 AND $2 ORDER BY q.expiry_date LIMIT 10`, [todayStr, fmtDate(sevenDays), stationId]),
+    // The table is member_qualifications — a bare `qualifications` has never existed.
+    safeQuery('qualifications-expired', `SELECT q.cert_name, q.expiry_date, m.name FROM member_qualifications q LEFT JOIN members m ON m.id = q.member_id WHERE q.department_id = $2 AND q.expiry_date IS NOT NULL AND q.expiry_date < $1 ORDER BY q.expiry_date LIMIT 10`, [todayStr, stationId]),
+    safeQuery('qualifications-soon', `SELECT q.cert_name, q.expiry_date, m.name FROM member_qualifications q LEFT JOIN members m ON m.id = q.member_id WHERE q.department_id = $3 AND q.expiry_date BETWEEN $1 AND $2 ORDER BY q.expiry_date LIMIT 10`, [todayStr, fmtDate(sevenDays), stationId]),
     safeQuery('incidents-month', `SELECT COUNT(*) as count FROM incidents WHERE department_id = $2 AND date >= $1 AND deleted_at IS NULL`, [monthStr + '-01', stationId]),
     safeQuery('incidents-lastmonth', `SELECT COUNT(*) as count FROM incidents WHERE department_id = $3 AND date >= $1 AND date < $2 AND deleted_at IS NULL`,
       [fmtDate(new Date(now.getFullYear(), now.getMonth() - 1, 1)), monthStr + '-01', stationId]),
     // events columns are "startTime"/type — alias to keep the downstream packet shape
     safeQuery('events-today', `SELECT title, date, "startTime" AS start_time, type AS event_type FROM events WHERE department_id = $2 AND date = $1 ORDER BY "startTime"`, [todayStr, stationId]),
     safeQuery('events-week', `SELECT title, date, "startTime" AS start_time, type AS event_type FROM events WHERE department_id = $3 AND date BETWEEN $1 AND $2 ORDER BY date, "startTime"`, [todayStr, fmtDate(sevenDays), stationId]),
-    // "nextServiceDate" is nullable TEXT — guard empty strings (no scheduled_date column)
-    safeQuery('maintenance', `SELECT COUNT(*) as count FROM maintenance WHERE department_id = $2 AND status IN ('scheduled', 'overdue') AND "nextServiceDate" IS NOT NULL AND "nextServiceDate" <> '' AND "nextServiceDate" <= $1`, [fmtDate(thirtyDays), stationId]),
+    // Maintenance load (2.2/0083): open work orders + PM schedules calendar-due in 30 days
+    safeQuery('maintenance', `SELECT (
+      (SELECT COUNT(*) FROM work_orders WHERE department_id = $2 AND deleted_at IS NULL AND status IN ('open','in_progress','awaiting_parts'))
+      + (SELECT COUNT(*) FROM pm_schedules p WHERE p.department_id = $2 AND p.deleted_at IS NULL AND p.active = TRUE
+           AND p.interval_days IS NOT NULL AND p.last_done_date IS NOT NULL
+           AND (p.last_done_date + p.interval_days) <= $1::date)
+    ) as count`, [fmtDate(thirtyDays), stationId]),
     safeQuery('grievances', `SELECT COUNT(*) as count FROM grievances WHERE department_id = $1 AND status NOT IN ('resolved', 'closed', 'withdrawn') AND deleted_at IS NULL`, [stationId]),
     // no due_date column — expected_return is the due timestamp
     safeQuery('equipment_checkout', `SELECT COUNT(*) as count FROM equipment_checkout WHERE department_id = $2 AND status = 'checked_out' AND expected_return < $1`, [todayStr, stationId]),

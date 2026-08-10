@@ -7,6 +7,7 @@
  */
 const test = require('node:test');
 const assert = require('node:assert');
+const { mkAlignedDeptStation } = require('./helpers/alignedTenant');
 
 const TENANCY_TEST_DB = process.env.TENANCY_TEST_DB;
 if (!TENANCY_TEST_DB) {
@@ -23,8 +24,8 @@ if (!TENANCY_TEST_DB) {
     let deptId, stationId, connId;
     try {
       // Stand up a throwaway department + house.
-      deptId = (await pool.query(`INSERT INTO departments (name) VALUES ($1) RETURNING id`, [MARK])).rows[0].id;
-      stationId = (await pool.query(`INSERT INTO stations (name, department_id) VALUES ($1,$2) RETURNING id`, [MARK + ' HQ', deptId])).rows[0].id;
+      deptId = await mkAlignedDeptStation(pool, MARK);
+      stationId = deptId;
 
       // Create a CAD connection for that department; it returns its webhook secret ONCE.
       const conn = await db.cadConnections.create({ name: MARK + ' feed', vendorId: 'generic', status: 'Active', station_id: stationId }, deptId);

@@ -1,0 +1,86 @@
+# Nightly encrypted logical backup of the production database.
+#
+# WHY (Dale, 2026-07-04 — closes the "no live scheduled backup" gap):
+# Supabase's own daily backups are tier-1, but they live inside the same
+# vendor account as the database. This job is the independent second copy:
+# a nightly pg_dump, symmetrically encrypted, kept 30 days as a GitHub
+# artifact in a different failure domain.
+#
+# Required repo secrets (Settings → Secrets → Actions):
+#   PROD_DATABASE_URL   — Supabase connection string (Session pooler, port 5432;
+#                         the transaction pooler on 6543 breaks pg_dump).
+#   BACKUP_PASSPHRASE   — strong symmetric passphrase; store a copy in the same
+#                         place as the other deployment secrets. Without it the
+#                         artifacts are unrecoverable — that is the point.
+#
+# Restore drill (quarterly, see docs/BACKUP_AND_RESTORE.md):
+#   gpg --batch --passphrase "$BACKUP_PASSPHRASE" -d of-backup-<date>.dump.gpg \
+#     | pg_restore -d "$SCRATCH_DATABASE_URL" --clean --if-exists --no-owner
+
+name: db-backup
+on:
+  schedule:
+    - cron: '20 8 * * *'   # nightly 08:20 UTC (an hour before the 09:10 retention prune)
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Fail fast if secrets are missing
+        run: |
+          test -n "${{ secrets.PROD_DATABASE_URL }}" || { echo '::error::PROD_DATABASE_URL secret not set'; exit 1; }
+          test -n "${{ secrets.BACKUP_PASSPHRASE }}" || { echo '::error::BACKUP_PASSPHRASE secret not set'; exit 1; }
+
+      - name: Install postgres 17 client (PGDG)
+        run: |
+          # Prod is Postgres 17; pg_dump refuses to dump a newer server, and the
+          # Ubuntu runner ships v16. Pull the matching client from the PGDG repo.
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+          # The runner preinstalls v16 at /usr/bin/pg_dump; expose the v17 bin dir
+          # ahead of it for every later step.
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+          /usr/lib/postgresql/17/bin/pg_dump --version
+
+      - name: Dump (custom format, compressed)
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          STAMP=$(date -u +%Y%m%d-%H%M)
+          pg_dump "$DATABASE_URL" \
+            --format=custom --compress=6 \
+            --no-owner --no-privileges \
+            --schema=public \
+            --file="of-backup-${STAMP}.dump"
+          # sanity: a dump under 100KB means something went badly wrong
+          SIZE=$(stat -c%s "of-backup-${STAMP}.dump")
+          echo "dump size: ${SIZE} bytes"
+          test "$SIZE" -gt 102400 || { echo '::error::dump suspiciously small'; exit 1; }
+          echo "STAMP=${STAMP}" >> "$GITHUB_ENV"
+
+      - name: Encrypt (gpg symmetric, AES256)
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          gpg --batch --yes --symmetric --cipher-algo AES256 \
+            --passphrase "$BACKUP_PASSPHRASE" \
+            --output "of-backup-${STAMP}.dump.gpg" "of-backup-${STAMP}.dump"
+          shred -u "of-backup-${STAMP}.dump"
+
+      - name: Upload artifact (30-day retention)
+        uses: actions/upload-artifact@v4
+        with:
+          name: of-backup-${{ env.STAMP }}
+          path: of-backup-${{ env.STAMP }}.dump.gpg
+          retention-days: 30
+          if-no-files-found: error

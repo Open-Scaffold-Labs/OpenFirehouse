@@ -1,5 +1,7 @@
 // ─── Fire Inspections & Permits ───────────────────────────────────────────────
 
+import { RESULT_CODES, RESULT_LABELS } from '../lib/shared/inspectionResult.js';
+
 export const INSPECTION_TYPES = [
   'Annual Inspection',
   'Follow-Up Inspection',
@@ -54,9 +56,134 @@ export const VIOLATION_CODES = [
   { code: '6003', label: 'HazMat', desc: 'Secondary containment missing or inadequate' },
 ];
 
-export const INSPECTION_RESULTS = ['Pass', 'Pass with Violations', 'Fail', 'Reinspection Required', 'Not Completed'];
-export const PERMIT_STATUSES    = ['Active', 'Pending', 'Expired', 'Revoked', 'Denied'];
-export const VIOLATION_STATUSES = ['New Violation', 'Abated', 'UnAbated', 'Withdrawn', 'Void', 'Recommended', 'Time Extension'];
+// 'Pass with Violations' REMOVED 2026-07-13 (Matt's correction — an inspection
+// cannot pass with unabated violations; the server now 422s a passing result
+// while open violations remain). Legacy records keep their stored value on read,
+// so RESULT_COLORS below still carries the retired key for historical rendering.
+// DERIVED from the server-owned result axis — client/src/lib/shared/inspectionResult.js
+// is GENERATED from server/src/constants/inspectionResult.js (a drift test fails the
+// suite if it goes stale). This replaces the hand-kept literal that let the three
+// surfaces' result vocabularies drift (the iPad once shipped 'Conditional'). One source.
+export const INSPECTION_RESULTS = RESULT_CODES.map((c) => RESULT_LABELS[c]);
+// Permit status axis — MUST stay in lockstep with server/src/constants/permitStatus.js
+// (server/src/tests/permitStatus.test.js reads this literal and fails the suite on
+// drift, the same fence VIOLATION_STATUSES uses). The server owns the vocabulary and
+// REFUSES an unrecognized value with 400 INVALID_PERMIT_STATUS — it never guesses a
+// control value onto a legal record. Order is lifecycle reading order, not alphabetical.
+// The full lifecycle (Suspended, Terminated-by-transfer, typed denials) arrives with
+// the issuance engine in 3.1 — a status nothing can reach is a lie, so it waits for
+// the transition that produces it.
+// KEEP IN LOCKSTEP with server/src/constants/permitStatus.js — server/src/tests/permitStatus.test.js
+// reads THIS literal off disk and fails the suite on drift. The server owns the vocabulary; this is
+// a mirror for the UI, never a second source of truth. 'TerminatedByTransfer' added in 3.1a
+// (IFC §105.3.1: a change of occupancy/operation/tenancy/ownership terminates the permit).
+// AboutToExpire + Delinquent added in 3.1b (0094) — both written ONLY by the scheduled
+// expiry job. AboutToExpire is a VALID permit (in term, notice window open); Delinquent is
+// past term but inside grace and still renewable. 'Expired' is the trapdoor where renewal
+// is withdrawn — grace lives UPSTREAM of it, which is the market's documented shape.
+export const PERMIT_STATUSES    = ['Pending', 'Active', 'AboutToExpire', 'Delinquent', 'Expired', 'Revoked', 'Denied', 'TerminatedByTransfer'];
+
+// Display labels for the statuses whose machine name isn't presentable. Display ONLY —
+// never an input to a decision, and never matched against.
+export const PERMIT_STATUS_LABELS = {
+  TerminatedByTransfer: 'Terminated (transfer)',
+  // Say what the operator needs to DO, not just what the machine calls it. "About to expire"
+  // reads as a warning; the honest reading is that the renewal window has OPENED.
+  //
+  // ⚠ NEITHER LABEL MAKES A LEGAL CLAIM, and that is deliberate (Matt, 2026-07-27). We do
+  // not say a permit is "valid" or "invalid", or that a business may or may not operate —
+  // that is the AHJ's call. 'Term ended' is a FACT the record knows; the screen pairs it
+  // with the dates (ended on X, renewable until Y) and stops there.
+  AboutToExpire: 'Renewal open',
+  Delinquent:    'Term ended — renewable',
+};
+
+// ─────────────────────────────────────────────────────────────────────────────────────
+// THE FACET TABLE — a MIRROR of server/src/constants/permitStatus.js PERMIT_STATUS_FACETS.
+//
+// WHY IT IS HERE. 3.1b inserts two job-written statuses (AboutToExpire, Delinquent —
+// migration 0094) between "in force" and "dead", which means `status === 'Active'` stops
+// being the test for "is this permit valid". Every literal comparison in the UI becomes
+// wrong SILENTLY on the day the job first runs: the control simply stops being offered,
+// and the operator blames themselves. That is the same failure as offering a control the
+// server refuses, in the opposite direction.
+//
+// server/src/tests/permitStatus.test.js reads this table FROM DISK and fails the suite on
+// drift, exactly as it already does for PERMIT_STATUSES. CHANGE BOTH TOGETHER.
+//
+// These stay read-only OPINIONS about what to render. THE SERVER IS THE CONTROL.
+// ─────────────────────────────────────────────────────────────────────────────────────
+export const PERMIT_STATUS_FACETS = {
+  Pending:              { issued: false, inForce: false, revocable: false, terminable: false, terminal: false, renewable: false },
+  Active:               { issued: true,  inForce: true,  revocable: true,  terminable: true,  terminal: false, renewable: false },
+  AboutToExpire:        { issued: true,  inForce: true,  revocable: true,  terminable: true,  terminal: false, renewable: true  },
+  Delinquent:           { issued: true,  inForce: false, revocable: true,  terminable: true,  terminal: false, renewable: true  },
+  Expired:              { issued: true,  inForce: false, revocable: false, terminable: false, terminal: false, renewable: false },
+  Revoked:              { issued: true,  inForce: false, revocable: false, terminable: false, terminal: true,  renewable: false },
+  Denied:               { issued: false, inForce: false, revocable: false, terminable: false, terminal: true,  renewable: false },
+  TerminatedByTransfer: { issued: true,  inForce: false, revocable: false, terminable: false, terminal: true,  renewable: false },
+};
+
+// The one status a permit is created in. Mirrors the server's DEFAULT_PERMIT_STATUS —
+// named rather than spelled inline so the create/issue boundary has ONE spelling on both
+// sides of the wire.
+export const DEFAULT_PERMIT_STATUS = 'Pending';
+
+const permitStatusesWhere = (facet) =>
+  PERMIT_STATUSES.filter((s) => PERMIT_STATUS_FACETS[s]?.[facet]);
+
+export const ISSUED_PERMIT_STATUSES     = permitStatusesWhere('issued');
+export const IN_FORCE_PERMIT_STATUSES      = permitStatusesWhere('inForce');
+export const REVOCABLE_PERMIT_STATUSES  = permitStatusesWhere('revocable');
+export const TERMINABLE_PERMIT_STATUSES = permitStatusesWhere('terminable');
+export const RENEWABLE_PERMIT_STATUSES  = permitStatusesWhere('renewable');
+export const TERMINAL_PERMIT_STATUSES   = permitStatusesWhere('terminal');
+
+// Revocation grounds — mirrors server/src/constants/permitGrounds.js (IFC §105.4's seven
+// model grounds + LOCAL_GROUND). LOCAL_GROUND REQUIRES a citation to the local provision;
+// the server and a Postgres CHECK both refuse it without one, so the picker must collect it.
+export const REVOCATION_GROUNDS = [
+  { code: 'MISREPRESENTATION',        label: 'Material misrepresentation in the application' },
+  { code: 'DIFFERENT_LOCATION',       label: 'Used at a location other than the one permitted' },
+  { code: 'DIFFERENT_ACTIVITY',       label: 'Used for an activity other than the one permitted' },
+  { code: 'CONDITION_VIOLATED',       label: 'A condition of the permit was violated' },
+  { code: 'DIFFERENT_PERSON',         label: 'Used by a person or firm other than the permittee' },
+  { code: 'NONCOMPLIANCE_WITH_ORDER', label: 'Failure to comply with a served order or notice in time' },
+  { code: 'ISSUED_IN_ERROR',          label: 'Issued in error or contrary to code' },
+  { code: 'LOCAL_GROUND',             label: 'A ground adopted locally (citation required)' },
+];
+// Canonical four-state violation axis (2026-07-11) — MUST stay in lockstep with
+// server/src/constants/violationStatus.js (a server test reads this literal and
+// fails the suite on drift). Resolved = Corrected | Withdrawn; everything else
+// counts as open. Legacy values ('Abated', 'New Violation', 'Void', …) are
+// canonicalized server-side on every write.
+export const VIOLATION_STATUSES = ['Open', 'Time Extension', 'Corrected', 'Withdrawn'];
+export const RESOLVED_VIOLATION_STATUSES = ['Corrected', 'Withdrawn'];
+
+// P0 (2026-07-12): read-side canonicalization, mirrored from the server
+// (server/src/constants/violationStatus.js — the lockstep contract). The server
+// canonicalizes on write AND read, but the client must not regress to raw literal
+// compares if it ever renders a value that predates server normalization (offline
+// caches, exports). Unknown → 'Open' — fail-open: never silently resolve.
+const LEGACY_STATUS_MAP = {
+  'new violation': 'Open', 'unabated': 'Open', 'pending': 'Open', 'recommended': 'Open',
+  'open': 'Open', 'abated': 'Corrected', 'corrected': 'Corrected',
+  'void': 'Withdrawn', 'withdrawn': 'Withdrawn', 'time extension': 'Time Extension',
+};
+export function canonicalizeViolationStatus(status) {
+  const key = String(status ?? '').trim().toLowerCase();
+  return LEGACY_STATUS_MAP[key] ?? 'Open';
+}
+export function isResolvedViolationStatus(status) {
+  return RESOLVED_VIOLATION_STATUSES.includes(canonicalizeViolationStatus(status));
+}
+// VIOLATION SEVERITY IS RETIRED (2026-07-14, Matt — a working fire inspector):
+// "we dont have a severity button or label... imminentHazard handles this on its own."
+// Fire inspection does not grade violations Low/Moderate/High. A condition is either an
+// IMMINENT HAZARD or an ordinary violation with a correct-by date. The field was
+// invented, gated no logic, and DEFAULTED to 'Moderate' — so a notice served on a
+// property owner could carry a grading the inspector never made. Authoring and display
+// are gone; the DB column is retained (retire, don't delete). Do not reintroduce this.
 
 export const VIOLATION_CATEGORIES = [
   'Access', 'Assembly', 'Commercial Kitchen', 'Electrical', 'Elevator',
@@ -88,10 +215,12 @@ export const INSPECTION_CHECKLISTS = [
 
 export const RESULT_COLORS = {
   'Pass':                  'bg-green-100 text-green-800',
-  'Pass with Violations':  'bg-amber-100 text-amber-800',
   'Fail':                  'bg-red-100   text-red-800',
   'Reinspection Required': 'bg-orange-100 text-orange-800',
   'Not Completed':         'bg-gray-100  text-gray-700',
+  // RETIRED value — no longer selectable (see INSPECTION_RESULTS above), but
+  // records completed before 2026-07-13 still carry it and must render.
+  'Pass with Violations':  'bg-amber-100 text-amber-800',
 };
 
 export const PERMIT_STATUS_COLORS = {
@@ -212,7 +341,7 @@ export const initialInspections = [
     inspectorName: 'Maria Delgado',
     scheduledDate: '2026-01-15',
     completedDate: '2026-01-15',
-    result: 'Pass with Violations',
+    result: 'Reinspection Required',
     violations: [
       { code: '2001', status: 'Corrected',      correctedDate: '2026-02-01', notes: 'Extinguisher in food court replaced.' },
       { code: '4002', status: 'Open',            followUpDate: '2026-03-15', notes: 'Extension cord in east corridor storage room.' },
@@ -254,7 +383,7 @@ export const initialInspections = [
     inspectorName: 'Maria Delgado',
     scheduledDate: '2026-02-18',
     completedDate: '2026-02-18',
-    result: 'Pass with Violations',
+    result: 'Reinspection Required',
     violations: [
       { code: '6002', status: 'Open', followUpDate: '2026-03-18', notes: 'SDS binder not current — 3 chemicals updated since last filing.' },
     ],

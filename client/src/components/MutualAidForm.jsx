@@ -2,6 +2,7 @@ import DictateTextarea from './DictateTextarea';
 import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { api } from '../utils/api';
+import { openTimePicker } from '../utils/timeInput';
 import {
   AID_DIRECTIONS, AID_INCIDENT_TYPES, AID_STATUSES, NEIGHBORING_DEPARTMENTS,
 } from '../data/mutualAid';
@@ -232,10 +233,10 @@ export default function MutualAidForm({ record, onSave, onClose, existingIds }) 
 
             {/* times */}
             <Field label="Request Time">
-              <input type="time" value={form.requestTime} onChange={(e) => set('requestTime', e.target.value)} className={inputCls()} />
+              <input type="time" onClick={openTimePicker} value={form.requestTime} onChange={(e) => set('requestTime', e.target.value)} className={inputCls()} />
             </Field>
             <Field label="Clear Time">
-              <input type="time" value={form.clearTime} onChange={(e) => set('clearTime', e.target.value)} className={inputCls()} />
+              <input type="time" onClick={openTimePicker} value={form.clearTime} onChange={(e) => set('clearTime', e.target.value)} className={inputCls()} />
             </Field>
 
             {/* units deployed */}

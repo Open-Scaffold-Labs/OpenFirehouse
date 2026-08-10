@@ -83,16 +83,24 @@ router.get('/summary', async (req, res) => {
       safeQuery('incidents-month', `SELECT COUNT(*) as count FROM incidents WHERE department_id = $2 AND date >= $1 AND deleted_at IS NULL`, [monthStr + '-01', stationId]),
       // Incidents YTD
       safeQuery('incidents-ytd', `SELECT COUNT(*) as count FROM incidents WHERE department_id = $2 AND date >= $1 AND deleted_at IS NULL`, [yearStr + '-01-01', stationId]),
-      // Expired certifications (qualifications table ships later — degrades to empty until then)
-      safeQuery('qualifications-expired', `SELECT q.id, q.cert_name, q.expiry_date, m.name FROM qualifications q LEFT JOIN members m ON m.id = q.member_id WHERE q.department_id = $2 AND q.expiry_date IS NOT NULL AND q.expiry_date < $1 ORDER BY q.expiry_date LIMIT 20`, [todayStr, stationId]),
+      // Expired certifications. The table is member_qualifications. A bare
+      // `qualifications` has never existed — no migration and no db.js block
+      // creates it — so the old comment ("ships later") described a table that
+      // was never coming. These three queries aborted the request transaction.
+      safeQuery('qualifications-expired', `SELECT q.id, q.cert_name, q.expiry_date, m.name FROM member_qualifications q LEFT JOIN members m ON m.id = q.member_id WHERE q.department_id = $2 AND q.expiry_date IS NOT NULL AND q.expiry_date < $1 ORDER BY q.expiry_date LIMIT 20`, [todayStr, stationId]),
       // Expiring soon (next 30 days)
-      safeQuery('qualifications-soon', `SELECT q.id, q.cert_name, q.expiry_date, m.name FROM qualifications q LEFT JOIN members m ON m.id = q.member_id WHERE q.department_id = $3 AND q.expiry_date BETWEEN $1 AND $2 ORDER BY q.expiry_date LIMIT 20`, [todayStr, fmtDate(thirtyDays), stationId]),
+      safeQuery('qualifications-soon', `SELECT q.id, q.cert_name, q.expiry_date, m.name FROM member_qualifications q LEFT JOIN members m ON m.id = q.member_id WHERE q.department_id = $3 AND q.expiry_date BETWEEN $1 AND $2 ORDER BY q.expiry_date LIMIT 20`, [todayStr, fmtDate(thirtyDays), stationId]),
       // Valid certs
-      safeQuery('qualifications-valid', `SELECT COUNT(*) as count FROM qualifications WHERE department_id = $2 AND (expiry_date IS NULL OR expiry_date > $1)`, [fmtDate(thirtyDays), stationId]),
+      safeQuery('qualifications-valid', `SELECT COUNT(*) as count FROM member_qualifications WHERE department_id = $2 AND (expiry_date IS NULL OR expiry_date > $1)`, [fmtDate(thirtyDays), stationId]),
       // Open grievances
       safeQuery('grievances', `SELECT COUNT(*) as count FROM grievances WHERE department_id = $1 AND status NOT IN ('resolved', 'closed', 'withdrawn') AND deleted_at IS NULL`, [stationId]),
-      // Maintenance due in 30 days ("nextServiceDate" is nullable TEXT — guard empty strings)
-      safeQuery('maintenance', `SELECT COUNT(*) as count FROM maintenance WHERE department_id = $2 AND status IN ('scheduled', 'overdue') AND "nextServiceDate" IS NOT NULL AND "nextServiceDate" <> '' AND "nextServiceDate" <= $1`, [fmtDate(thirtyDays), stationId]),
+      // Maintenance load (2.2/0083): open work orders + PM schedules calendar-due in 30 days
+      safeQuery('maintenance', `SELECT (
+        (SELECT COUNT(*) FROM work_orders WHERE department_id = $2 AND deleted_at IS NULL AND status IN ('open','in_progress','awaiting_parts'))
+        + (SELECT COUNT(*) FROM pm_schedules p WHERE p.department_id = $2 AND p.deleted_at IS NULL AND p.active = TRUE
+             AND p.interval_days IS NOT NULL AND p.last_done_date IS NOT NULL
+             AND (p.last_done_date + p.interval_days) <= $1::date)
+      ) as count`, [fmtDate(thirtyDays), stationId]),
       // Meeting drafts
       safeQuery('meeting_minutes', `SELECT COUNT(*) as count FROM meeting_minutes WHERE department_id = $1 AND status = 'draft'`, [stationId]),
       // Members on leave today ("memberName" lives on leave_requests — no members JOIN needed)
@@ -206,18 +214,43 @@ router.get('/summary', async (req, res) => {
     alerts.sort((a, b) => (a.level === 'critical' ? -1 : 1) - (b.level === 'critical' ? -1 : 1));
 
     // ── Calculate Department Health Scorecard ───────────────────────────────
+    //
+    // 🔴 NO DATA IS NOT A PASSING GRADE (2026-08-07).
+    //
+    // Both metrics below used to fabricate a verdict from an empty set:
+    //   trainingCompliance = totalCerts > 0 ? … : 100   → 100% → GREEN
+    //   budgetRemaining    = totalBudget > 0 ? … : 0    →   0% → RED
+    //
+    // So a department that had entered no certifications saw a green
+    // "Training Compliance 100%" badge. That is the single worst direction for
+    // this failure to point in a fire department: the officer reads "we are
+    // compliant" from a screen that means "we could not read anything."
+    //
+    // It was not hypothetical. dashboardSummary's cert queries hit a
+    // `qualifications` table that does not exist on prod (the table is
+    // `member_qualifications`), which under P5_TXN aborted the request's
+    // transaction — so every later query, including these, degraded to empty and
+    // the scorecard rendered GREEN on zero rows. The dashboard was reassuring
+    // people with an error message.
+    //
+    // A status of 'unknown' is now first-class, and the client must render it as
+    // "no data" rather than as a pass. Absence is reported, never scored.
     const totalBudget = parseFloat(budgetStatusRes.rows[0]?.total_budgeted || 0);
     const totalSpent = parseFloat(budgetStatusRes.rows[0]?.total_spent || 0);
-    const budgetRemaining = totalBudget > 0 ? ((totalBudget - totalSpent) / totalBudget) * 100 : 0;
-    const budgetStatus = budgetRemaining >= 40 ? 'green' : budgetRemaining >= 20 ? 'yellow' : 'red';
+    const hasBudgetData = totalBudget > 0;
+    const budgetRemaining = hasBudgetData ? ((totalBudget - totalSpent) / totalBudget) * 100 : null;
+    const budgetStatus = !hasBudgetData ? 'unknown'
+      : budgetRemaining >= 40 ? 'green' : budgetRemaining >= 20 ? 'yellow' : 'red';
 
     // Training compliance: validCerts / (validCerts + expiredCerts + soonCerts) * 100
     const validCertCount = parseInt(validCertsRes.rows[0]?.count || 0, 10);
     const expiredCertCount = expiredCertsRes.rows.length;
     const soonCertCount = soonCertsRes.rows.length;
     const totalCerts = validCertCount + expiredCertCount + soonCertCount;
-    const trainingCompliance = totalCerts > 0 ? (validCertCount / totalCerts) * 100 : 100;
-    const trainingStatus = trainingCompliance >= 90 ? 'green' : trainingCompliance >= 75 ? 'yellow' : 'red';
+    const hasCertData = totalCerts > 0;
+    const trainingCompliance = hasCertData ? (validCertCount / totalCerts) * 100 : null;
+    const trainingStatus = !hasCertData ? 'unknown'
+      : trainingCompliance >= 90 ? 'green' : trainingCompliance >= 75 ? 'yellow' : 'red';
 
     // Apparatus status
     const apparatusTotal = apparatus.total;
@@ -286,7 +319,9 @@ router.get('/summary', async (req, res) => {
         },
         training: {
           status: trainingStatus,
-          compliance: Math.round(trainingCompliance),
+          // null, NOT 0 — Math.round(null) is 0, which would render "0% compliant"
+          // and read as a catastrophic finding rather than as "no data".
+          compliance: trainingCompliance === null ? null : Math.round(trainingCompliance),
         },
         apparatus: {
           status: apparatusStatus,
@@ -296,7 +331,7 @@ router.get('/summary', async (req, res) => {
         },
         budget: {
           status: budgetStatus,
-          remaining: Math.round(budgetRemaining),
+          remaining: budgetRemaining === null ? null : Math.round(budgetRemaining),
           budgeted: Math.round(totalBudget),
           spent: Math.round(totalSpent),
         },

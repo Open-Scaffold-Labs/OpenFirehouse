@@ -52,6 +52,24 @@ Compress and store somewhere off-site (Google Drive, Dropbox, a
 NAS at the firehouse, or an encrypted USB drive that you swap
 weekly).
 
+**Automated (the hosted/flagship deployment):** the repo ships a
+nightly encrypted backup job, `.github/workflows/db-backup.yml` —
+a `pg_dump` at 08:20 UTC, AES256-encrypted, kept 30 days as a
+GitHub artifact. It is an independent second copy in a different
+failure domain from Supabase's own daily backups. To enable it,
+set two repo secrets: `PROD_DATABASE_URL` (Session-pooler
+connection string, port 5432) and `BACKUP_PASSPHRASE` (keep a copy
+with your other deployment secrets — without it the backups are
+unrecoverable). Owner: Dale (DB surface). Run a restore drill
+quarterly: decrypt with `gpg -d`, `pg_restore` into a scratch
+database, and spot-check row counts on `members`, `incidents`,
+and `departments`.
+
+**Retention/pruning** is separate from backup and handled in the
+database itself: migration 0034 (with the 0035 hardening) prunes
+six operational tables nightly on operator-tunable windows. Legal
+records (incidents, exposure, grievances) are never auto-pruned.
+
 Uploads on Vercel + Supabase: Vercel's serverless functions don't
 have persistent disk, so `server/uploads/` is ephemeral by design.
 The recommended path is to switch to Supabase Storage or an S3

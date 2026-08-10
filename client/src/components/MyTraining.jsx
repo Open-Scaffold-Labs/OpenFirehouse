@@ -56,7 +56,7 @@ function CeuCertificate({ completion, onClose }) {
         <p style="font-size:14px;color:#888;">has successfully completed the course</p>
         <div class="cert-course">${courseName}</div>
         <p class="cert-detail"><strong>${ceuHours} Continuing Education Unit${ceuHours !== 1 ? 's' : ''}</strong></p>
-        <p class="cert-detail">ISO Category: ${isoCat?.label ?? 'General'} (${isoCat?.ppcSection ?? 'N/A'})</p>
+        <p class="cert-detail">ISO Category: ${isoCat?.label ?? 'General'}</p>
         <p class="cert-detail">Quiz Score: ${quizScore}% · Completed: ${completedAt ? new Date(completedAt).toLocaleDateString() : '—'}</p>
         <p class="cert-detail" style="color:#aaa;">Certificate ID: ${certificateId}</p>
         <div class="cert-footer">
@@ -160,21 +160,28 @@ function TrainingRow({ record, onViewCert }) {
 }
 
 
-// ─── ISO Audit Report ────────────────────────────────────────────────────────
+// ─── Training Hours by ISO Category ──────────────────────────────────────────
+//
+// Tracks THIS MEMBER's hours against the per-firefighter requirement each FSRS
+// Item 580 sub-item states. It does NOT compute earned PPC credit: Item 580 is
+// scored at the DEPARTMENT level against aggregate compliance, by a formula ISO
+// owns — a per-member linear share of the maximum is not that formula, and a
+// number on this screen must trace to a real FSRS calculation or not appear.
 
 function IsoAuditReport({ records, isoHours }) {
   const [expanded, setExpanded] = useState(false);
 
   // aggregate hours by ISO category from pre-computed isoHours map
-  const catData = ISO_CATEGORIES.filter(c => c.ppcSection).map(cat => {
+  // Only the hours-based sub-items. 580.H is a COVERAGE requirement (every
+  // qualifying building inspected annually), not an hours one, so it has no
+  // annualRequirement and does not belong in an hours table.
+  const catData = ISO_CATEGORIES.filter(c => c.ppcSection && c.annualRequirement).map(cat => {
     const hours = isoHours[cat.id] || 0;
     const pct = cat.annualRequirement ? Math.min(100, Math.round((hours / cat.annualRequirement) * 100)) : 0;
     return { ...cat, hours, pct };
   });
 
   const totalHours = catData.reduce((s, c) => s + c.hours, 0);
-  const totalMaxCredit = catData.reduce((s, c) => s + c.maxPpcCredit, 0);
-  const totalEarnedCredit = catData.reduce((s, c) => s + Math.round(c.maxPpcCredit * (c.pct / 100)), 0);
 
   return (
     <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
@@ -184,7 +191,7 @@ function IsoAuditReport({ records, isoHours }) {
       >
         <div className="flex items-center gap-2">
           <FileText size={18} className="text-red-600 dark:text-red-400" />
-          <h3 className="font-bold text-gray-900 dark:text-gray-100">ISO PPC Audit Report</h3>
+          <h3 className="font-bold text-gray-900 dark:text-gray-100">Training Hours by ISO Category</h3>
           <span className="text-xs text-gray-400 ml-2">{new Date().getFullYear()} Training Year</span>
         </div>
         {expanded ? <ChevronDown size={18} className="text-gray-400" /> : <ChevronRight size={18} className="text-gray-400" />}
@@ -200,8 +207,6 @@ function IsoAuditReport({ records, isoHours }) {
                 <th className="text-right py-2 px-2">Hours Earned</th>
                 <th className="text-right py-2 px-2">Requirement</th>
                 <th className="text-right py-2 px-2">% Complete</th>
-                <th className="text-right py-2 px-2">Max PPC Credit</th>
-                <th className="text-right py-2 px-2">Est. Credit</th>
               </tr>
             </thead>
             <tbody>
@@ -218,8 +223,6 @@ function IsoAuditReport({ records, isoHours }) {
                       {cat.pct}%
                     </span>
                   </td>
-                  <td className="py-2 px-2 text-right text-gray-500 dark:text-gray-400">{cat.maxPpcCredit}</td>
-                  <td className="py-2 px-2 text-right font-medium">{Math.round(cat.maxPpcCredit * (cat.pct / 100))}</td>
                 </tr>
               ))}
             </tbody>
@@ -229,8 +232,6 @@ function IsoAuditReport({ records, isoHours }) {
                 <td className="py-2 px-2 text-right">{totalHours.toFixed(1)}</td>
                 <td className="py-2 px-2" />
                 <td className="py-2 px-2" />
-                <td className="py-2 px-2 text-right">{totalMaxCredit}</td>
-                <td className="py-2 px-2 text-right">{totalEarnedCredit}</td>
               </tr>
             </tfoot>
           </table>
@@ -352,10 +353,10 @@ export default function MyTraining({ user }) {
       <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-5 space-y-4">
         <div className="flex items-center gap-2">
           <Target size={18} className="text-red-600 dark:text-red-400" />
-          <h3 className="font-bold text-gray-900 dark:text-gray-100">ISO PPC Category Progress</h3>
+          <h3 className="font-bold text-gray-900 dark:text-gray-100">ISO Category Hours Progress</h3>
         </div>
         <div className="space-y-3">
-          {ISO_CATEGORIES.filter(c => c.ppcSection).map(cat => {
+          {ISO_CATEGORIES.filter(c => c.ppcSection && c.annualRequirement).map(cat => {
             const hrs = catHours[cat.id] || 0;
             const pct = cat.annualRequirement ? Math.min(100, Math.round((hrs / cat.annualRequirement) * 100)) : 0;
             return (
@@ -435,9 +436,10 @@ export default function MyTraining({ user }) {
         <p className="font-semibold mb-1">About Your Training Record</p>
         <p className="text-xs leading-relaxed text-blue-600 dark:text-blue-400">
           This page shows all of your training activity — video courses, in-person drills,
-          external platform imports, and manually logged entries. Training hours are mapped
-          to ISO PPC credit categories and count toward your department's annual ISO audit
-          and LOSAP points. Use the "Print Certificate" feature for video course completions.
+          external platform imports, and manually logged entries. Training hours are grouped
+          by FSRS Item 580 sub-item so you can see them against the per-firefighter requirement
+          ISO states for each. Earned PPC credit is scored by ISO at the department level and is
+          not calculated here. Use the "Print Certificate" feature for video course completions.
         </p>
       </div>
 

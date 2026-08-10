@@ -30,6 +30,8 @@
  * @property {number|null}   latitude
  * @property {number|null}   longitude
  * @property {string}        dispatchedAt  ISO 8601 timestamp.
+ * @property {string}        [callAnsweredAt] ISO 8601 — 911 call-taker pickup (NERIS call_answered). Optional; adapters may set it explicitly, else the pipeline scans `raw` for common vendor field names.
+ * @property {string}        [callArrivalAt]  ISO 8601 — call arrival at the PSAP (NERIS call_arrival). Optional; same sourcing as callAnsweredAt.
  * @property {Object}        raw           Original vendor payload, preserved
  *                                         for audit and debugging.
  * @property {number}        stationId     Which station this dispatch belongs
@@ -40,6 +42,20 @@
  *                                         fallback.
  * @property {string}        source        Vendor slug — must match the
  *                                         adapter's `name` field.
+ *
+ * LIFECYCLE MARKERS (an adapter's parse() may return one of these instead of a
+ * full dispatch, and the framework routes accordingly):
+ * @property {boolean}       [close]        true → a close/clear event. Requires
+ *                                          `alertId` + `stationId`. → processClose.
+ * @property {boolean}       [statusUpdate] true → a unit-status event (arrival
+ *                                          parity, 2026-07-14). Carries
+ *                                          `statusUpdates: [{unit, status, at?}]`,
+ *                                          `stationId`, optional `alertId`.
+ *                                          → processStatusUpdate. This is how CAD
+ *                                          delivers a real ARRIVAL time (the
+ *                                          dispatcher marking a unit on-scene),
+ *                                          the same way the major command boards
+ *                                          receive it.
  */
 
 /**

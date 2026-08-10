@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   test-and-build:
-    name: Server tests + client build
+    name: Server tests + dead-identifier gate + client build
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -54,11 +54,77 @@ jobs:
           # so skip the ~120 MB Chrome download on every CI run.
           PUPPETEER_SKIP_DOWNLOAD: '1'
 
+      # Pre-create every role the schema references, BEFORE anything loads schema.
+      #
+      # WHY THIS IS A SEPARATE STEP: it used to live inside the `if [ -f
+      # db/baseline.sql ]` branch below, but the self-heal step that follows runs
+      # UNCONDITIONALLY and needs the roles too. A missing baseline therefore left
+      # the migrations to abort on the first role reference.
+      #
+      # WHY FIVE ROLES AND NOT TWO: of_app / of_readonly were pre-created here from
+      # 2026-07-27 (7da3302), but four statements in three migrations REVOKE from
+      # Supabase's anon / authenticated / service_role without guarding on
+      # pg_roles — 0115:88, 0115:131, 0127:98, 0128:135. A fresh CI Postgres has
+      # none of them, so the self-heal step aborted on 0115:88 with
+      # `role "anon" does not exist`, exit 3. That kept CI red for 207 runs from
+      # 2026-07-27, during which 218 commits landed with the server tests, both
+      # dead-identifier gates and the client build all SKIPPED.
+      #
+      # THIS IS A FIDELITY FIX, NOT A WORKAROUND. Verified live against prod
+      # 2026-08-07: anon, authenticated and PUBLIC hold privileges on ZERO of the
+      # 207 public tables, because all 207 are postgres-owned and the postgres
+      # pg_default_acl row grants only service_role + of_app. Creating these
+      # NOLOGIN with no grants reproduces prod's privilege state exactly.
+      #
+      # HONEST LIMIT: CI has no ALTER DEFAULT PRIVILEGES, so a REVOKE here removes
+      # a privilege the role never held — it cannot fail, and therefore verifies
+      # nothing. This unblocks the pipeline; it does NOT test the append-only
+      # guarantee on cad_ingest_log / cad_ingest_outcome / cad_ingest_review /
+      # of_cron_runs. Testing that needs prod's default ACLs replicated here plus
+      # an assertion over a declared list of append-only tables. Separate change.
+      #
+      # NOTE: 21 of the migrations that reference these roles DO guard with
+      # `IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r)`, and so does
+      # server/src/db.js (1542, 1848, 2162, 5306). The three unguarded files are
+      # the anomaly, and they also break a self-host / DR restore on vanilla
+      # Postgres today. Retro-guarding them is Dale's call (append-only doctrine);
+      # this step is the standing answer regardless of that decision.
+      - name: Pre-create schema roles
+        run: |
+          psql "$TENANCY_TEST_DB" -v ON_ERROR_STOP=1 -c "DO \$\$
+          DECLARE r TEXT;
+          BEGIN
+            FOREACH r IN ARRAY ARRAY['of_app','of_readonly','anon','authenticated','service_role'] LOOP
+              IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = r) THEN
+                EXECUTE format('CREATE ROLE %I NOLOGIN', r);
+                RAISE NOTICE 'created role %', r;
+              END IF;
+            END LOOP;
+          END \$\$;"
+          psql "$TENANCY_TEST_DB" -tAc \
+            "SELECT 'roles present: ' || string_agg(rolname, ', ' ORDER BY rolname)
+             FROM pg_roles
+             WHERE rolname IN ('of_app','of_readonly','anon','authenticated','service_role');"
+        env:
+          TENANCY_TEST_DB: postgresql://of_ci:of_ci@localhost:5432/of_tenancy_ci
+
       # Load the committed schema baseline so tests run against the REAL schema
       # (all tables + of_* SECURITY DEFINER fns + RLS), not initDb's partial
       # bootstrap. This is the same db/baseline.sql self-host + DR use, so CI
       # also proves fresh-install works. No-ops until the baseline is committed.
       # (psql is preinstalled on ubuntu-latest runners.)
+      #
+      # ⚠️ PROVENANCE CORRECTION (2026-08-07): this comment used to say the
+      # baseline is "a real pg_dump of prod". It is not. The committed artifact's
+      # header reads `Dumped from database version 16.13 (Homebrew)` while prod is
+      # 17.6 — it was produced by loading a prod dump into a LOCAL Postgres,
+      # replaying 0060-0071, and re-dumping there (a6910c9). Its schema CONTENT was
+      # column-for-column prod-faithful at 0071, so CI is not currently validating
+      # against dev drift — but the provenance is not what this file claimed, and
+      # regenerating it the same way at a moment when local and prod HAVE diverged
+      # would import that divergence silently. Regenerate with
+      # scripts/schema-baseline.sh, which requires pg_dump 17 (installed at
+      # /opt/homebrew/opt/postgresql@17/bin — the 16.13 on PATH is what caused this).
       - name: Load schema baseline
         run: |
           if [ -f db/baseline.sql ]; then
@@ -69,12 +135,106 @@ jobs:
         env:
           TENANCY_TEST_DB: postgresql://of_ci:of_ci@localhost:5432/of_tenancy_ci
 
+      # Self-healing schema. The baseline is a point-in-time prod dump; its migration
+      # level is recorded in db/baseline.head. Apply every migration NEWER than that
+      # head so CI can never silently rot when a new migration ships without a baseline
+      # refresh — the exact failure that kept CI red for weeks (baseline stale since
+      # 2026-07-16, 12 migrations behind). If a newer migration can't apply cleanly, CI
+      # fails HERE, which is correct: the migration is broken or the baseline needs a
+      # refresh. When you refresh db/baseline.sql from prod, bump db/baseline.head to match.
+      - name: Apply migrations newer than the baseline (self-healing)
+        run: |
+          head="$(cat db/baseline.head 2>/dev/null || echo 0000)"
+          echo "baseline head: $head"
+          for f in $(ls docs/migrations/*.sql | sort); do
+            num="$(basename "$f" | cut -d- -f1)"
+            if [[ "$num" > "$head" ]]; then
+              echo "::notice::self-heal: applying migration newer than baseline ($head): $(basename "$f")"
+              psql "$TENANCY_TEST_DB" -v ON_ERROR_STOP=1 -f "$f"
+            fi
+          done
+        env:
+          TENANCY_TEST_DB: postgresql://of_ci:of_ci@localhost:5432/of_tenancy_ci
+
+      # The baseline is schema-ONLY (no data). In dev the app's boot seeds create a
+      # base tenant, but CI never boots the app — so several DB-backed suites that
+      # assume department id=1 (+ its station, and a chief with a station) fail at
+      # setup. Seed that minimal base tenant here so the fresh-DB run is honest.
+      - name: Seed base tenant
+        run: psql "$TENANCY_TEST_DB" -v ON_ERROR_STOP=1 -f db/ci-seed.sql
+        env:
+          TENANCY_TEST_DB: postgresql://of_ci:of_ci@localhost:5432/of_tenancy_ci
+
+      # THE SQL GATE — ask Postgres whether our SQL parses against the REAL schema.
+      #
+      # Catches the class that took down the calendar: GET /api/calendar/feed
+      # returned an empty month to every department, always, with HTTP 200,
+      # because one feed selected `start_time` from `events` where the column is
+      # `startTime`. A free column name is not a syntax error, the client build
+      # cannot see server SQL, and no test exercised that query.
+      #
+      # PREPARE runs parse + analyse and fails on an unknown column or table
+      # WITHOUT executing anything. Postgres is the only parser that cannot be
+      # wrong about Postgres — a hand-rolled checker written first for this job
+      # reported 38 missing columns of which most were output aliases, and was
+      # deleted. A checker you cannot trust is worse than none, because its
+      # silence gets quoted as evidence.
+      #
+      # REPORTING-ONLY ON PURPOSE. These defects predate the pipeline being
+      # restored; failing on them now would re-red CI after 207 red runs for
+      # problems nobody introduced this week. Fix them, then ratchet:
+      #   --max N   fails when failures EXCEED N (lower it, never raise it)
+      #   --strict  fails on any failure — the end state
+      # This is the same ratchet-to-zero pattern the 2026-08-05 a11y work used.
+      #
+      # Placed AFTER the self-heal + seed steps so it runs against the full
+      # migrated schema. It must never be pointed at a developer's local database:
+      # the audit that motivated this gate was run against local and was measured
+      # against the wrong schema.
+      - name: SQL parses against the real schema (reporting-only)
+        run: node scripts/sql-prepare-gate.js
+        env:
+          DATABASE_URL: postgresql://of_ci:of_ci@localhost:5432/of_tenancy_ci
+
+      # THE SERVER DEAD-IDENTIFIER GATE. Runs BEFORE the tests, because it is fast and
+      # because it catches a class the tests structurally cannot.
+      #
+      # The client gate below was added on 2026-07-27 and scoped to the client. The same
+      # class was already live on the server: cad/index.js called processStatusUpdate()
+      # without importing it (4bfde8b, 2026-07-15), so every CAD-relayed unit status
+      # answered 500 on prod for 12 days with a green suite and a green build. A free
+      # identifier is a ReferenceError only when the line executes, and no test reached
+      # that branch — it sat between a covered adapter and a covered pipeline.
+      #
+      # On an ingest path this is worse than a crash. Per NENA-STA-024 a 500 produces NO
+      # sender action and the standard has no redelivery, so a dead identifier there does
+      # not raise an error to anyone — it drops the dispatch. Same scoping rationale as the
+      # client gate: no-undef ONLY, so it can actually sit at zero.
+      - name: Server dead-identifier gate (no-undef)
+        run: npm run lint:undef --workspace=server
+
       - name: Server tests (incl. live two-tenant isolation suite)
         run: npm test --workspace=server
         env:
           TENANCY_TEST_DB: postgresql://of_ci:of_ci@localhost:5432/of_tenancy_ci
           JWT_SECRET: ci-only-throwaway-secret
           NODE_ENV: test
+
+      # THE DEAD-IDENTIFIER GATE. Runs BEFORE the build, because it is faster and because
+      # it catches a class the build structurally cannot.
+      #
+      # On 2026-07-27 a dead identifier shipped to prod and took a whole page into the
+      # ErrorBoundary. The client build was green — Vite bundles a free identifier happily,
+      # and it is only a ReferenceError when the line executes — and the server suite was
+      # green because it never renders a component. When this rule was finally run across
+      # the client it found 12 hits, and THREE were live crashes, one of which had left the
+      # Daily Staffing page dead on production with nobody aware.
+      #
+      # Scoped to `no-undef` ONLY, deliberately: the full `npm run lint` has ~595
+      # pre-existing problems and so can never gate anything. A gate that cannot go green
+      # is not a gate. Cleaning the rest is separate work that must not block shipping.
+      - name: Client dead-identifier gate (no-undef)
+        run: npm run lint:undef --workspace=client
 
       - name: Client build
         run: npm run build

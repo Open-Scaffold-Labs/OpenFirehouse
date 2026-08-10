@@ -6,6 +6,50 @@
    displays; persisted in localStorage, falls back to prefers-color-scheme). */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ── Form controls must follow the theme ────────────────────────────────────
+   The app never declared `color-scheme`, so the browser rendered every built-in
+   control as if the page were light. That caused two separate "text you cannot
+   read" defects, both measured on production:
+
+   1. BLACK TEXT ON A DARK INPUT — 1.18:1. A control with a dark background
+      utility but no text-colour utility falls back to the UA default
+      `color: fieldtext`, which is BLACK. On the setup wizard EVERY prefilled
+      value (department name, FDID, address, city, state, department type)
+      rendered #000000 on #101828. That is the first screen of onboarding.
+
+   2. NEAR-WHITE OPTIONS ON A WHITE POPUP — 1.1:1. A native <select> list is
+      painted by the OS, not by the page, so the app's near-white option colour
+      landed on a light popup. That is every dropdown in the product, and a
+      DOM-based contrast audit cannot see it: walking up the DOM finds the
+      page's dark background and reports a comfortable 16:1.
+
+   `color-scheme` is the root cause of both, so it is the fix: it tells the
+   browser which palette to use for control chrome, UA default text, native
+   popups, scrollbars and spinners. Bound to the same `.dark` class on <html>
+   that utils/theme.js already manages, so it can never drift from the theme. */
+html { color-scheme: light; }
+html.dark { color-scheme: dark; }
+
+/* ── Placeholders get an explicit, measured colour ──────────────────────────
+   Unstyled placeholders are UA-painted: Chrome renders them as the input's
+   text colour at reduced opacity, which measured 3.98:1 (black-based inputs
+   on white) down to 3.05:1 (gray-800-based inputs) across ~130 fields on the
+   2026-08-05 sweep — every one below the WCAG AA 4.5:1 floor this codebase
+   gates on. One rule fixes the class of defect instead of 130 utilities:
+   gray-500 on white = 4.84:1, gray-400 on gray-900/gray-800 = 7.3/5.9:1
+   (same measured pair as the 3ea090c body-text precedent). `opacity: 1`
+   matters — without it the UA multiplies the colour back below the floor.
+   Tailwind `placeholder:*` utilities still win when a field needs its own. */
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-gray-500);
+  opacity: 1;
+}
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: var(--color-gray-400);
+}
+
 /* ── PWA / Mobile safe area support ─────────────────────────────────────────
    Adds padding for iPhone notch and home bar indicator on iOS PWA installs */
 .pb-safe {

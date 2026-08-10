@@ -118,6 +118,13 @@ async function request(method, path, body, isRetry = false) {
   if (!res.ok) {
     const reqErr = new Error(data.error || `Request failed: ${res.status}`);
     reqErr.status = res.status; // W4.4
+    // The server's unified error schema is { error, code?, details? } — carry the
+    // machine token and the field list through, not just the prose. Without them a
+    // caller that needs to tell DUPLICATE_PERMIT_NUMBER from a generic 409 has to
+    // pattern-match the message, which is how a UI silently mishandles a refusal
+    // the day someone rewords the string. (Phase 3, module 3.0.)
+    if (data.code) reqErr.code = data.code;
+    if (Array.isArray(data.details)) reqErr.details = data.details;
     throw reqErr;
   }
 
@@ -140,11 +147,43 @@ async function requestForm(path, formData) {
   return data;
 }
 
+/**
+ * Download a server-generated file (CSV, PDF) with authentication.
+ *
+ * A plain <a href="/api/..."> CANNOT be used: the access token lives in an
+ * Authorization header, not a cookie, so the browser's own navigation sends no
+ * credentials and the download 401s. This fetches with the header and hands the
+ * browser a blob instead.
+ *
+ * Throws on a non-2xx so a caller can surface the failure — a silently missing
+ * download is worse than an error, because the user assumes it worked.
+ */
+async function download(path, filename) {
+  const opts = { method: 'GET', headers: {}, credentials: 'include' };
+  if (_accessToken) opts.headers['Authorization'] = `Bearer ${_accessToken}`;
+  const res = await fetch(path, opts);
+  if (!res.ok) {
+    let msg = `Download failed (${res.status})`;
+    try { const j = await res.json(); if (j?.error) msg = j.error; } catch { /* not json */ }
+    throw new Error(msg);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export const api = {
   get:      (path)          => request('GET',    path),
+  download,
   post:     (path, body)    => request('POST',   path, body),
   put:      (path, body)    => request('PUT',    path, body),
   patch:    (path, body)    => request('PATCH',  path, body),
-  delete:   (path)          => request('DELETE', path),
+  delete:   (path, body)    => request('DELETE', path, body),
   postForm: (path, formData) => requestForm(path, formData),
 };

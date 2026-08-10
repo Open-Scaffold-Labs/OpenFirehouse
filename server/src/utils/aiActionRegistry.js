@@ -26,6 +26,16 @@ const actions = {
   // alarm level, disposition, confidence) — the narrative (incidents.notes,
   // the NERIS/NFIRS legal record) is written entirely by the officer.
   ai_log_incident: {
+    // 🔴 ENFORCEMENT, not just instruction (2026-08-07). The prompt below tells the
+    // model "Do NOT include a notes field" — and a prompt is NOT an enforcement
+    // mechanism. The client was separately wired to READ `notes` off this result and
+    // write it into the narrative box, so a single non-compliant completion could have
+    // put machine-written prose into `incidents.notes` — the subpoenable narrative that
+    // ships to NERIS VERBATIM. Same class as the `/^pass\b/i` regex that guarded a
+    // life-safety result: a soft mechanism holding a hard control.
+    // routes/aiAction.js strips these keys from the result centrally, so a new caller
+    // cannot reintroduce the hole by forgetting to filter.
+    forbiddenResultKeys: ['notes', 'narrative', 'outcome_narrative', 'impediment_narrative', 'narrativeStatement'],
     systemPrompt: `You are a fire department incident logging AI. You have been given REAL DATA from the station's systems — radio logs, CAD dispatch alerts, command board status, who's on duty, apparatus status, and pre-plan intelligence. Your job is to assemble the FACTUAL fields of an incident form from this data. Do NOT write a narrative — the incident narrative is written by the officer, never by AI.
 
 Return ONLY valid JSON (no markdown fences) with this structure:
@@ -86,7 +96,12 @@ RULES:
       // 4. Who's on duty today
       try {
         const { rows: staffing } = await pool.query(
-          'SELECT member_name, member_rank, position, apparatus_name, status FROM daily_staffing WHERE department_id = $1 AND date = $2',
+          `SELECT m.name AS member_name, m.rank AS member_rank, aa.position_name AS position,
+                  a.designation AS apparatus_name, aa.status
+           FROM apparatus_assignments aa
+           JOIN members m ON m.id = aa.member_id
+           LEFT JOIN apparatus a ON a.id = aa.apparatus_id
+           WHERE aa.department_id = $1 AND aa.date = $2`,
           [stationId, today]
         );
         if (staffing.length > 0) {
@@ -823,7 +838,12 @@ RULES:
       // Get today's duty roster
       try {
         const { rows: staffing } = await pool.query(
-          'SELECT member_name, member_rank, position, apparatus_name, status FROM daily_staffing WHERE department_id = $1 AND date = $2',
+          `SELECT m.name AS member_name, m.rank AS member_rank, aa.position_name AS position,
+                  a.designation AS apparatus_name, aa.status
+           FROM apparatus_assignments aa
+           JOIN members m ON m.id = aa.member_id
+           LEFT JOIN apparatus a ON a.id = aa.apparatus_id
+           WHERE aa.department_id = $1 AND aa.date = $2`,
           [stationId, today]
         );
         if (staffing.length > 0) {

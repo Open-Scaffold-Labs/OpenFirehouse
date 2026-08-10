@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../utils/api';
+import CronHealthPanel from './CronHealthPanel';
 
 /**
  * DatabaseAdmin — Admin panel for database audit and reseeding.
@@ -79,6 +80,12 @@ export default function DatabaseAdmin() {
           {reseeding ? 'Reseeding...' : 'Force Reseed All Empty Tables'}
         </button>
       </div>
+
+      {/* X-PHASE cron liveness (0128). Placed ABOVE the table audit on purpose: "is the platform
+          still doing its scheduled work" is a bigger question than "is a table empty", and a
+          scheduled job that has stopped is the one thing on this page nothing else would tell
+          you about. */}
+      <div className="mb-6"><CronHealthPanel /></div>
 
       {/* Summary Cards */}
       {audit?.summary && (

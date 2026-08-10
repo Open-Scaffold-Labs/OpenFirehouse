@@ -305,7 +305,7 @@ export default function BudgetTracker() {
         ].map(({ id, label }) => (
           <button key={id} onClick={() => setActiveTab(id)}
             className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
-              activeTab === id ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+              activeTab === id ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
             }`}
           >
             {label}

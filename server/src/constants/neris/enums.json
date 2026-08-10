@@ -1,0 +1,610 @@
+{
+  "spec_version": "1.4.76",
+  "generated_at": "2026-07-20T21:43:19.780Z",
+  "source": "https://api.neris.fsri.org/v1/openapi.json",
+  "sets": {
+    "type_incident": [
+      "FIRE||OUTSIDE_FIRE||CONSTRUCTION_WASTE",
+      "FIRE||OUTSIDE_FIRE||DUMPSTER_OUTDOOR_CONTAINER_FIRE",
+      "FIRE||OUTSIDE_FIRE||OTHER_OUTSIDE_FIRE",
+      "FIRE||OUTSIDE_FIRE||OUTSIDE_TANK_FIRE",
+      "FIRE||OUTSIDE_FIRE||TRASH_RUBBISH_FIRE",
+      "FIRE||OUTSIDE_FIRE||UTILITY_INFRASTRUCTURE_FIRE",
+      "FIRE||OUTSIDE_FIRE||VEGETATION_GRASS_FIRE",
+      "FIRE||OUTSIDE_FIRE||WILDFIRE_URBAN_INTERFACE",
+      "FIRE||OUTSIDE_FIRE||WILDFIRE_WILDLAND",
+      "FIRE||SPECIAL_FIRE||ESS_FIRE",
+      "FIRE||SPECIAL_FIRE||EXPLOSION",
+      "FIRE||SPECIAL_FIRE||INFRASTRUCTURE_FIRE",
+      "FIRE||STRUCTURE_FIRE||CHIMNEY_FIRE",
+      "FIRE||STRUCTURE_FIRE||CONFINED_COOKING_APPLIANCE_FIRE",
+      "FIRE||STRUCTURE_FIRE||ROOM_AND_CONTENTS_FIRE",
+      "FIRE||STRUCTURE_FIRE||STRUCTURAL_INVOLVEMENT_FIRE",
+      "FIRE||TRANSPORTATION_FIRE||AIRCRAFT_FIRE",
+      "FIRE||TRANSPORTATION_FIRE||BOAT_PERSONAL_WATERCRAFT_BARGE_FIRE",
+      "FIRE||TRANSPORTATION_FIRE||POWERED_MOBILITY_DEVICE_FIRE",
+      "FIRE||TRANSPORTATION_FIRE||TRAIN_RAIL_FIRE",
+      "FIRE||TRANSPORTATION_FIRE||VEHICLE_FIRE_COMMERCIAL",
+      "FIRE||TRANSPORTATION_FIRE||VEHICLE_FIRE_FOOD_TRUCK",
+      "FIRE||TRANSPORTATION_FIRE||VEHICLE_FIRE_PASSENGER",
+      "FIRE||TRANSPORTATION_FIRE||VEHICLE_FIRE_RV",
+      "HAZSIT||HAZARDOUS_MATERIALS||BIOLOGICAL_RELEASE_INCIDENT",
+      "HAZSIT||HAZARDOUS_MATERIALS||CARBON_MONOXIDE_RELEASE",
+      "HAZSIT||HAZARDOUS_MATERIALS||FUEL_SPILL_ODOR",
+      "HAZSIT||HAZARDOUS_MATERIALS||GAS_LEAK_ODOR",
+      "HAZSIT||HAZARDOUS_MATERIALS||HAZMAT_RELEASE_FACILITY",
+      "HAZSIT||HAZARDOUS_MATERIALS||HAZMAT_RELEASE_TRANSPORT",
+      "HAZSIT||HAZARDOUS_MATERIALS||RADIOACTIVE_RELEASE_INCIDENT",
+      "HAZSIT||HAZARD_NONCHEM||BOMB_THREAT_RESPONSE_SUSPICIOUS_PACKAGE",
+      "HAZSIT||HAZARD_NONCHEM||ELEC_HAZARD_SHORT_CIRCUIT",
+      "HAZSIT||HAZARD_NONCHEM||ELEC_POWER_LINE_DOWN_ARCHING_MALFUNC",
+      "HAZSIT||HAZARD_NONCHEM||MOTOR_VEHICLE_COLLISION",
+      "HAZSIT||INVESTIGATION||ODOR",
+      "HAZSIT||INVESTIGATION||SMOKE_INVESTIGATION",
+      "HAZSIT||OVERPRESSURE||NO_RUPTURE",
+      "HAZSIT||OVERPRESSURE||RUPTURE_WITHOUT_FIRE",
+      "LAWENFORCE",
+      "MEDICAL||ILLNESS",
+      "MEDICAL||ILLNESS||ABDOMINAL_PAIN",
+      "MEDICAL||ILLNESS||ALLERGIC_REACTION_STINGS",
+      "MEDICAL||ILLNESS||ALTERED_MENTAL_STATUS",
+      "MEDICAL||ILLNESS||BACK_PAIN_NON_TRAUMA",
+      "MEDICAL||ILLNESS||BREATHING_PROBLEMS",
+      "MEDICAL||ILLNESS||CARDIAC_ARREST",
+      "MEDICAL||ILLNESS||CHEST_PAIN_NON_TRAUMA",
+      "MEDICAL||ILLNESS||CONVULSIONS_SEIZURES",
+      "MEDICAL||ILLNESS||DIABETIC_PROBLEMS",
+      "MEDICAL||ILLNESS||HEADACHE",
+      "MEDICAL||ILLNESS||HEART_PROBLEMS",
+      "MEDICAL||ILLNESS||NAUSEA_VOMITING",
+      "MEDICAL||ILLNESS||NO_APPROPRIATE_CHOICE",
+      "MEDICAL||ILLNESS||OVERDOSE",
+      "MEDICAL||ILLNESS||PANDEMIC_EPIDEMIC_OUTBREAK",
+      "MEDICAL||ILLNESS||PREGNANCY_CHILDBIRTH",
+      "MEDICAL||ILLNESS||PSYCHOLOGICAL_BEHAVIOR_ISSUES",
+      "MEDICAL||ILLNESS||SICK_CASE",
+      "MEDICAL||ILLNESS||STROKE_CVA",
+      "MEDICAL||ILLNESS||UNCONSCIOUS_VICTIM",
+      "MEDICAL||ILLNESS||UNKNOWN_PROBLEM",
+      "MEDICAL||ILLNESS||WELL_PERSON_CHECK",
+      "MEDICAL||INJURY",
+      "MEDICAL||INJURY||ANIMAL_BITES",
+      "MEDICAL||INJURY||ASSAULT",
+      "MEDICAL||INJURY||BURNS_EXPLOSION",
+      "MEDICAL||INJURY||CARBON_MONOXIDE_OTHER_INHALATION_INJURY",
+      "MEDICAL||INJURY||CHOKING",
+      "MEDICAL||INJURY||DROWNING_DIVING_SCUBA_ACCIDENT",
+      "MEDICAL||INJURY||ELECTROCUTION",
+      "MEDICAL||INJURY||EYE_TRAUMA",
+      "MEDICAL||INJURY||FALL",
+      "MEDICAL||INJURY||GUNSHOT_WOUND",
+      "MEDICAL||INJURY||HEAT_COLD_EXPOSURE",
+      "MEDICAL||INJURY||HEMORRHAGE_LACERATION",
+      "MEDICAL||INJURY||INDUSTRIAL_INACCESSIBLE_ENTRAPMENT",
+      "MEDICAL||INJURY||MOTOR_VEHICLE_COLLISION",
+      "MEDICAL||INJURY||OTHER_TRAUMATIC_INJURY",
+      "MEDICAL||INJURY||POISONING",
+      "MEDICAL||INJURY||STAB_PENETRATING_TRAUMA",
+      "MEDICAL||OTHER||AIRMEDICAL_TRANSPORT",
+      "MEDICAL||OTHER||COMMUNITY_PUBLIC_HEALTH",
+      "MEDICAL||OTHER||HEALTHCARE_PROFESSIONAL_ADMISSION",
+      "MEDICAL||OTHER||INTERCEPT_OTHER_UNIT",
+      "MEDICAL||OTHER||MEDICAL_ALARM",
+      "MEDICAL||OTHER||STANDBY_REQUEST",
+      "MEDICAL||OTHER||TRANSFER_INTERFACILITY",
+      "NOEMERG||CANCELLED",
+      "NOEMERG||FALSE_ALARM||ACCIDENTAL_ALARM",
+      "NOEMERG||FALSE_ALARM||BOMB_SCARE",
+      "NOEMERG||FALSE_ALARM||INTENTIONAL_FALSE_ALARM",
+      "NOEMERG||FALSE_ALARM||MALFUNCTIONING_ALARM",
+      "NOEMERG||FALSE_ALARM||OTHER_FALSE_CALL",
+      "NOEMERG||GOOD_INTENT||CONTROLLED_BURNING_AUTHORIZED",
+      "NOEMERG||GOOD_INTENT||INVESTIGATE_HAZARDOUS_RELEASE",
+      "NOEMERG||GOOD_INTENT||NO_INCIDENT_FOUND_LOCATION_ERROR",
+      "NOEMERG||GOOD_INTENT||SMOKE_FROM_NONHOSTILE_SOURCE",
+      "PUBSERV||ALARMS_NONMED||CO_ALARM",
+      "PUBSERV||ALARMS_NONMED||FIRE_ALARM",
+      "PUBSERV||ALARMS_NONMED||GAS_ALARM",
+      "PUBSERV||ALARMS_NONMED||OTHER_ALARM",
+      "PUBSERV||CITIZEN_ASSIST||CITIZEN_ASSIST_SERVICE_CALL",
+      "PUBSERV||CITIZEN_ASSIST||LIFT_ASSIST",
+      "PUBSERV||CITIZEN_ASSIST||LOST_PERSON",
+      "PUBSERV||CITIZEN_ASSIST||PERSON_IN_DISTRESS",
+      "PUBSERV||DISASTER_WEATHER||DAMAGE_ASSESSMENT",
+      "PUBSERV||DISASTER_WEATHER||WEATHER_RESPONSE",
+      "PUBSERV||OTHER||DAMAGED_HYDRANT",
+      "PUBSERV||OTHER||MOVE_UP",
+      "PUBSERV||OTHER||STANDBY",
+      "RESCUE||OUTSIDE||BACKCOUNTRY_RESCUE",
+      "RESCUE||OUTSIDE||CONFINED_SPACE_RESCUE",
+      "RESCUE||OUTSIDE||EXTRICATION_ENTRAPPED",
+      "RESCUE||OUTSIDE||HIGH_ANGLE_RESCUE",
+      "RESCUE||OUTSIDE||LIMITED_NO_ACCESS",
+      "RESCUE||OUTSIDE||LOW_ANGLE_RESCUE",
+      "RESCUE||OUTSIDE||STEEP_ANGLE_RESCUE",
+      "RESCUE||OUTSIDE||TRENCH",
+      "RESCUE||STRUCTURE||BUILDING_STRUCTURE_COLLAPSE",
+      "RESCUE||STRUCTURE||CONFINED_SPACE_RESCUE",
+      "RESCUE||STRUCTURE||ELEVATOR_ESCALATOR_RESCUE",
+      "RESCUE||STRUCTURE||EXTRICATION_ENTRAPPED",
+      "RESCUE||TRANSPORTATION||AVIATION_COLLISION_CRASH",
+      "RESCUE||TRANSPORTATION||AVIATION_STANDBY",
+      "RESCUE||TRANSPORTATION||MOTOR_VEHICLE_EXTRICATION_ENTRAPPED",
+      "RESCUE||TRANSPORTATION||TRAIN_RAIL_COLLISION_DERAILMENT",
+      "RESCUE||WATER||PERSON_IN_WATER_STANDING",
+      "RESCUE||WATER||PERSON_IN_WATER_SWIFTWATER",
+      "RESCUE||WATER||WATERCRAFT_IN_DISTRESS"
+    ],
+    "type_action_tactic": [
+      "COMMAND_AND_CONTROL||ACCOUNTABILITY_OFFICER_ASSIGNED",
+      "COMMAND_AND_CONTROL||ESTABLISH_INCIDENT_COMMAND",
+      "COMMAND_AND_CONTROL||INCIDENT_ASSESSMENT_COMPLETED",
+      "COMMAND_AND_CONTROL||NOTIFY_OTHER_AGENCIES",
+      "COMMAND_AND_CONTROL||PIO_ASSIGNED",
+      "COMMAND_AND_CONTROL||SAFETY_OFFICER_ASSIGNED",
+      "CONTAINMENT||OUTSIDE_FIRE_SUPPRESSION||DOZER_FUEL_BREAK",
+      "CONTAINMENT||OUTSIDE_FIRE_SUPPRESSION||HAND_CREW_FUEL_BREAK",
+      "EMERGENCY_MEDICAL_CARE||PATIENT_ASSESSMENT",
+      "EMERGENCY_MEDICAL_CARE||PATIENT_REFERRAL",
+      "EMERGENCY_MEDICAL_CARE||PROVIDE_ADVANCED_LIFE_SUPPORT",
+      "EMERGENCY_MEDICAL_CARE||PROVIDE_BASIC_LIFE_SUPPORT",
+      "EMERGENCY_MEDICAL_CARE||PROVIDE_TRANSPORT",
+      "FORCIBLE_ENTRY",
+      "HAZARDOUS_SITUATION_MITIGATION||ATMOSPHERIC_MONITORING_EXTERIOR_FENCELINE",
+      "HAZARDOUS_SITUATION_MITIGATION||ATMOSPHERIC_MONITORING_INTERIOR",
+      "HAZARDOUS_SITUATION_MITIGATION||DECONTAMINATION",
+      "HAZARDOUS_SITUATION_MITIGATION||LEAK_STOP",
+      "HAZARDOUS_SITUATION_MITIGATION||REMOVE_HAZARD",
+      "HAZARDOUS_SITUATION_MITIGATION||SPILL_CONTROL",
+      "HAZARDOUS_SITUATION_MITIGATION||TAKE_SAMPLES",
+      "INFORMATION_ENFORCEMENT||ENFORCE_CODE_OR_LAW",
+      "INFORMATION_ENFORCEMENT||PROVIDE_PUBLIC_INFORMATION",
+      "INFORMATION_ENFORCEMENT||REFER_TO_PROPER_AHJ",
+      "INVESTIGATION",
+      "NON_STRUCTURE_SEARCH||BODY_RECOVERY",
+      "NON_STRUCTURE_SEARCH||SEARCH_AREA_OF_COLLAPSE",
+      "NON_STRUCTURE_SEARCH||SEARCH_UNDERGROUND_INFRASTRUCTURE",
+      "NON_STRUCTURE_SEARCH||SEARCH_WATERWAY",
+      "NON_STRUCTURE_SEARCH||USAR_K9_SEARCH",
+      "NON_STRUCTURE_SEARCH||WIDE_AREA_OUTDOOR_SEARCH",
+      "PERSONNEL_CONTAMINATION_REDUCTION||CLEAN_CAB_TRANSPORT",
+      "PERSONNEL_CONTAMINATION_REDUCTION||ON_SCENE_CONTAMINATION_REDUCTION",
+      "PERSONNEL_CONTAMINATION_REDUCTION||PPE_WASHED_POST_INCIDENT",
+      "PROVIDE_EQUIPMENT||PROVIDE_DRONE_VIDEO_EQUIPMENT",
+      "PROVIDE_EQUIPMENT||PROVIDE_ELECTRICAL_POWER",
+      "PROVIDE_EQUIPMENT||PROVIDE_LIGHT",
+      "PROVIDE_EQUIPMENT||PROVIDE_SPECIAL_EQUIPMENT",
+      "PROVIDE_EVACUATION_SUPPORT||CONNECTED_INTERIOR_SPACES",
+      "PROVIDE_EVACUATION_SUPPORT||LARGE_AREA",
+      "PROVIDE_EVACUATION_SUPPORT||NEARBY_BUILDINGS",
+      "PROVIDE_EVACUATION_SUPPORT||REMOTE_INTERIOR_SPACES",
+      "PROVIDE_SERVICES||ASSIST_ANIMAL",
+      "PROVIDE_SERVICES||ASSIST_UNINJURED_PERSON",
+      "PROVIDE_SERVICES||CONTROL_CROWD",
+      "PROVIDE_SERVICES||CONTROL_TRAFFIC",
+      "PROVIDE_SERVICES||DAMAGE_ASSESSMENT",
+      "PROVIDE_SERVICES||PROVIDE_APPARATUS_WATER",
+      "PROVIDE_SERVICES||REMOVE_WATER",
+      "PROVIDE_SERVICES||RESTORE_RESET_ALARM_SYSTEM",
+      "PROVIDE_SERVICES||RESTORE_SPRINKLER_SYSTEM",
+      "PROVIDE_SERVICES||SECURE_PROPERTY",
+      "PROVIDE_SERVICES||SHUT_DOWN_ALARM",
+      "PROVIDE_SERVICES||SHUT_DOWN_SPRINKLER_SYSTEM",
+      "SALVAGE_AND_OVERHAUL",
+      "SEARCH_STRUCTURE||DOOR_INITIATED_SEARCH",
+      "SEARCH_STRUCTURE||DOOR_INITIATED_SEARCH||DURING_SUPPRESSION",
+      "SEARCH_STRUCTURE||DOOR_INITIATED_SEARCH||POST_SUPPRESSION",
+      "SEARCH_STRUCTURE||DOOR_INITIATED_SEARCH||PRIOR_TO_SUPPRESSION",
+      "SEARCH_STRUCTURE||WINDOW_INITIATED_SEARCH",
+      "SEARCH_STRUCTURE||WINDOW_INITIATED_SEARCH||DURING_SUPPRESSION",
+      "SEARCH_STRUCTURE||WINDOW_INITIATED_SEARCH||POST_SUPPRESSION",
+      "SEARCH_STRUCTURE||WINDOW_INITIATED_SEARCH||PRIOR_TO_SUPPRESSION",
+      "SUPPRESSION||OUTSIDE_FIRE_SUPPRESSION||BACKBURN",
+      "SUPPRESSION||OUTSIDE_FIRE_SUPPRESSION||CONFINEMENT",
+      "SUPPRESSION||OUTSIDE_FIRE_SUPPRESSION||ESTABLISH_FIRE_LINES",
+      "SUPPRESSION||OUTSIDE_FIRE_SUPPRESSION||FIRE_CONTROL_EXTINGUISHMENT",
+      "SUPPRESSION||OUTSIDE_FIRE_SUPPRESSION||FIRE_RETARDANT_DROP",
+      "SUPPRESSION||OUTSIDE_FIRE_SUPPRESSION||STRUCTURE_PROTECTION",
+      "SUPPRESSION||OUTSIDE_FIRE_SUPPRESSION||WATER_DROP",
+      "SUPPRESSION||STRUCTURAL_FIRE_SUPPRESSION||EXTERIOR",
+      "SUPPRESSION||STRUCTURAL_FIRE_SUPPRESSION||EXTERIOR_AND_INTERIOR",
+      "SUPPRESSION||STRUCTURAL_FIRE_SUPPRESSION||INTERIOR",
+      "VENTILATION||HORIZONTAL",
+      "VENTILATION||HORIZONTAL||DURING_SUPPRESSION",
+      "VENTILATION||HORIZONTAL||POST_SUPPRESSION",
+      "VENTILATION||HORIZONTAL||PRIOR_TO_SUPPRESSION",
+      "VENTILATION||HYDRAULIC",
+      "VENTILATION||HYDRAULIC||DURING_SUPPRESSION",
+      "VENTILATION||HYDRAULIC||POST_SUPPRESSION",
+      "VENTILATION||HYDRAULIC||PRIOR_TO_SUPPRESSION",
+      "VENTILATION||POSITIVE_PRESSURE",
+      "VENTILATION||POSITIVE_PRESSURE||DURING_SUPPRESSION",
+      "VENTILATION||POSITIVE_PRESSURE||POST_SUPPRESSION",
+      "VENTILATION||POSITIVE_PRESSURE||PRIOR_TO_SUPPRESSION",
+      "VENTILATION||VERTICAL",
+      "VENTILATION||VERTICAL||DURING_SUPPRESSION",
+      "VENTILATION||VERTICAL||POST_SUPPRESSION",
+      "VENTILATION||VERTICAL||PRIOR_TO_SUPPRESSION"
+    ],
+    "type_noaction": [
+      "CANCELLED",
+      "NO_INCIDENT_FOUND",
+      "STAGED_STANDBY"
+    ],
+    "type_medical_patient_care": [
+      "PATIENT_DEAD_ON_ARRIVAL",
+      "PATIENT_EVALUATED_CARE_PROVIDED",
+      "PATIENT_EVALUATED_NO_CARE_REQUIRED",
+      "PATIENT_EVALUATED_REFUSED_CARE",
+      "PATIENT_REFUSED_EVALUATION_CARE",
+      "PATIENT_SUPPORT_SERVICES_PROVIDED"
+    ],
+    "type_medical_transport": [
+      "NONPATIENT_TRANSPORT",
+      "NO_TRANSPORT",
+      "OTHER_AGENCY_TRANSPORT",
+      "PATIENT_REFUSED_TRANSPORT",
+      "TRANSPORT_BY_EMS_UNIT"
+    ],
+    "type_medical_patient_status": [
+      "IMPROVED",
+      "UNCHANGED",
+      "WORSE"
+    ],
+    "type_hazard_disposition": [
+      "COMPLETED_FIRE_SERVICE_ONLY",
+      "COMPLETED_WITH_FIRE_SERVICE_PRESENT",
+      "RELEASED_TO_COUNTY_AGENCY",
+      "RELEASED_TO_FEDERAL_AGENCY",
+      "RELEASED_TO_LOCAL_AGENCY",
+      "RELEASED_TO_PRIVATE_AGENCY",
+      "RELEASED_TO_PROPERTY_OWNER",
+      "RELEASED_TO_STATE_AGENCY"
+    ],
+    "type_fire_condition_arrival": [
+      "FIRE_OUT_UPON_ARRIVAL",
+      "FIRE_SPREAD_BEYOND_STRUCTURE",
+      "NO_SMOKE_FIRE_SHOWING",
+      "SMOKE_FIRE_SHOWING",
+      "SMOKE_SHOWING",
+      "STRUCTURE_INVOLVED"
+    ],
+    "type_aid": [
+      "ACTING_AS_AID",
+      "IN_LIEU_AID",
+      "SUPPORT_AID"
+    ],
+    "type_aid_direction": [
+      "GIVEN",
+      "RECEIVED"
+    ],
+    "type_aid_nonfd": [
+      "ANIMAL_SERVICES",
+      "EMS",
+      "HOUSING_SERVICES",
+      "LAW_ENFORCEMENT",
+      "REMEDIATION_SERVICES",
+      "SOCIAL_SERVICES",
+      "UTILITIES_PUBLIC_WORKS"
+    ],
+    "type_special_modifier": [
+      "ACTIVE_ASSAILANT",
+      "COUNTY_LOCAL_DECLARED_DISASTER",
+      "FEDERAL_DECLARED_DISASTER",
+      "MCI",
+      "STATE_DECLARED_DISASTER",
+      "URBAN_CONFLAGRATION",
+      "VIOLENCE_AGAINST_RESPONDER",
+      "WORLD_CUP_2026"
+    ],
+    "type_incident_status": [
+      "APPROVED",
+      "DELETED",
+      "FAILED",
+      "PENDING_APPROVAL",
+      "PENDING_INCIDENT_DATA",
+      "REJECTED",
+      "SUBMITTED"
+    ],
+    "type_water_supply": [
+      "DRAFT_FROM_STATIC_SOURCE",
+      "FOAM_ADDITIVE",
+      "HYDRANT_GREATER_500",
+      "HYDRANT_LESS_500",
+      "NONE",
+      "NURSE_OTHER_APPARATUS",
+      "SUPPLY_FROM_FIRE_BOAT",
+      "TANK_WATER",
+      "WATER_TENDER_SHUTTLE"
+    ],
+    "type_fire_invest_need": [
+      "NO",
+      "NOT_APPLICABLE",
+      "NOT_EVALUATED",
+      "NO_CAUSE_OBVIOUS",
+      "OTHER",
+      "YES"
+    ],
+    "type_fire_invest_type": [
+      "INVESTIGATED_BY_ARSON_FIRE_INVESTIGATOR",
+      "INVESTIGATED_BY_INSURANCE",
+      "INVESTIGATED_BY_NONFIRE_LAW_ENFORCEMENT",
+      "INVESTIGATED_BY_OTHER",
+      "INVESTIGATED_BY_OUTSIDE_AGENCY",
+      "INVESTIGATED_BY_STATE_FIRE_MARSHAL",
+      "INVESTIGATED_ON_SCENE_RESOURCE",
+      "NONE"
+    ],
+    "type_suppress_appliance": [
+      "AIRATTACK_HELITACK",
+      "BOOSTER_FIRE_HOSE",
+      "BUILDING_FDC",
+      "BUILDING_STANDPIPE",
+      "ELEVATED_MASTER_STREAM_STANDPIPE",
+      "FIRE_EXTINGUISHER",
+      "GROUND_MONITOR",
+      "MASTER_STREAM",
+      "MEDIUM_DIAMETER_FIRE_HOSE",
+      "NONE",
+      "OTHER",
+      "SMALL_DIAMETER_FIRE_HOSE"
+    ],
+    "type_fire_bldg_damage": [
+      "MAJOR_DAMAGE",
+      "MINOR_DAMAGE",
+      "MODERATE_DAMAGE",
+      "NO_DAMAGE"
+    ],
+    "type_room": [
+      "ASSEMBLY",
+      "ATTIC",
+      "BALCONY_PORCH_DECK",
+      "BASEMENT",
+      "BATHROOM",
+      "BEDROOM",
+      "GARAGE",
+      "HALLWAY_FOYER",
+      "KITCHEN",
+      "LIVING_SPACE",
+      "OFFICE",
+      "OTHER",
+      "UNKNOWN",
+      "UTILITY_ROOM"
+    ],
+    "type_fire_cause_in": [
+      "ACT_OF_NATURE",
+      "BATTERY_POWER_STORAGE",
+      "CHEMICAL",
+      "COOKING",
+      "ELECTRICAL",
+      "EXPLOSIVES_FIREWORKS",
+      "HEAT_FROM_ANOTHER_OBJECT",
+      "INCENDIARY",
+      "OPEN_FLAME",
+      "OPERATING_EQUIPMENT",
+      "OTHER_HEAT_SOURCE",
+      "SMOKING_MATERIALS_ILLICIT_DRUGS",
+      "UNABLE_TO_BE_DETERMINED"
+    ],
+    "type_fire_cause_out": [
+      "BATTERY_POWER_STORAGE",
+      "DEBRIS_OPEN_BURNING",
+      "EQUIPMENT_VEHICLE_USE",
+      "FIREARMS_EXPLOSIVES",
+      "FIREWORKS",
+      "INCENDIARY",
+      "NATURAL",
+      "POWER_GEN_TRANS_DIST",
+      "RAILROAD_OPS_MAINTENANCE",
+      "RECREATION_CEREMONY",
+      "SMOKING_MATERIALS_ILLICIT_DRUGS",
+      "SPREAD_FROM_CONTROLLED_BURN",
+      "STRUCTURE",
+      "UNABLE_TO_BE_DETERMINED"
+    ],
+    "type_casualty_cause": [
+      "CAUGHT_TRAPPED_BY_FIRE_EXPLOSION",
+      "CAUGHT_TRAPPED_BY_OBJECT",
+      "COLLAPSE",
+      "EXPOSURE",
+      "FALL_JUMP",
+      "OTHER",
+      "STRESS_OVEREXERTION",
+      "STRUCK_CONTACT_WITH_OBJECT",
+      "VEHICLE_COLLISION"
+    ],
+    "type_response_mode": [
+      "EMERGENT",
+      "NON_EMERGENT"
+    ],
+    "type_displace_cause_incident": [
+      "COLLAPSE",
+      "FIRE",
+      "HAZARDOUS_SITUATION",
+      "OTHER",
+      "SMOKE",
+      "UTILITIES",
+      "WATER"
+    ],
+    "type_alarm_smoke": [
+      "BED_SHAKER",
+      "COMBINATION",
+      "HARDWIRED",
+      "HARD_OF_HEARING_WITH_STROBE",
+      "INTERCONNECTED",
+      "LONG_LIFE_BATTERY_POWERED",
+      "REPLACEABLE_BATTERY_POWERED",
+      "UNKNOWN"
+    ],
+    "type_alarm_fire": [
+      "AUTOMATIC",
+      "MANUAL",
+      "MANUAL_AND_AUTOMATIC"
+    ],
+    "type_alarm_other": [
+      "CARBON_MONOXIDE",
+      "HEAT_DETECTOR",
+      "NATURAL_GAS",
+      "OTHER_CHEMICAL_DETECTOR"
+    ],
+    "type_alarm_operation": [
+      "FAILED_TO_OPERATE",
+      "INSUFFICIENT_SOURCE",
+      "NO_OCCUPANT_TO_NOTIFY",
+      "OPERATED_ALERTED_OCCUPANT",
+      "OPERATED_FAILED_TO_ALERT_OCCUPANT"
+    ],
+    "type_alarm_failure": [
+      "DEVICE_MALFUNCTION",
+      "EXPIRED",
+      "IMPROPER_INSTALLATION",
+      "NO_BATTERY",
+      "OTHER_NON_FUNCTIONAL_CAUSE",
+      "TAMPER",
+      "UNABLE_TO_DETERMINE"
+    ],
+    "type_occupant_response": [
+      "ATTEMPTED_TO_EXTINGUISH",
+      "ATTEMPTED_TO_RESCUE_ANIMALS",
+      "ATTEMPTED_TO_RESCUE_OCCUPANTS",
+      "EVACUATED",
+      "IGNORED_ALARM",
+      "UNABLE_TO_RESPOND",
+      "UNKNOWN"
+    ],
+    "type_suppress_fire": [
+      "CLEAN_AGENT_SYSTEM",
+      "DELUGE_SYSTEM",
+      "DRY_PIPE_SPRINKLER_SYSTEM",
+      "INDUSTRIAL_DRY_CHEM_SYSTEM",
+      "OTHER",
+      "PRE_ACTION_SYSTEM",
+      "UNKNOWN",
+      "WET_PIPE_SPRINKLER_SYSTEM"
+    ],
+    "type_full_partial": [
+      "EXTENT_UNKNOWN",
+      "FULL",
+      "PARTIAL"
+    ],
+    "type_suppress_no_operation": [
+      "INSUFFICIENT_SOURCE",
+      "INSUFFICIENT_WATER_SUPPLY",
+      "SYSTEM_DAMAGED_COMPROMISED",
+      "SYSTEM_INOPERABLE",
+      "SYSTEM_NOT_SUITABLE",
+      "SYSTEM_SHUTOFF_DURING_INCIDENT",
+      "SYSTEM_SHUTOFF_PRIOR_TO_INCIDENT",
+      "UNABLE_TO_DETERMINE"
+    ],
+    "type_suppress_operation": [
+      "NO_OPERATION",
+      "OPERATED_EFFECTIVE",
+      "OPERATED_NOT_EFFECTIVE"
+    ],
+    "type_suppress_cooking": [
+      "COMMERCIAL_HOOD_SUPPRESSION",
+      "ELECTRIC_POWER_CUTOFF_DEVICE",
+      "OTHER",
+      "RESIDENTIAL_HOOD_MOUNTED",
+      "TEMPERATURE_LIMITING_STOVE"
+    ],
+    "fire_protection_presence": [
+      "NOT_APPLICABLE",
+      "NOT_PRESENT",
+      "PRESENT"
+    ]
+  },
+  "fire_protection_labels": {
+    "smoke_alarm": {
+      "presence": {
+        "label": "Describe whether there was at least one smoke alarm present.",
+        "hint": "Select one."
+      },
+      "working": {
+        "label": "Describe whether smoke alarm was working or successfully tested.",
+        "hint": "Select one."
+      },
+      "alarm_types": {
+        "label": "Describe the type(s) of smoke alarm(s) present.",
+        "hint": "Select all that apply."
+      },
+      "operation": {
+        "label": "Describe whether the smoke alarm operated as intended during the incident.",
+        "hint": "Select one."
+      },
+      "occupant_action": {
+        "label": "Describe the occupant reaction or inaction that resulted from the alarm signal.",
+        "hint": "Select one."
+      },
+      "failure_reason": {
+        "label": "Describe the reason for the failure.",
+        "hint": "Select one."
+      }
+    },
+    "fire_alarm": {
+      "presence": {
+        "label": "Describe whether the building was fitted with a whole building fire alarm system that includes fire detection devices, alarm pull stations, and alarm notification devices.",
+        "hint": "Select one."
+      },
+      "alarm_types": {
+        "label": "Describe the type of fire alarm system present.",
+        "hint": "Select one."
+      },
+      "operation_type": {
+        "label": "Describe whether the fire alarm operated as intended during the incident.",
+        "hint": "Select one."
+      }
+    },
+    "other_alarm": {
+      "presence": {
+        "label": "Describe whether other alarm systems for detecting gases or other harmful conditions were installed within the building.",
+        "hint": "Select one."
+      },
+      "alarm_types": {
+        "label": "Describe the other alarm(s) present.",
+        "hint": "Select all that apply."
+      }
+    },
+    "fire_suppression": {
+      "presence": {
+        "label": "Describe whether there was a fire suppression (sprinkler) system in the building.",
+        "hint": "Select one."
+      },
+      "suppression_type": {
+        "label": "Describe the type of system present.",
+        "hint": "Select one."
+      },
+      "full_partial": {
+        "label": "Describe the coverage extent of the system.",
+        "hint": "Select one."
+      },
+      "operation_type": {
+        "label": "Describe the operation of the fire suppression system.",
+        "hint": "Select one."
+      },
+      "sprinklers_activated": {
+        "label": "Describe the number of sprinkler heads activated.",
+        "hint": null
+      },
+      "failure_reason": {
+        "label": "Describe the reason for the failure to operate effectively.",
+        "hint": "Select one."
+      }
+    },
+    "cooking_fire_suppression": {
+      "presence": {
+        "label": "Describe whether there was any type of fire protection system or fire prevention technology focused on reducing damage from cooking fires installed above or in proximity of the cooking appliance.",
+        "hint": "Select one."
+      },
+      "suppression_types": {
+        "label": "Describe the type(s) of system present.",
+        "hint": "Select all that apply."
+      },
+      "operation_type": {
+        "label": "Describe the operation of the suppression system.",
+        "hint": "Select one."
+      }
+    }
+  }
+}

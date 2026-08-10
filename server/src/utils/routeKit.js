@@ -69,4 +69,30 @@ function asyncRoute(fn) {
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 }
 
-module.exports = { scoped, asyncRoute, httpError, validate };
+/**
+ * flattenEngineErrors — a pure engine's structured refusals → the app-wide `details: string[]`.
+ *
+ * 🔴 WHY: `details` is string[] app-wide. errorHandler.normalizeDetails does not DROP an object
+ * any more, but it falls back to JSON.stringify — so a clerk who fat-fingers an amount was shown
+ *   {"code":"BAD_AMOUNT","at":"line 1","message":"amount is not a valid decimal","got":"12.345"}
+ * instead of a sentence. routes/fiFeeSchedules.js got this right and left a comment saying so;
+ * fiInvoices and fiPayments were written later and did not inherit the lesson. Same class as
+ * "a guard that exists on one route and not another is not a guard" — here it is a LESSON that
+ * existed on one route and not another, which is why it now lives in the shared kit instead of
+ * as a third copy of the same `.map()`.
+ *
+ * `got` is deliberately included: the value the operator actually typed is the fastest way for
+ * them to see what is wrong with it.
+ */
+function flattenEngineErrors(errors) {
+  if (!Array.isArray(errors)) return undefined;
+  return errors.map((e) => {
+    if (typeof e === 'string') return e;
+    if (!e || typeof e !== 'object') return String(e);
+    const where = e.at ? `${e.at} — ` : '';
+    const got = e.got === undefined ? '' : ` (got: ${JSON.stringify(e.got)})`;
+    return `${where}${e.code || 'ERROR'}: ${e.message || 'refused'}${got}`;
+  });
+}
+
+module.exports = { scoped, asyncRoute, httpError, validate, flattenEngineErrors };

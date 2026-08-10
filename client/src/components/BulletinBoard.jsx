@@ -32,8 +32,10 @@ const CATEGORY_COLORS = {
   Safety:         { bg: 'bg-red-100 dark:bg-red-950/50',    text: 'text-red-700 dark:text-red-300'    },
   Training:       { bg: 'bg-amber-100 dark:bg-amber-950/50',  text: 'text-amber-700 dark:text-amber-300'  },
   Meeting:        { bg: 'bg-indigo-100 dark:bg-indigo-950/50', text: 'text-indigo-700 dark:text-indigo-300' },
-  Policy:         { bg: 'bg-purple-100 dark:bg-purple-950/50', text: 'text-purple-700 dark:text-purple-300' },
-  Administrative: { bg: 'bg-slate-100',  text: 'text-slate-700'  },
+  // Not purple/violet: violet is the reserved marker for AI surfaces and a bulletin
+  // is human-authored. Teal reads as "reference/policy" without borrowing that signal.
+  Policy:         { bg: 'bg-teal-100 dark:bg-teal-950/50',   text: 'text-teal-700 dark:text-teal-300'   },
+  Administrative: { bg: 'bg-slate-100 dark:bg-slate-800',   text: 'text-slate-700 dark:text-slate-300'  },
   Events:         { bg: 'bg-green-100 dark:bg-green-950/50',  text: 'text-green-700 dark:text-green-300'  },
   Facilities:     { bg: 'bg-orange-100 dark:bg-orange-950/50', text: 'text-orange-700 dark:text-orange-300' },
   Social:         { bg: 'bg-pink-100 dark:bg-pink-950/50',   text: 'text-pink-700 dark:text-pink-300'   },
@@ -57,11 +59,25 @@ function fmtDate(iso) {
 
 // ─── Category Badge ───────────────────────────────────────────────────────────
 
+// Stored categories are inconsistently cased across seeded and hand-entered rows
+// ("operations" / "Operations" / "EVENTS"). Normalize at RENDER only — the stored
+// value is left untouched — and match the color key case-insensitively so a
+// lowercase row gets its real color instead of the General fallback.
+const CATEGORY_KEYS = Object.keys(CATEGORY_COLORS);
+
+function canonicalCategory(category) {
+  const raw = String(category || '').trim();
+  if (!raw) return 'General';
+  return CATEGORY_KEYS.find((k) => k.toLowerCase() === raw.toLowerCase())
+    || raw.replace(/\S+/g, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase());
+}
+
 function CategoryBadge({ category }) {
-  const colors = CATEGORY_COLORS[category] || CATEGORY_COLORS.General;
+  const label = canonicalCategory(category);
+  const colors = CATEGORY_COLORS[label] || CATEGORY_COLORS.General;
   return (
     <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold ${colors.bg} ${colors.text}`}>
-      {category}
+      {label}
     </span>
   );
 }
@@ -93,7 +109,10 @@ function BulletinRow({ bulletin, username, onEdit, onDelete, canEdit, autoExpand
   }
 
   return (
-    <div className={`border-b border-gray-100 dark:border-gray-700 last:border-b-0 ${read ? '' : 'bg-blue-50/30'}`}>
+    // Unread tint needs a dark twin: bg-blue-50/30 over gray-900 composites to
+    // #535b69 — a light-mode film that dragged every gray-400 span on the row
+    // down to 2.64:1 in dark mode (measured, 2026-08-05 sweep, ×64).
+    <div className={`border-b border-gray-100 dark:border-gray-700 last:border-b-0 ${read ? '' : 'bg-blue-50/30 dark:bg-blue-950/30'}`}>
       {/* ── Compact row ── */}
       <button
         onClick={handleOpen}
@@ -113,7 +132,7 @@ function BulletinRow({ bulletin, username, onEdit, onDelete, canEdit, autoExpand
         )}
 
         {/* Date */}
-        <span className="text-xs text-gray-400 flex-shrink-0 w-24 hidden sm:block">
+        <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0 w-24 hidden sm:block">
           {fmtDate(bulletin.created_at)}
         </span>
 
@@ -125,7 +144,7 @@ function BulletinRow({ bulletin, username, onEdit, onDelete, canEdit, autoExpand
         {/* Category + Author */}
         <span className="flex items-center gap-2 flex-shrink-0 ml-2">
           <CategoryBadge category={bulletin.category} />
-          <span className="text-xs text-gray-400 hidden md:block">{bulletin.author_name || 'Station'}</span>
+          <span className="text-xs text-gray-500 dark:text-gray-400 hidden md:block">{bulletin.author_name || 'Station'}</span>
         </span>
 
         <ChevronDown
@@ -420,7 +439,7 @@ export default function BulletinBoard({ highlightId, onHighlightConsumed }) {
       {/* Bulletin list */}
       <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
         {/* Column headers */}
-        <div className="px-4 py-2 bg-gray-50 dark:bg-gray-950 border-b border-gray-100 dark:border-gray-700 hidden sm:flex items-center gap-3 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+        <div className="px-4 py-2 bg-gray-50 dark:bg-gray-950 border-b border-gray-100 dark:border-gray-700 hidden sm:flex items-center gap-3 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
           <span className="w-2 ml-0.5 flex-shrink-0" />
           <span className="w-24 flex-shrink-0">Date</span>
           <span className="flex-1">Subject</span>

@@ -11,15 +11,14 @@ import {
   SPRINKLER_PRESENCE, SPRINKLER_OPERATION, NFIRS_STATUSES, FDID,
 } from '../data/nfirs';
 import { generateNerisId } from '../utils/nerisExport';
+// 🔴 This file used to declare its own fifty-state array, and it OMITTED DC — so a District of
+// Columbia department could not select its own state on the incident address. The list is now the
+// shared one (`constants/usStates.js`), which carries all 50 states plus DC and PR. Enforced by
+// server/src/tests/clientStateLists.test.js, not by discipline.
+import { US_STATES } from '../constants/usStates';
+import { openTimePicker } from '../utils/timeInput';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const US_STATES = [
-  'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA',
-  'KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ',
-  'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT',
-  'VA','WA','WV','WI','WY',
-];
 
 function Field({ label, required, children, hint, tooltip }) {
   return (
@@ -47,11 +46,16 @@ function Input({ value, onChange, type = 'text', ...rest }) {
     );
   }
   return (
+    // A time field opens its picker from a click ANYWHERE in the box, not just the
+    // few-pixel clock glyph at the edge (Matt, 2026-08-08). Handled here, on the
+    // shared wrapper, because all seven of this form's time fields go through it —
+    // patching the call sites would leave the eighth one behind. Typing is unchanged.
     <input
       type={type}
       value={value ?? ''}
       onChange={e => onChange(e.target.value)}
-      className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 bg-white dark:bg-gray-900 dark:text-gray-100"
+      onClick={type === 'time' ? openTimePicker : undefined}
+      className={`w-full border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 bg-white dark:bg-gray-900 dark:text-gray-100${type === 'time' ? ' cursor-pointer' : ''}`}
       {...rest}
     />
   );
@@ -251,7 +255,10 @@ export default function NFIRSForm({ initial, onSave, onClose }) {
               <Field label="State" required>
                 <select value={form.state} onChange={e => set('state')(e.target.value)}
                   className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 dark:bg-gray-900 dark:text-gray-100">
-                  {US_STATES.map(s => <option key={s}>{s}</option>)}
+                  {/* Value stays the 2-letter code — stored records hold codes ('MN'), and the
+                      state report wants the code. Label stays the code too, so the only visible
+                      change is that DC and PR are now offered. */}
+                  {US_STATES.map(s => <option key={s.code} value={s.code}>{s.code}</option>)}
                 </select>
               </Field>
               <Field label="ZIP" required>

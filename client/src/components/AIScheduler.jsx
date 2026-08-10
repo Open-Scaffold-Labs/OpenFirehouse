@@ -208,9 +208,9 @@ export default function AIScheduler() {
                 </div>
                 <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm">
                   <div className="flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full bg-red-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <span className="h-2 w-2 rounded-full bg-red-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <span className="h-2 w-2 rounded-full bg-red-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                    <span className="h-2 w-2 rounded-full bg-red-400 animate-pulse" style={{ animationDelay: '0ms' }} />
+                    <span className="h-2 w-2 rounded-full bg-red-400 animate-pulse" style={{ animationDelay: '150ms' }} />
+                    <span className="h-2 w-2 rounded-full bg-red-400 animate-pulse" style={{ animationDelay: '300ms' }} />
                   </div>
                 </div>
               </div>

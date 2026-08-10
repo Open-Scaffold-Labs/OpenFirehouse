@@ -682,7 +682,7 @@ export default function FundraisingTracker() {
           className={`px-4 py-3 font-medium transition-colors border-b-2 ${
             activeTab === 'campaigns'
               ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-              : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+              : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
           }`}
         >
           Campaigns
@@ -692,7 +692,7 @@ export default function FundraisingTracker() {
           className={`px-4 py-3 font-medium transition-colors border-b-2 ${
             activeTab === 'donations'
               ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-              : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+              : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
           }`}
         >
           Donations

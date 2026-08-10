@@ -498,7 +498,7 @@ export default function PayrollTracker() {
               className={`flex-1 py-3 text-sm font-semibold transition-colors ${
                 activeTab === i
                   ? 'border-b-2 border-red-700 text-red-700 dark:text-red-300'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
               }`}
             >
               {t}

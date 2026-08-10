@@ -11,6 +11,7 @@
 
 const express = require('express');
 const router  = express.Router();
+const { requireOfficer } = require('../middleware/requireRole');
 const { shiftSwaps: db } = require('../db');
 
 function validate(body, requireAll = true) {
@@ -54,7 +55,7 @@ router.post('/', async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Failed to create shift swap' }); }
 });
 
-router.patch('/:id', async (req, res) => {
+router.patch('/:id', requireOfficer, async (req, res) => {
   try {
     const s = await db.update(Number(req.params.id), req.body, req.user.department_id);
     if (!s) return res.status(404).json({ error: 'Shift swap not found' });

@@ -17,6 +17,12 @@ const express = require('express');
 const router  = express.Router();
 const { stripeFor, supabase, priceToPlanMap } = require('../lib/licensing');
 const { checkCronAuth } = require('../utils/cronAuth');
+const { summarizeReconcile } = require('../utils/reconcileSummary');
+// X-PHASE cron liveness (0128): every cron records its invocation through ONE wrapper,
+// so a cron cannot be added without a ledger row. cronRunCoverage.test.js enumerates these
+// files from source and asserts it. An auth REFUSAL is deliberately not a run — see
+// utils/cronRun.js; a public path must not let an anonymous caller append to a permanent log.
+const { withCronRun } = require('../utils/cronRun');
 
 async function callSignLicense(payload, baseUrl) {
   const r = await fetch(`${baseUrl}/api/admin/sign-license`, {
@@ -126,7 +132,7 @@ async function reconcileMode(mode, planMap, baseUrl) {
   return summary;
 }
 
-router.get('/', async (req, res) => {
+router.get('/', withCronRun('reconcile', async (req, res) => {
   // Cron auth fails closed: Vercel Cron sends `Authorization: Bearer ${CRON_SECRET}`
   // automatically. If the secret is unset in production this endpoint rejects (503)
   // rather than running the Stripe reconciliation open to anyone.
@@ -135,21 +141,30 @@ router.get('/', async (req, res) => {
   console.log(JSON.stringify({ kind: 'of_reconciler_heartbeat', at: new Date().toISOString() }));
   const baseUrl = `https://${req.headers.host || 'openfirehouse.openscaffoldlabs.com'}`;
   const planMap = priceToPlanMap();
-  try {
-    const live = await reconcileMode('live', planMap, baseUrl);
-    const test = await reconcileMode('test', planMap, baseUrl);
-    const summary = {
-      heartbeat_at: new Date().toISOString(), live, test,
-      total_gaps: (live.gaps || 0) + (test.gaps || 0),
-      total_back_issued: (live.back_issued || 0) + (test.back_issued || 0),
-      total_errors: (live.errors || 0) + (test.errors || 0),
-    };
-    console.log(JSON.stringify({ kind: 'of_reconciler_summary', ...summary }));
-    res.json({ ok: true, ...summary });
-  } catch (err) {
-    console.log(JSON.stringify({ kind: 'of_reconciler_top_level_error', error: err.message }));
-    res.status(500).json({ ok: false, error: err.message });
+
+  // 🔴 EACH MODE IS ISOLATED. Both still run — that is deliberate and is this file's own header
+  // ("For each Stripe mode", ADR-0001 Step 8) — but they used to share ONE try block with test
+  // second, so a revoked TEST key threw before the summary was built, DISCARDED live's
+  // completed result, and reported the whole reconciler broken while naming only the test key.
+  // Found live on 2026-08-06 by the cron ledger, on its first day.
+  //
+  // Losing a mode costs a delay, never a licence: each run re-lists the last three days of paid
+  // invoices and diffs them against `licenses`, so the next successful run recovers anything a
+  // failed one missed. Partial progress inside a failed mode is not reported (its counters die
+  // with the throw) — deliberately not worked around, because the recovery above makes the
+  // number cosmetic and threading a mutable accumulator through would be the bigger change.
+  async function safeMode(mode) {
+    try {
+      return await reconcileMode(mode, planMap, baseUrl);
+    } catch (err) {
+      console.log(JSON.stringify({ kind: 'of_reconciler_mode_failed', mode, error: err.message }));
+      return { mode, failed: true, error: err.message, checked: 0, gaps: 0, back_issued: 0, errors: 0 };
+    }
   }
-});
+
+  const result = summarizeReconcile([await safeMode('live'), await safeMode('test')]);
+  console.log(JSON.stringify({ kind: 'of_reconciler_summary', ...result.body }));
+  return res.status(result.status).json(result.body);
+}));
 
 module.exports = router;

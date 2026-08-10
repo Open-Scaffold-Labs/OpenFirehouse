@@ -67,7 +67,7 @@ export default function RankNotificationSettings() {
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr>
-              <th className="text-left p-2 text-gray-500 font-semibold">Notification</th>
+              <th className="text-left p-2 text-gray-500 dark:text-gray-400 font-semibold">Notification</th>
               {tiers.map((t) => (
                 <th key={t} className="p-2 text-center text-gray-700 dark:text-gray-300 font-bold whitespace-nowrap">
                   {TIER_LABEL[t] || t}
@@ -81,7 +81,7 @@ export default function RankNotificationSettings() {
                 <td className="p-2 text-gray-700 dark:text-gray-300">
                   {TYPE_LABEL[type] || type}
                   {type === 'certs' && (
-                    <span className="block text-[11px] text-gray-400 mt-0.5">
+                    <span className="block text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
                       Scope by rank: {tiers.map((t) => `${(TIER_LABEL[t] || t).split(' ')[0]} = ${certScope[t]}`).join(' · ')}
                     </span>
                   )}

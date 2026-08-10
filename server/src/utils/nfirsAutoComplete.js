@@ -223,10 +223,15 @@ function inferFromPrePlan(prePlan) {
 async function lookupOfficerInCharge(stationId, incidentDate) {
   try {
     const date = incidentDate || new Date().toISOString().slice(0, 10);
-    // Try daily_staffing first
+    // Try the date-keyed riding board first (1.1c-b / 0070: daily_staffing folded
+    // into apparatus_assignments — name/rank come from members, not stored columns).
     const { rows: staffing } = await pool.query(
-      `SELECT member_name, member_rank FROM daily_staffing
-       WHERE department_id = $1 AND date = $2 AND position IN ('officer', 'OIC', 'captain', 'lieutenant')
+      `SELECT m.name AS member_name, m.rank AS member_rank
+       FROM apparatus_assignments aa
+       JOIN members m ON m.id = aa.member_id
+       WHERE aa.department_id = $1 AND aa.date = $2
+         AND aa.position_name ILIKE ANY (ARRAY['%officer%','%oic%','%captain%','%lieutenant%','%command%'])
+       ORDER BY aa.position_id NULLS LAST
        LIMIT 1`,
       [stationId, date]
     );

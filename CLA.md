@@ -3,10 +3,10 @@
 > **Draft notice:** This is a draft prepared for internal review and must be
 > reviewed by an attorney before use. It is not legal advice. Modeled on the
 > structure of widely used entity/individual CLAs (e.g. the Apache ICLA),
-> adapted for an AGPL project that may also offer a separate commercial/OEM
+> adapted for an AGPL open-core project that also offers a commercial/OEM
 > license. OpenFirehouse is open source under the AGPL v3; this CLA lets Open
-> Scaffold Labs distribute your contribution under the AGPL **and**, if ever
-> needed, under a separate commercial/OEM license.
+> Scaffold Labs distribute your contribution under the AGPL **and** include it
+> in commercial/OEM licenses (see `COMMERCIAL-LICENSE.md`).
 
 **Project:** OpenFirehouse
 **Licensor / Project owner:** Open Scaffold Labs, LLC ("we," "us," "Open Scaffold Labs")
@@ -25,12 +25,12 @@ your free labor and lock it away":
 
 - **It keeps the core free forever.** OpenFirehouse is and stays AGPL v3. Your
   contribution ships to every department under that open-source license.
-- **It stops closed-source competitors from free-riding.** A separate
-  commercial/OEM license is what would make a fire-software vendor pay to put
-  OpenFirehouse in a closed product instead of taking it for nothing. To offer
-  that license over the *whole* codebase, we need the right to license every
-  part of it commercially — including community contributions.
-- **It funds the work that keeps the project alive.** Support and commercial
+- **It stops closed-source competitors from free-riding.** The commercial/OEM
+  license (see `COMMERCIAL-LICENSE.md`) is what makes a fire-software vendor pay
+  to put OpenFirehouse in a closed product instead of taking it for nothing. To
+  offer that license over the *whole* codebase, we need the right to license
+  every part of it commercially — including community contributions.
+- **It funds the work that keeps the project alive.** Hosting and commercial
   revenue pay for maintenance, security, and support so the free version keeps
   improving.
 
@@ -100,8 +100,10 @@ You represent that:
 
 ## 5. No use rights granted to you
 
-Signing this Agreement and contributing grant you no special right to use
-OpenFirehouse beyond the AGPL v3, under which anyone may self-host it for free.
+Signing this Agreement and contributing grant you no right to use
+OpenFirehouse beyond the license tier for which your department or
+organization already qualifies for (self-hosting is free under the AGPL; managed
+hosting tiers are in `HOSTED-SERVICE-AGREEMENT.md`).
 Contribution and licensing are independent.
 
 ## 6. No obligation

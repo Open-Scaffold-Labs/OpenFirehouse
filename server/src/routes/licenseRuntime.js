@@ -25,14 +25,6 @@ const {
 function isEnvTrue(v) { return String(v || '').trim().toLowerCase() === 'true'; }
 const IS_DEMO = isEnvTrue(process.env.OPENFIREHOUSE_DEMO);
 
-// License enforcement is OPT-IN. OpenFirehouse is AGPL open source, so a
-// self-hosted install must run fully without any license — "clone it and run it
-// for $0, forever." Entitlement gating is therefore OFF unless the operator
-// explicitly turns it on with OPENFIREHOUSE_LICENSE_ENFORCED=true, which is how
-// the Open Scaffold Labs managed-hosting service runs. Self-host (the default)
-// is never walled behind activation.
-const IS_LICENSE_ENFORCED = isEnvTrue(process.env.OPENFIREHOUSE_LICENSE_ENFORCED);
-
 authedRouter.get('/status', async (req, res) => {
   try {
     // Demo deployment: license enforcement disabled (still requires login).
@@ -40,16 +32,6 @@ authedRouter.get('/status', async (req, res) => {
       return res.json({
         activated: true, mode: 'demo', dept_name: 'OpenFirehouse Demo',
         tier: 'demo', active: true, reason: 'demo_mode_env_set',
-      });
-    }
-    // Self-host default: enforcement is opt-in. Without OPENFIREHOUSE_LICENSE_ENFORCED
-    // every authenticated department is treated as activated, so the app is fully
-    // usable on a plain self-host (the AGPL run-right). Only the managed-hosting
-    // service sets the flag to turn on the entitlement checks below.
-    if (!IS_LICENSE_ENFORCED) {
-      return res.json({
-        activated: true, mode: 'self-host', tier: 'self-host',
-        active: true, reason: 'enforcement_disabled',
       });
     }
     const deptId = req.user?.department_id;

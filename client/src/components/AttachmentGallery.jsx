@@ -13,7 +13,7 @@ function isImage(mimetype) {
 function fileIcon(mimetype) {
   if (isImage(mimetype))           return <Image size={18} className="text-blue-500" />;
   if (mimetype === 'application/pdf') return <FileText size={18} className="text-red-500" />;
-  return <File size={18} className="text-gray-400" />;
+  return <File size={18} className="text-gray-500 dark:text-gray-400" />;
 }
 
 function formatBytes(bytes) {
@@ -172,11 +172,11 @@ export default function AttachmentGallery({ planId, readOnly = false }) {
             </div>
           ) : (
             <>
-              <Upload size={20} className="mx-auto text-gray-400 mb-1.5" />
+              <Upload size={20} className="mx-auto text-gray-500 dark:text-gray-400 mb-1.5" />
               <p className="text-sm font-medium text-gray-600 dark:text-gray-300">
                 Drop files here or click to browse
               </p>
-              <p className="text-xs text-gray-400 mt-0.5">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                 Images, PDF, Word, Excel — up to 10 MB each
               </p>
             </>
@@ -194,11 +194,11 @@ export default function AttachmentGallery({ planId, readOnly = false }) {
 
       {/* File grid */}
       {loading ? (
-        <div className="flex items-center gap-2 text-sm text-gray-400 py-4 justify-center">
+        <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 py-4 justify-center">
           <Loader2 size={16} className="animate-spin" /> Loading attachments…
         </div>
       ) : files.length === 0 ? (
-        <div className="text-center py-6 text-sm text-gray-400">
+        <div className="text-center py-6 text-sm text-gray-500 dark:text-gray-400">
           <Paperclip size={20} className="mx-auto mb-1.5 opacity-40" />
           No attachments yet
         </div>
@@ -236,7 +236,7 @@ export default function AttachmentGallery({ planId, readOnly = false }) {
                   {friendlyName(file)}
                 </p>
                 {file.size && (
-                  <p className="text-[10px] text-gray-400 mt-0.5">{formatBytes(file.size)}</p>
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">{formatBytes(file.size)}</p>
                 )}
                 <div className="flex items-center gap-1.5 mt-1.5">
                   {file.url && (
@@ -255,7 +255,7 @@ export default function AttachmentGallery({ planId, readOnly = false }) {
                     <button
                       onClick={() => handleDelete(file)}
                       disabled={deleting === file.id}
-                      className="flex items-center justify-center w-6 h-6 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-md transition-colors disabled:opacity-40"
+                      className="flex items-center justify-center w-6 h-6 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-md transition-colors disabled:opacity-40"
                     >
                       {deleting === file.id
                         ? <Loader2 size={10} className="animate-spin" />

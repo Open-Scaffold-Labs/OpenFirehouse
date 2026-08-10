@@ -17,14 +17,17 @@ import {
   CalendarClock,
   CalendarOff,
   ArrowLeftRight,
+  Wallet,
 } from 'lucide-react';
 import { MIN_CREW, SHIFT_TIMES } from '../data/schedule';
 import { api } from '../utils/api';
+import { toLocalDay } from '../utils/localDay';
 import ShiftForm from './ShiftForm';
 import DeleteConfirm from './DeleteConfirm';
 import AIActionButton from './AIActionButton';
 import PatternManager from './PatternManager';
 import LeaveManager from './LeaveManager';
+import LeaveBankManager from './LeaveBankManager';
 import CoverageWorkbench from './CoverageWorkbench';
 
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -43,9 +46,16 @@ const SHIFT_COLORS = {
   '24-Hour':      'bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900',
 };
 
-function yyyymmdd(date) {
-  return date.toISOString().slice(0, 10);
-}
+// LOCAL day, not UTC. This was `date.toISOString().slice(0,10)`, which is the
+// SAME defect found and fixed in EventCalendar on 2026-08-05 — in a second,
+// independent calendar implementation, which is why fixing the first one did not
+// fix this one. `isToday()` compares a cell's day key against `yyyymmdd(new Date())`,
+// so from 20:00 EDT (19:00 EST) the UTC date rolls ahead of the local one and the
+// rotation calendar highlights TOMORROW for the last four hours of every day.
+// Using it for the grid keys too (see the month loop) keeps both sides of that
+// comparison in the same timezone, and fixes a latent month-boundary shift east
+// of Greenwich as well.
+const yyyymmdd = toLocalDay;
 
 function coverageLevel(shifts) {
   if (!shifts || shifts.length === 0) return 'none';
@@ -67,6 +77,7 @@ const TABS = [
   { id: 'calendar', label: 'Calendar',  icon: CalendarDays },
   { id: 'patterns', label: 'Patterns',  icon: CalendarClock },
   { id: 'leave',    label: 'Leave',     icon: CalendarOff },
+  { id: 'leavebanks', label: 'Leave banks', icon: Wallet },
   { id: 'coverage', label: 'Coverage',  icon: Shield },
 ];
 
@@ -83,7 +94,7 @@ function TabNav({ activeTab, setActiveTab }) {
             className={`flex-1 flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
               active
                 ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
             }`}
           >
             <Icon className="h-4 w-4" />
@@ -159,7 +170,10 @@ export default function DutySchedule() {
       let cur = new Date(l.startDate + 'T00:00:00');
       const end = new Date(l.endDate + 'T00:00:00');
       while (cur <= end) {
-        const d = cur.toISOString().slice(0, 10);
+        // Local day. These Dates are parsed at LOCAL midnight ('T00:00:00' with no
+        // zone), so toISOString() shifted every key a day earlier for anyone east
+        // of Greenwich — a leave request would have painted the wrong squares.
+        const d = toLocalDay(cur);
         if (!map[d]) map[d] = [];
         map[d].push(l);
         cur.setDate(cur.getDate() + 1);
@@ -242,6 +256,14 @@ export default function DutySchedule() {
       </div>
     );
   }
+  if (activeTab === 'leavebanks') {
+    return (
+      <div className="space-y-6">
+        <TabNav activeTab={activeTab} setActiveTab={setActiveTab} />
+        <LeaveBankManager onBack={() => setActiveTab('calendar')} />
+      </div>
+    );
+  }
   if (activeTab === 'coverage') {
     return (
       <div className="space-y-6">
@@ -273,12 +295,27 @@ export default function DutySchedule() {
 
       {/* ── Stat cards ─────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* SEVERITY FOLLOWS THE VALUE, not the label.
+            These three cards were coloured by what they COUNT rather than by what
+            the count means, and the result was inverted: "0 Understaffed Days" — a
+            good outcome — wore an amber warning triangle, while "25 No Coverage",
+            the worst number on the screen, sat in neutral grey with a plain
+            calendar icon. A chief scanning this row was pulled toward the zero and
+            away from the 25. A count of zero problems is a PASS and reads green;
+            the moment it is non-zero it earns its warning. */}
         {[
-          { label: 'Days Covered',     value: stats.covered,      icon: <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />, bg: 'bg-emerald-50 dark:bg-emerald-950/50' },
-          { label: 'Understaffed Days', value: stats.understaffed, icon: <AlertTriangle className="h-5 w-5 text-amber-500" />, bg: 'bg-amber-50 dark:bg-amber-950/50' },
-          { label: 'No Coverage',       value: stats.empty,        icon: <CalendarDays className="h-5 w-5 text-gray-400" />,   bg: 'bg-gray-100 dark:bg-gray-800' },
-        ].map(({ label, value, icon, bg }) => (
-          <div key={label} className="rounded-xl bg-white dark:bg-gray-900 p-5 shadow-sm ring-1 ring-gray-200">
+          { label: 'Days Covered',      value: stats.covered,      tone: stats.covered > 0 ? 'good' : 'neutral' },
+          { label: 'Understaffed Days', value: stats.understaffed, tone: stats.understaffed > 0 ? 'warn' : 'good' },
+          { label: 'No Coverage',       value: stats.empty,        tone: stats.empty > 0 ? 'warn' : 'good' },
+        ].map(({ label, value, tone }) => {
+          const TONES = {
+            good:    { icon: <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />, bg: 'bg-emerald-50 dark:bg-emerald-950/50' },
+            warn:    { icon: <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />,   bg: 'bg-amber-50 dark:bg-amber-950/50' },
+            neutral: { icon: <CalendarDays className="h-5 w-5 text-gray-500 dark:text-gray-400" />,      bg: 'bg-gray-100 dark:bg-gray-800' },
+          };
+          const { icon, bg } = TONES[tone];
+          return (
+          <div key={label} className="rounded-xl bg-white dark:bg-gray-900 p-5 shadow-sm ring-1 ring-gray-200 dark:ring-gray-700">
             <div className="flex items-center gap-3">
               <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${bg}`}>{icon}</div>
               <div>
@@ -287,7 +324,8 @@ export default function DutySchedule() {
               </div>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* ── AI Actions ────────────────────────────────────────────────────── */}
@@ -325,7 +363,7 @@ export default function DutySchedule() {
           {/* Day headers */}
           <div className="grid grid-cols-7 border-b border-gray-100 dark:border-gray-700">
             {DAYS_OF_WEEK.map((d) => (
-              <div key={d} className="py-2 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">
+              <div key={d} className="py-2 text-center text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 {d}
               </div>
             ))}
@@ -334,7 +372,12 @@ export default function DutySchedule() {
           {/* Calendar cells */}
           <div className="grid grid-cols-7">
             {calendarDays.map((date, i) => {
-              if (!date) return <div key={`empty-${i}`} className="min-h-[90px] border-b border-r border-gray-100 dark:border-gray-700 bg-gray-50/50" />;
+              // Out-of-month filler. `bg-gray-50/50` had no dark twin, so in dark
+              // mode a near-white wash sat over the page and these EMPTY cells were
+              // the brightest thing on the calendar — muted content advancing
+              // instead of receding. Identical to the EventCalendar fix on
+              // 2026-08-05; a second calendar implementation, so a second instance.
+              if (!date) return <div key={`empty-${i}`} aria-hidden="true" className="min-h-[90px] border-b border-r border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-950/60" />;
               const dayShifts = shiftsByDate[date] || [];
               const level = coverageLevel(dayShifts);
               const active = detailDate === date;
@@ -504,7 +547,7 @@ export default function DutySchedule() {
             <div className="flex-1 flex flex-col items-center justify-center text-center px-6 py-12">
               <CalendarDays className="h-10 w-10 text-gray-200 mb-3" />
               <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Select a day</p>
-              <p className="text-xs text-gray-400 mt-1">Click any date on the calendar to view or manage shifts</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Click any date on the calendar to view or manage shifts</p>
             </div>
           )}
         </div>

@@ -1,3 +1,4 @@
+// impeccable-disable overused-font: generated export/print HTML targets email clients + paper, web-safe fonts deliberate
 import { useState, useMemo, useEffect } from 'react';
 import {
   FileText, FileSpreadsheet, Download, Users, Truck,

@@ -453,20 +453,28 @@ export default function LeaveManager({ onBack, onOpenCoverage }) {
   const [workflowResult, setWorkflowResult] = useState(null);
   const [assigningGap, setAssigningGap] = useState(null);
   const [coverageLeave, setCoverageLeave] = useState(null);
+  const [denying, setDenying] = useState(null);            // the request being denied (a reason is required)
+  const [denyReason, setDenyReason] = useState('');
+  const [balancesByKey, setBalancesByKey] = useState({});  // `${member_id}:${leave_type_id}` → enriched balance row
 
   const fetchData = useCallback(async () => {
     try {
-      const [lRes, mRes, gRes] = await Promise.all([
+      const [lRes, mRes, gRes, bRes] = await Promise.all([
         api.get('/api/leave'),
         api.get('/api/members'),
         api.get('/api/leave/coverage-gaps'),
+        api.get('/api/leave-types/balances').catch(() => ({ data: [] })), // banks may not be set up yet
       ]);
       const requests = Array.isArray(lRes?.data) ? lRes.data : Array.isArray(lRes) ? lRes : [];
       const members = Array.isArray(mRes?.data) ? mRes.data : Array.isArray(mRes) ? mRes : [];
       const gaps = Array.isArray(gRes?.data) ? gRes.data : Array.isArray(gRes) ? gRes : [];
+      const balRows = Array.isArray(bRes?.data) ? bRes.data : [];
+      const balMap = {};
+      for (const b of balRows) balMap[`${b.member_id}:${b.leave_type_id}`] = b;
       setRequests(requests);
       setMembers(members);
       setCoverageGaps(gaps);
+      setBalancesByKey(balMap);
     } catch (err) {
       console.error('Failed to load leave data:', err);
     } finally {
@@ -510,16 +518,19 @@ export default function LeaveManager({ onBack, onOpenCoverage }) {
     setDeleting(null);
   }
 
-  async function handleStatusChange(req, newStatus) {
+  async function handleStatusChange(req, newStatus, reason) {
     try {
       const res = await api.patch(`/api/leave/${req.id}`, {
         status: newStatus,
         approvedBy: newStatus === 'Approved' || newStatus === 'Denied' ? 'Chief' : undefined,
+        ...(reason ? { reason } : {}),
       });
       // Show workflow result if approval triggered changes
       if (res.workflow) {
         setWorkflowResult(res.workflow);
       }
+      setDenying(null);
+      setDenyReason('');
       await fetchData();
     } catch (err) {
       alert(err.message || 'Failed to update status');
@@ -579,7 +590,7 @@ export default function LeaveManager({ onBack, onOpenCoverage }) {
         <div className="flex items-center gap-3">
           {onBack && (
             <button onClick={onBack}
-              className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">
+              className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">
               ← Back to Schedule
             </button>
           )}
@@ -680,9 +691,9 @@ export default function LeaveManager({ onBack, onOpenCoverage }) {
                           aria-label="Approve leave request">
                           <CheckCircle className="h-4 w-4" />
                         </button>
-                        <button onClick={() => handleStatusChange(req, 'Denied')}
-                          className="p-1.5 rounded text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors"
-                          title="Deny"
+                        <button onClick={() => { setDenying(denying?.id === req.id ? null : req); setDenyReason(''); }}
+                          className={`p-1.5 rounded transition-colors ${denying?.id === req.id ? 'text-red-600 bg-red-50 dark:bg-red-950/50' : 'text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50'}`}
+                          title="Deny — a reason is required"
                           aria-label="Deny leave request">
                           <XCircle className="h-4 w-4" />
                         </button>
@@ -718,8 +729,42 @@ export default function LeaveManager({ onBack, onOpenCoverage }) {
                   )}
                 </div>
 
+                {/* Requester's bank balance for this request (1.2e-e) */}
+                {req.leave_type_id != null && req.hours != null && (() => {
+                  const bal = balancesByKey[`${req.memberId}:${req.leave_type_id}`];
+                  if (!bal) return null;
+                  const avail = Number(bal.available_to_request);
+                  const asks = Number(req.hours);
+                  const short = asks > avail;
+                  return (
+                    <div className={`mt-2 inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs ${short ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300' : 'bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>
+                      {short && <AlertTriangle className="h-3 w-3" aria-hidden="true" />}
+                      <span><span className="font-semibold">{bal.code}</span>: {avail}h available · asks {asks}h{short ? ` · ${Math.round((asks - avail) * 100) / 100}h short` : ''}</span>
+                    </div>
+                  );
+                })()}
+
                 {req.reason && (
                   <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{req.reason}</p>
+                )}
+
+                {/* Deny requires a reason — it's stored on the record and shown to the member (1.2e-e) */}
+                {denying?.id === req.id && (
+                  <div className="mt-3 rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 p-3">
+                    <label htmlFor={`deny-${req.id}`} className="block text-xs font-semibold text-red-700 dark:text-red-300 mb-1">Reason for denial (the member will see this)</label>
+                    <textarea id={`deny-${req.id}`} rows={2} value={denyReason}
+                      onChange={e => setDenyReason(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                      placeholder="e.g. would drop the shift below minimum staffing — resubmit for another day" />
+                    <div className="mt-2 flex items-center gap-2">
+                      <button disabled={!denyReason.trim()} onClick={() => handleStatusChange(req, 'Denied', denyReason.trim())}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-700 hover:bg-red-800 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg transition-colors">
+                        <XCircle className="h-3.5 w-3.5" aria-hidden="true" /> Confirm denial
+                      </button>
+                      <button onClick={() => { setDenying(null); setDenyReason(''); }}
+                        className="px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">Cancel</button>
+                    </div>
+                  </div>
                 )}
               </div>
 

@@ -49,6 +49,27 @@ const ALLOWED_LINE_SHAPES = [
   // department (NOT the tenant key — department_id from the JWT is), and it is
   // validated against the caller's department before use. Reviewed exception.
   /const clientHouseTag = req\.body\.station_id;/,
+  // 2.1a (0072) per-station rosters: a multi-house department must be able to say
+  // WHICH station's roster to publish/read. The client station_id is ALWAYS passed
+  // through resolveRosterStation(), which validates it belongs to the caller's
+  // department (WHERE id=$1 AND department_id=$2) and returns null for a foreign/
+  // absent station — so it is not a tenant-spoof vector (department_id from the JWT
+  // remains the tenant key). Reviewed exception, scoped to the validated resolver.
+  /resolveRosterStation\([^)]*req\.(query|body)/,
+  // 2.3 (0074) station-display pairing: the chief names WHICH of their own stations a
+  // display pairs to. station_id here is a HOUSE reference validated against the caller's
+  // department (SELECT ... WHERE id=$1 AND department_id=$2) before use — NOT the tenant
+  // key (department_id from the JWT is). Reviewed exception, same class as clientHouseTag.
+  /const \{ station_id, label \} = req\.body/,
+  // 4.1g response compliance report: NFPA §4.1.2.5.2 requires performance to be
+  // evaluated "in each geographic area within the jurisdiction", so a chief must
+  // be able to filter to one of their OWN houses. station_id here is a HOUSE
+  // reference resolved through resolveOwnStation(), which is scoped by the JWT's
+  // department (SELECT ... WHERE id=$1 AND department_id=$2) and REFUSES a
+  // foreign or absent station with 404 rather than returning an empty report.
+  // department_id from the JWT remains the tenant key. Reviewed exception, same
+  // class as resolveRosterStation and the 0074 display pairing.
+  /resolveOwnStation\([^)]*req\.query/,
 ];
 
 function listJsFiles(dir) {

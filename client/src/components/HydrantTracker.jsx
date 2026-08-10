@@ -567,7 +567,7 @@ export default function HydrantTracker() {
           {['All', ...HYDRANT_STATUSES].map(s => (
             <button key={s} onClick={() => setStatusFlt(s)}
               className={`px-3 py-1 text-xs font-semibold rounded-lg transition-colors ${
-                statusFlt === s ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                statusFlt === s ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
               }`}>{s}</button>
           ))}
         </div>

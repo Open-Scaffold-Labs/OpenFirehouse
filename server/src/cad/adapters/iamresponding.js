@@ -73,7 +73,13 @@ module.exports = {
     const p = req.body || {};
 
     // TODO: confirm these field names against a real IamResponding payload.
-    const alertId = String(p.callId || p.dispatch_id || p.id || `iar-${Date.now()}`);
+    // Raw vendor id ONLY — no fallback here. Synthesis moved to
+    // processDispatch (cad/alertIdentity.js), which is the one place the
+    // DEPARTMENT is known: NENA namespaces an identifier by the agency that
+    // created it, and the old `${prefix}-${Date.now()}` fallback was
+    // non-deterministic — a vendor retry minted a NEW id and defeated the
+    // duplicate guard exactly when it was needed.
+    const alertId = p.callId || p.dispatch_id || p.id || null;
     const address = String(p.address || p.location || '');
     const units = String(p.units || p.apparatus || '');
     const description = String(p.callType || p.nature || p.description || 'Dispatch');

@@ -161,12 +161,17 @@ function fmtTime(secs) {
 // ─── DemoTimeline ─────────────────────────────────────────────────────────────
 // Renders a sticky control bar + narrator cue panel at the top of CommandBoard.
 // Props:
-//   onEvent(event)     — called for each scenario event as it fires
+//   setIncident(fn)    — THE ONLY WAY scenario events reach CommandBoard state.
+//                        This component is the single owner of demo event application.
+//                        There is deliberately NO onEvent callback: CommandBoard once
+//                        had one that re-applied the same events, which double-wrote
+//                        every Radio Log entry and duplicated the IC card. Do not add one.
 //   onActivate(inc)    — called at t=0 to create the demo incident
 //   onClose()          — dismiss the demo player
 //   onDemoComplete()   — called when the scenario reaches the end
+//   onTick(secs)       — virtual-clock tick, for the presenter overlay
 
-export default function DemoTimeline({ onEvent, onActivate, onClose, onDemoComplete, setIncident, onTick }) {
+export default function DemoTimeline({ onActivate, onClose, onDemoComplete, setIncident, onTick }) {
   const scenario = DEMO_SCENARIO;
 
   const [playing,       setPlaying]       = useState(false);
@@ -193,11 +198,9 @@ export default function DemoTimeline({ onEvent, onActivate, onClose, onDemoCompl
   const rafRef        = useRef(null);
 
   // Keep fresh refs to callbacks so the memoized tick always has the latest
-  const onEventRef        = useRef(onEvent);
   const onDemoCompleteRef = useRef(onDemoComplete);
   const setIncidentRef    = useRef(setIncident);
   const onTickRef         = useRef(onTick);
-  useEffect(() => { onEventRef.current = onEvent; }, [onEvent]);
   useEffect(() => { onTickRef.current = onTick; }, [onTick]);
   useEffect(() => { onDemoCompleteRef.current = onDemoComplete; }, [onDemoComplete]);
   useEffect(() => { setIncidentRef.current = setIncident; }, [setIncident]);
@@ -351,9 +354,6 @@ export default function DemoTimeline({ onEvent, onActivate, onClose, onDemoCompl
         return updated;
       });
     }
-
-    // Also bubble up via callback (legacy)
-    if (onEventRef.current) onEventRef.current(ev);
   }
 
   // ── Play ──────────────────────────────────────────────────────────────────

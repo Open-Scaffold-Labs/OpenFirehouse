@@ -5,6 +5,7 @@ import {
   Target, Shield, Zap, BookOpen, Flame, ArrowUpRight, ArrowDownRight,
 } from 'lucide-react';
 import { api } from '../utils/api';
+import { FAB_RAIL_GUTTER } from '../utils/fabRail';
 
 // ── Grade badge ─────────────────────────────────────────────────────────────
 
@@ -58,7 +59,7 @@ function MiniBarChart({ data, labels, color = 'bg-red-500', height = 48 }) {
       {data.map((v, i) => (
         <div key={i} className="flex-1 flex flex-col items-center gap-0.5">
           <div className={`w-full rounded-t ${color} transition-all`} style={{ height: `${Math.max(2, (v / max) * height)}px` }} title={`${labels?.[i] || i}: ${v}`} />
-          {labels && <span className="text-[8px] text-gray-400">{labels[i]}</span>}
+          {labels && <span className="text-[11px] text-gray-500 dark:text-gray-400">{labels[i]}</span>}
         </div>
       ))}
     </div>
@@ -88,7 +89,7 @@ function AnalysisCard({ analysis }) {
           <Clock size={16} className="text-blue-600 dark:text-blue-400" />
           <span className="flex-1 text-left text-sm font-bold text-gray-900 dark:text-gray-100">Response Time Assessment</span>
           <RatingPill rating={analysis.responseTimeAssessment?.rating} />
-          {open.response ? <ChevronDown size={14} className="text-gray-400" /> : <ChevronRight size={14} className="text-gray-400" />}
+          {open.response ? <ChevronDown size={14} className="text-gray-500 dark:text-gray-400" /> : <ChevronRight size={14} className="text-gray-500 dark:text-gray-400" />}
         </button>
         {open.response && analysis.responseTimeAssessment && (
           <div className="px-5 pb-4 space-y-2 border-t bg-gray-50/50 dark:bg-gray-950/50">
@@ -106,7 +107,7 @@ function AnalysisCard({ analysis }) {
           <Target size={16} className="text-purple-600 dark:text-purple-400" />
           <span className="flex-1 text-left text-sm font-bold text-gray-900 dark:text-gray-100">Resource Deployment</span>
           <RatingPill rating={analysis.resourceDeployment?.rating} />
-          {open.resource ? <ChevronDown size={14} className="text-gray-400" /> : <ChevronRight size={14} className="text-gray-400" />}
+          {open.resource ? <ChevronDown size={14} className="text-gray-500 dark:text-gray-400" /> : <ChevronRight size={14} className="text-gray-500 dark:text-gray-400" />}
         </button>
         {open.resource && analysis.resourceDeployment && (
           <div className="px-5 pb-4 space-y-2 border-t bg-gray-50/50 dark:bg-gray-950/50">
@@ -126,8 +127,8 @@ function AnalysisCard({ analysis }) {
           <button onClick={() => toggle('tactical')} className="w-full flex items-center gap-3 px-5 py-3 hover:bg-gray-50 dark:hover:bg-gray-800">
             <Shield size={16} className="text-amber-600 dark:text-amber-400" />
             <span className="flex-1 text-left text-sm font-bold text-gray-900 dark:text-gray-100">Tactical Observations</span>
-            <span className="text-xs text-gray-400">{analysis.tacticalObservations.length} items</span>
-            {open.tactical ? <ChevronDown size={14} className="text-gray-400" /> : <ChevronRight size={14} className="text-gray-400" />}
+            <span className="text-xs text-gray-500 dark:text-gray-400">{analysis.tacticalObservations.length} items</span>
+            {open.tactical ? <ChevronDown size={14} className="text-gray-500 dark:text-gray-400" /> : <ChevronRight size={14} className="text-gray-500 dark:text-gray-400" />}
           </button>
           {open.tactical && (
             <div className="px-5 pb-4 border-t bg-gray-50/50 dark:bg-gray-950/50 pt-3 space-y-1.5">
@@ -179,7 +180,7 @@ function TrendCard({ trends }) {
     <div className="space-y-4">
       {/* Executive Summary */}
       <div className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-2xl px-5 py-4 text-white">
-        <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Executive Summary</p>
+        <p className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Executive Summary</p>
         <p className="text-sm leading-relaxed">{trends.executiveSummary}</p>
       </div>
 
@@ -280,7 +281,7 @@ function TrendCard({ trends }) {
         <div className="bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900 rounded-2xl px-4 py-3">
           <p className="text-xs font-bold text-red-800 dark:text-red-300 mb-2 flex items-center gap-1.5"><AlertTriangle size={12} /> Risk Alerts</p>
           {trends.riskAlerts.map((a, i) => (
-            <p key={i} className="text-xs text-red-700 dark:text-red-300 mb-1">⚠ {a}</p>
+            <p key={i} className="flex items-start gap-1.5 text-xs text-red-700 dark:text-red-300 mb-1"><AlertTriangle size={12} className="mt-0.5 flex-shrink-0" aria-hidden="true" /> {a}</p>
           ))}
         </div>
       )}
@@ -354,7 +355,7 @@ export default function IncidentIntelligence() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-24 text-gray-400">
+      <div className="flex items-center justify-center py-24 text-gray-500 dark:text-gray-400">
         <Loader2 className="h-8 w-8 animate-spin mr-3" />
         <span className="text-sm">Loading incident data…</span>
       </div>
@@ -393,7 +394,7 @@ export default function IncidentIntelligence() {
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-colors ${
-              tab === t.id ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+              tab === t.id ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
             }`}>
             <t.icon size={13} /> {t.label}
           </button>
@@ -406,19 +407,19 @@ export default function IncidentIntelligence() {
           {/* KPI cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-white dark:bg-gray-900 rounded-2xl border p-4">
-              <div className="flex items-center gap-2 mb-1"><Flame size={14} className="text-red-600 dark:text-red-400" /><span className="text-[10px] font-bold text-gray-400 uppercase">Incidents YTD</span></div>
+              <div className="flex items-center gap-2 mb-1"><Flame size={14} className="text-red-600 dark:text-red-400" /><span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase">Incidents YTD</span></div>
               <p className="text-3xl font-black text-gray-900 dark:text-gray-100">{stats.totalIncidents || 0}</p>
             </div>
             <div className="bg-white dark:bg-gray-900 rounded-2xl border p-4">
-              <div className="flex items-center gap-2 mb-1"><Clock size={14} className="text-blue-600 dark:text-blue-400" /><span className="text-[10px] font-bold text-gray-400 uppercase">Avg Response</span></div>
+              <div className="flex items-center gap-2 mb-1"><Clock size={14} className="text-blue-600 dark:text-blue-400" /><span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase">Avg Response</span></div>
               <p className="text-3xl font-black text-gray-900 dark:text-gray-100">{stats.avgResponseTime != null ? `${stats.avgResponseTime}m` : '—'}</p>
             </div>
             <div className="bg-white dark:bg-gray-900 rounded-2xl border p-4">
-              <div className="flex items-center gap-2 mb-1"><Target size={14} className="text-purple-600 dark:text-purple-400" /><span className="text-[10px] font-bold text-gray-400 uppercase">90th %ile</span></div>
+              <div className="flex items-center gap-2 mb-1"><Target size={14} className="text-purple-600 dark:text-purple-400" /><span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase">90th %ile</span></div>
               <p className="text-3xl font-black text-gray-900 dark:text-gray-100">{stats.p90ResponseTime != null ? `${stats.p90ResponseTime}m` : '—'}</p>
             </div>
             <div className="bg-white dark:bg-gray-900 rounded-2xl border p-4">
-              <div className="flex items-center gap-2 mb-1"><Clock size={14} className="text-amber-600 dark:text-amber-400" /><span className="text-[10px] font-bold text-gray-400 uppercase">Avg Duration</span></div>
+              <div className="flex items-center gap-2 mb-1"><Clock size={14} className="text-amber-600 dark:text-amber-400" /><span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase">Avg Duration</span></div>
               <p className="text-3xl font-black text-gray-900 dark:text-gray-100">{stats.avgDuration != null ? `${stats.avgDuration}m` : '—'}</p>
             </div>
           </div>
@@ -468,7 +469,7 @@ export default function IncidentIntelligence() {
                       <span className="text-lg font-black text-red-700 dark:text-red-300">{loc.count}</span>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-medium text-gray-900 dark:text-gray-100 truncate">{loc.address}</p>
-                        <p className="text-[10px] text-gray-400">{loc.types.join(', ')}</p>
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400">{loc.types.join(', ')}</p>
                       </div>
                     </div>
                   ))}
@@ -482,21 +483,24 @@ export default function IncidentIntelligence() {
             <div className="bg-white dark:bg-gray-900 rounded-2xl border overflow-hidden">
               <div className="px-5 py-3 bg-gray-50 dark:bg-gray-950 border-b flex items-center justify-between">
                 <p className="text-sm font-bold text-gray-700 dark:text-gray-300">Recent Incidents — Click to Analyze</p>
-                <span className="text-[10px] text-gray-400">AI analysis requires API key</span>
+                <span className="text-[11px] text-gray-500 dark:text-gray-400">AI analysis requires API key</span>
               </div>
               <div className="divide-y">
+                {/* FAB_RAIL_GUTTER: the Analyze button reaches the right edge, and the
+                    floating rail claims the outer 68px of the viewport. Measured on prod
+                    2026-08-06: 8-20% covered at three different scroll positions. */}
                 {stats.recentIncidents.map(inc => (
-                  <div key={inc.id} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                  <div key={inc.id} className={`flex items-center gap-3 px-5 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors ${FAB_RAIL_GUTTER}`}>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-bold text-gray-900 dark:text-gray-100">#{inc.incidentNumber}</span>
-                        <span className="px-2 py-0.5 bg-gray-100 dark:bg-gray-800 rounded-full text-[10px] font-medium text-gray-600 dark:text-gray-300">{inc.type}</span>
-                        <span className="text-[10px] text-gray-400">{inc.alarmLevel}</span>
+                        <span className="px-2 py-0.5 bg-gray-100 dark:bg-gray-800 rounded-full text-[11px] font-medium text-gray-600 dark:text-gray-300">{inc.type}</span>
+                        <span className="text-[11px] text-gray-500 dark:text-gray-400">{inc.alarmLevel}</span>
                       </div>
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{inc.address} · {inc.date} {inc.time}</p>
                     </div>
                     <button onClick={() => analyzeIncident(inc)}
-                      className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-bold bg-gray-900 text-white rounded-lg hover:bg-gray-800">
+                      className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold bg-gray-900 text-white rounded-lg hover:bg-gray-800">
                       <Brain size={10} /> Analyze
                     </button>
                   </div>
@@ -515,12 +519,12 @@ export default function IncidentIntelligence() {
               <Flame size={16} className="text-red-400" />
               <div className="flex-1">
                 <span className="text-sm font-bold">#{selectedIncident.incidentNumber}</span>
-                <span className="text-xs text-gray-400 ml-2">{selectedIncident.type} · {selectedIncident.address} · {selectedIncident.date}</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">{selectedIncident.type} · {selectedIncident.address} · {selectedIncident.date}</span>
               </div>
             </div>
           )}
           {aiLoading && (
-            <div className="flex items-center justify-center py-16 text-gray-400">
+            <div className="flex items-center justify-center py-16 text-gray-500 dark:text-gray-400">
               <Loader2 className="h-8 w-8 animate-spin mr-3" />
               <span className="text-sm">AI is analyzing this incident…</span>
             </div>
@@ -542,7 +546,7 @@ export default function IncidentIntelligence() {
       {tab === 'trends' && (
         <div className="space-y-4">
           {aiLoading && (
-            <div className="flex items-center justify-center py-16 text-gray-400">
+            <div className="flex items-center justify-center py-16 text-gray-500 dark:text-gray-400">
               <Loader2 className="h-8 w-8 animate-spin mr-3" />
               <span className="text-sm">AI is analyzing {stats?.totalIncidents || 0} incidents for trends…</span>
             </div>

@@ -711,7 +711,8 @@ function TrainingLogEntry({ onSave, saving }) {
         <h3 className="font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2"><FileText size={18} className="text-red-600 dark:text-red-400" /> Log Training Activity</h3>
         <p className="text-sm text-gray-600 dark:text-gray-300">
           Record in-person drills, ride-alongs, conferences, external online courses, or any training activity
-          that happens outside OpenFirehouse. These records count toward your ISO PPC hours and LOSAP points.
+          that happens outside OpenFirehouse. These records are grouped by FSRS Item 580 sub-item and
+          counted toward its stated hours requirement.
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -809,13 +810,14 @@ function IsoDashboard({ courses, completions }) {
     }
   });
 
-  const scored = ISO_CATEGORIES.filter(c => c.ppcSection);
+  // Hours-based sub-items only — 580.H is a coverage requirement, not hours.
+  const scored = ISO_CATEGORIES.filter(c => c.ppcSection && c.annualRequirement);
 
   return (
     <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-5 space-y-4">
       <div className="flex items-center gap-2">
         <BarChart3 size={18} className="text-red-600 dark:text-red-400" />
-        <h3 className="font-bold text-gray-900 dark:text-gray-100">ISO PPC Credit Progress</h3>
+        <h3 className="font-bold text-gray-900 dark:text-gray-100">ISO Category Hours Progress</h3>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {scored.map(cat => {
@@ -1142,9 +1144,9 @@ export default function TrainingCatalog() {
         <p className="font-semibold mb-1">Training Hub — Your Single Training Record</p>
         <p className="text-xs leading-relaxed text-blue-600 dark:text-blue-400">
           OpenFirehouse is your department's unified training record. Add your own video courses with quizzes,
-          log in-person drills and external training, or import records from platforms like Vector Solutions,
-          FireRescue1 Academy, or your state fire academy. All training hours feed into your ISO PPC credit
-          tracking and member LOSAP reporting.
+          log in-person drills and external training, or import records from third-party training platforms
+          or your state fire academy. All training hours are grouped by FSRS Item 580 sub-item and tracked
+          against its stated hours requirement.
         </p>
       </div>
     </div>

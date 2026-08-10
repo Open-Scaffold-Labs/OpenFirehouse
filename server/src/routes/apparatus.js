@@ -15,7 +15,7 @@ const express = require('express');
 const bcrypt  = require('bcrypt');
 const router  = express.Router();
 const { apparatus: db, pool } = require('../db');
-const { requireOfficer } = require('../middleware/requireRole');
+const { requireOfficer, isMechanic } = require('../middleware/requireRole');
 const { z } = require('zod');
 const { validate } = require('../utils/routeKit');
 
@@ -164,7 +164,17 @@ router.post('/', requireOfficer, async (req, res) => {
 });
 
 // ── PATCH /api/apparatus/:id ──────────────────────────────────────────────────
-router.patch('/:id', requireOfficer, validate({ params: idParam }), async (req, res) => {
+// 2.2: officer+ OR the fleet-maintenance grant may edit a rig (the market's
+// "manage vehicles" capability IS the mechanic); the OOS flip below is gated
+// tighter (chief-or-mechanic) per the locked field ruling.
+function requireOfficerOrMechanic(req, res, next) {
+  const { roleLevel } = require('../middleware/requireRole');
+  if (!req.user || (roleLevel(req.user.role) < 2 && req.user.fleet_maintenance !== true)) {
+    return res.status(403).json({ error: 'This action requires officer authority or the fleet-maintenance grant.', code: 'FORBIDDEN_ROLE' });
+  }
+  next();
+}
+router.patch('/:id', requireOfficerOrMechanic, validate({ params: idParam }), async (req, res) => {
   try {
     const id = Number(req.params.id);
     const existing = await db.findById(id, req.user.department_id);
@@ -172,6 +182,21 @@ router.patch('/:id', requireOfficer, validate({ params: idParam }), async (req, 
 
     const errors = validateUnit(req.body, false);
     if (errors.length) return res.status(400).json({ error: errors.join('; ') });
+
+    // 2.2 (locked field gate): flipping a rig in/out of mechanical OOS is a
+    // chief-or-mechanic act — a deliberate human decision, never an officer
+    // side-effect and never automation (the market-wide ceiling). Other edits
+    // stay officer+. isMechanic = chief level OR the fleet_maintenance grant.
+    if (req.body.status !== undefined) {
+      const wasOOS = existing.status === 'Out of Service';
+      const willBeOOS = req.body.status === 'Out of Service';
+      if (wasOOS !== willBeOOS && !isMechanic(req.user)) {
+        return res.status(403).json({
+          error: 'Placing a rig in or out of service requires chief authority or the fleet-maintenance grant.',
+          code: 'OOS_MECHANIC_ONLY',
+        });
+      }
+    }
 
     if (req.body.designation && req.body.designation !== existing.designation) {
       const collision = await db.findByDesignation(req.body.designation, req.user.department_id);

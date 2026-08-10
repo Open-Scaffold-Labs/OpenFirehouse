@@ -40,7 +40,7 @@ function fmtDate(iso) {
 function ActionItemStatus({ status }) {
   if (status === 'completed') return <CheckCircle size={12} className="text-green-600 dark:text-green-400 flex-shrink-0" />;
   if (status === 'in_progress') return <Clock size={12} className="text-amber-600 dark:text-amber-400 flex-shrink-0" />;
-  return <Circle size={12} className="text-gray-400 flex-shrink-0" />;
+  return <Circle size={12} className="text-gray-500 dark:text-gray-400 flex-shrink-0" />;
 }
 
 // ── Single Meeting Card ──────────────────────────────────────────────────────
@@ -90,7 +90,7 @@ function MeetingCard({ meeting }) {
             </div>
           </div>
         </div>
-        {expanded ? <ChevronUp size={14} className="text-gray-400 flex-shrink-0" /> : <ChevronDown size={14} className="text-gray-400 flex-shrink-0" />}
+        {expanded ? <ChevronUp size={14} className="text-gray-500 dark:text-gray-400 flex-shrink-0" /> : <ChevronDown size={14} className="text-gray-500 dark:text-gray-400 flex-shrink-0" />}
       </button>
 
       {expanded && (
@@ -103,13 +103,13 @@ function MeetingCard({ meeting }) {
           {/* Agenda */}
           {agenda.length > 0 && (
             <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Agenda</p>
+              <p className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Agenda</p>
               <div className="space-y-1">
                 {agenda.map((item, i) => (
                   <div key={i} className="flex items-start gap-2 text-xs text-gray-700 dark:text-gray-300">
-                    <span className="text-gray-400 font-mono w-4 flex-shrink-0">{i + 1}.</span>
+                    <span className="text-gray-500 dark:text-gray-400 font-mono w-4 flex-shrink-0">{i + 1}.</span>
                     <span>{item.item || item}</span>
-                    {item.presenter && <span className="text-gray-400 ml-auto flex-shrink-0">— {item.presenter}</span>}
+                    {item.presenter && <span className="text-gray-500 dark:text-gray-400 ml-auto flex-shrink-0">— {item.presenter}</span>}
                   </div>
                 ))}
               </div>
@@ -119,12 +119,12 @@ function MeetingCard({ meeting }) {
           {/* Motions */}
           {motions.length > 0 && (
             <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Motions</p>
+              <p className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Motions</p>
               <div className="space-y-1.5">
                 {motions.map((m, i) => (
                   <div key={i} className="text-xs bg-white dark:bg-gray-900 rounded-lg border border-gray-100 dark:border-gray-700 px-3 py-2">
                     <p className="text-gray-800 dark:text-gray-100 font-medium">{m.text}</p>
-                    <p className="text-gray-400 mt-0.5">
+                    <p className="text-gray-500 dark:text-gray-400 mt-0.5">
                       Moved: {m.moved_by} · Seconded: {m.seconded_by} · <span className="font-semibold text-gray-600 dark:text-gray-300">{m.result}</span>
                     </p>
                   </div>
@@ -136,17 +136,17 @@ function MeetingCard({ meeting }) {
           {/* Action Items */}
           {actionItems.length > 0 && (
             <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Action Items</p>
+              <p className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Action Items</p>
               <div className="space-y-1">
                 {actionItems.map((item, i) => (
                   <div key={i} className="flex items-start gap-2 text-xs">
                     <ActionItemStatus status={item.status} />
                     <div className="min-w-0">
-                      <span className={`text-gray-800 dark:text-gray-100 ${item.status === 'completed' ? 'line-through text-gray-400' : ''}`}>
+                      <span className={`text-gray-800 dark:text-gray-100 ${item.status === 'completed' ? 'line-through text-gray-500 dark:text-gray-400' : ''}`}>
                         {item.task}
                       </span>
-                      <span className="text-gray-400"> — {item.assigned_to}</span>
-                      {item.due_date && <span className="text-gray-400"> (due {fmtDate(item.due_date)})</span>}
+                      <span className="text-gray-500 dark:text-gray-400"> — {item.assigned_to}</span>
+                      {item.due_date && <span className="text-gray-500 dark:text-gray-400"> (due {fmtDate(item.due_date)})</span>}
                     </div>
                   </div>
                 ))}
@@ -157,12 +157,12 @@ function MeetingCard({ meeting }) {
           {/* Attendees */}
           {attendeeCount > 0 && (
             <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Attendees</p>
+              <p className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Attendees</p>
               <div className="flex flex-wrap gap-1.5">
                 {meeting.attendees.map((a, i) => (
                   <span key={i} className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
                     {a.name || a}
-                    {a.role && <span className="text-gray-400"> · {a.role}</span>}
+                    {a.role && <span className="text-gray-500 dark:text-gray-400"> · {a.role}</span>}
                   </span>
                 ))}
               </div>
@@ -216,7 +216,7 @@ export default function LinkedMeetings({ module, recordId, recordLabel, onNaviga
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-8 text-gray-400">
+      <div className="flex items-center justify-center py-8 text-gray-500 dark:text-gray-400">
         <Loader2 size={16} className="animate-spin mr-2" />
         <span className="text-sm">Loading meetings…</span>
       </div>
@@ -251,7 +251,7 @@ export default function LinkedMeetings({ module, recordId, recordLabel, onNaviga
 
       {/* Meeting List */}
       {meetings.length === 0 ? (
-        <div className="text-center py-6 text-gray-400 bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-700">
+        <div className="text-center py-6 text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-700">
           <MessageSquare size={24} className="mx-auto mb-2 opacity-30" />
           <p className="text-sm font-medium">No meetings linked to this record.</p>
           {onNavigateToMeetings && (

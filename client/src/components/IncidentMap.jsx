@@ -89,7 +89,7 @@ function LayerToggle({ icon: Icon, label, color, count, active, onToggle }) {
     <button
       onClick={onToggle}
       className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-        active ? `bg-${color}-100 text-${color}-700 border border-${color}-300 shadow-sm` : 'bg-gray-100 dark:bg-gray-800 text-gray-400 border border-transparent'
+        active ? `bg-${color}-100 text-${color}-700 border border-${color}-300 shadow-sm` : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border border-transparent'
       }`}
     >
       <Icon size={12} />
@@ -108,11 +108,11 @@ function DetailPanel({ selected, onClose }) {
     <div className="absolute top-2 right-2 z-[1000] bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-72 max-h-80 overflow-y-auto">
       <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 dark:border-gray-700">
         <span className="text-xs font-black text-gray-700 dark:text-gray-300 uppercase">{type}</span>
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-xs font-bold">Close</button>
+        <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-xs font-bold">Close</button>
       </div>
       <div className="p-3 space-y-1.5 text-xs">
         {Object.entries(data).map(([k, v]) => (
-          v && <div key={k}><span className="text-gray-400 font-bold uppercase text-[10px]">{k}: </span><span className="text-gray-800 dark:text-gray-100 font-medium">{String(v)}</span></div>
+          v && <div key={k}><span className="text-gray-500 dark:text-gray-400 font-bold uppercase text-[10px]">{k}: </span><span className="text-gray-800 dark:text-gray-100 font-medium">{String(v)}</span></div>
         ))}
       </div>
     </div>
@@ -278,7 +278,7 @@ export default function IncidentMap() {
         />
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-white/60 rounded-2xl z-[500]">
-            <Loader2 size={24} className="animate-spin text-gray-400" />
+            <Loader2 size={24} className="animate-spin text-gray-500 dark:text-gray-400" />
           </div>
         )}
         {failed && (

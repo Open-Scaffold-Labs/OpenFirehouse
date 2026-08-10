@@ -1,9 +1,9 @@
 # OpenFirehouse Trademark & Brand Policy
 
-> **Not legal advice.** **Open Firehouse** and **FireHazmat** are trademarks of
-> Open Scaffold Labs, LLC, with U.S. trademark registration applications pending
-> at the USPTO. We claim them as common-law marks (™) in the meantime; this
-> policy applies whether they remain common-law marks or proceed to registration (®).
+> **Draft for counsel review — not legal advice.** Trademark applications for
+> "OpenFirehouse" and "Fire Hazmat" are in progress; this policy is written to
+> apply whether the marks are registered (®) or claimed as common-law marks
+> (™). Counsel should confirm scope once registrations issue.
 
 ## Why this policy exists
 
@@ -21,8 +21,8 @@ Enterprise Linux: open code, protected brand.
 
 ## The marks covered
 
-- **Open Firehouse**™ (word mark) — including its stylized one-word form "OpenFirehouse" — and the OpenFirehouse logo
-- **FireHazmat**™ (word mark) and the FireHazmat logo
+- **OpenFirehouse**™ (word mark) and the OpenFirehouse logo
+- **Fire Hazmat**™ (word mark) and the Fire Hazmat logo
 - Confusingly similar variations and the associated product names
 
 Owner: Open Scaffold Labs, LLC.
@@ -63,13 +63,14 @@ logo must be yours. (This is exactly how the AGPL and the trademark policy work
 together: the AGPL guarantees your right to fork the *code*; this policy keeps
 the *name* meaningful.)
 
-## Interaction with the license
+## Interaction with the other licenses
 
 - The **AGPL v3** (`LICENSE`) grants code rights only — never trademark rights.
-  Running, forking, or modifying the software under the AGPL never includes any
-  right to the OpenFirehouse name or logo; brand use is governed solely by this
-  policy. Any separate right to use the marks in a product would be negotiated
-  and stated expressly in writing.
+- A **Commercial/OEM license** (`COMMERCIAL-LICENSE.md`) does not by itself
+  grant trademark rights; any right to use the marks in a commercial product is
+  negotiated separately and stated expressly.
+- The **Hosted Service** is the only offering entitled to present itself as the
+  official OpenFirehouse service.
 
 ## Requesting permission
 
@@ -80,5 +81,5 @@ writing; we just need to say yes first so the marks stay trustworthy.
 
 ## Changes
 
-We may update this policy as the trademark applications progress. Material
+We may update this policy as the trademark registrations progress. Material
 changes will be noted in the repository history.

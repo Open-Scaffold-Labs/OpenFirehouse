@@ -214,7 +214,7 @@ export default function QualificationsManager() {
             ].map(v => (
               <button key={v.id} onClick={() => setView(v.id)}
                 className={`px-3 py-1 text-xs font-semibold rounded-lg transition-colors ${
-                  view === v.id ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                  view === v.id ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                 }`}>{v.label}</button>
             ))}
           </div>
@@ -380,7 +380,7 @@ export default function QualificationsManager() {
             <div className="bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-900 rounded-xl overflow-hidden">
               <div className="px-5 py-3 border-b border-amber-200 dark:border-amber-900 flex items-center gap-2">
                 <Clock size={14} className="text-amber-600 dark:text-amber-400" />
-                <p className="text-sm font-bold text-amber-800 dark:text-amber-300">Expiring Within 90 Days ({expiring.expiringSoon.length})</p>
+                <p className="text-sm font-bold text-amber-800 dark:text-amber-300">Expiring Within {expiring.days_ahead ?? 90} Days ({expiring.expiringSoon.length})</p>
               </div>
               {expiring.expiringSoon.map(q => (
                 <div key={q.id} className="px-5 py-3 border-b border-amber-100 flex items-center justify-between">
@@ -396,11 +396,46 @@ export default function QualificationsManager() {
             </div>
           )}
 
-          {(!expiring.expired?.length && !expiring.expiringSoon?.length) && (
+          {/* A cert whose expiry date we cannot read is not current and not
+              expired — it is a record somebody has to go fix. It used to fail
+              the SQL date comparison and drop out of this report entirely, so
+              a typo'd date made the certification INVISIBLE instead of
+              flagging it. It gets its own panel, above the all-clear. */}
+          {expiring.unreadable?.length > 0 && (
+            <div className="bg-gray-50 dark:bg-gray-900/60 border border-gray-300 dark:border-gray-700 rounded-xl overflow-hidden">
+              <div className="px-5 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center gap-2">
+                <AlertTriangle size={14} className="text-gray-500 dark:text-gray-400" />
+                <p className="text-sm font-bold text-gray-800 dark:text-gray-200">
+                  Expiry date unreadable ({expiring.unreadable.length})
+                </p>
+              </div>
+              <p className="px-5 pt-3 text-[11px] text-gray-600 dark:text-gray-400">
+                These certifications have an expiry date that isn't a valid
+                calendar date, so they can't be checked. Correct the date to
+                include them in the report.
+              </p>
+              {expiring.unreadable.map(q => (
+                <div key={q.id} className="px-5 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+                  <p className="text-xs font-semibold text-gray-800 dark:text-gray-100">{q.member_name} — {q.cert_type}</p>
+                  <span className="text-[10px] font-mono text-gray-500 dark:text-gray-400">
+                    {q.expiry_date || '—'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* The all-clear is only honest when there is nothing outstanding in
+              ANY bucket. Claiming "all current" while unreadable rows sit
+              unchecked would be asserting a status we did not read. */}
+          {(!expiring.expired?.length && !expiring.expiringSoon?.length
+            && !expiring.unreadable?.length) && (
             <div className="bg-green-50 dark:bg-green-950/50 border border-green-200 dark:border-green-900 rounded-xl px-5 py-8 text-center">
               <CheckCircle className="mx-auto h-8 w-8 text-green-400 mb-2" />
               <p className="text-sm font-semibold text-green-800 dark:text-green-300">All certifications current</p>
-              <p className="text-xs text-green-600 dark:text-green-400 mt-1">No certifications expiring in the next 90 days</p>
+              <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                Nothing expired or expiring in the next {expiring.days_ahead ?? 90} days
+              </p>
             </div>
           )}
         </div>

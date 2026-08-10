@@ -1,6 +1,6 @@
 'use strict';
 /**
- * seed-fireInspections.js — 5 properties, 5 inspections, 4 permits.
+ * seed-fireInspections.js — 5 properties, 5 inspections, 5 permits.
  * Skips if already seeded.
  */
 
@@ -116,7 +116,7 @@ const INSPECTIONS = [
     inspectorName: 'Maria Delgado',
     scheduledDate: '2026-01-15',
     completedDate: '2026-01-15',
-    result: 'Pass with Violations',
+    result: 'Reinspection Required',
     violations: [
       { code: '2001', status: 'Corrected', correctedDate: '2026-02-01', notes: 'Extinguisher in food court replaced.' },
       { code: '4002', status: 'Open', followUpDate: '2026-03-15', notes: 'Extension cord in east corridor storage room.' },
@@ -156,7 +156,7 @@ const INSPECTIONS = [
     inspectorName: 'Maria Delgado',
     scheduledDate: '2026-02-18',
     completedDate: '2026-02-18',
-    result: 'Pass with Violations',
+    result: 'Reinspection Required',
     violations: [
       { code: '6002', status: 'Open', followUpDate: '2026-03-18', notes: 'SDS binder not current — 3 chemicals updated since last filing.' },
     ],
@@ -229,6 +229,18 @@ const PERMITS = [
     fee:          200,
     conditions:   'Annual testing required. Test records must be submitted to fire marshal within 30 days of test.',
     notes:        '',
+  },
+  {
+    propertyId:  props[2].id,
+    type:         'Open Burning',
+    permitNumber: 'OB-2026-007',
+    issuedDate:   '2026-03-05',
+    expiresDate:  '2026-05-31',
+    status:       'Active',
+    issuedBy:     'Nathan McGee',
+    fee:          25,
+    conditions:   'Brush and yard-waste burning only. Pile not to exceed 4 ft in diameter; attended at all times with a charged hose line on site. No burning on red-flag / air-quality-alert days.',
+    notes:        'Seasonal residential burn permit.',
   },
 ];
 

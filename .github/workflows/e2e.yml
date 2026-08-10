@@ -1,0 +1,161 @@
+# OpenFirehouse E2E — Playwright web/PWA journeys against a real, seeded app.
+# Complements ci.yml (server unit + client build) and audit.yml (quality gate):
+# this is the layer that drives the actual UI in a real browser.
+#
+# NOTE: first-run validation expected — CI env quirks (seed timing, browser deps)
+# often need one tweak. The server serves the built client at :3005 (express.static
+# + SPA fallback), so Playwright points there.
+name: E2E
+
+on:
+  pull_request:
+    branches: [main]        # gate merges to main
+  push:
+    branches: [main]        # guard main itself
+  workflow_dispatch: {}     # run on demand
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: of_ci
+          POSTGRES_PASSWORD: of_ci
+          POSTGRES_DB: of_e2e
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U of_ci" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://of_ci:of_ci@localhost:5432/of_e2e
+      JWT_SECRET: ci-only-throwaway
+      SEED_DEMO: 'true'         # load the Maplewood demo + create the chief account (clears FirstRunSetup)
+      OPENFIREHOUSE_DEMO: 'true' # short-circuits the license gate to activated (still requires login) — per Matt
+      PORT: '3005'
+      E2E_BASE_URL: http://localhost:3005
+      # NOTE: NODE_ENV is deliberately NOT set here — a job-level NODE_ENV=production
+      # makes `npm ci` skip devDependencies (vite), breaking the client build. It's
+      # set only on the server-start step below (the server serves dist regardless).
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install deps (root workspaces)
+        run: npm ci
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: '1'
+
+      # Pre-create every role the schema references, before anything loads schema.
+      # Kept in lockstep with ci.yml's "Pre-create schema roles" step — see the long
+      # rationale there. Short version: prod's RLS policies name of_app/of_readonly,
+      # and four statements in 0115/0127/0128 REVOKE from Supabase's anon /
+      # authenticated / service_role WITHOUT a pg_roles guard. Creating all five
+      # NOLOGIN with no grants reproduces prod's privilege state exactly (verified
+      # 2026-08-07: anon/authenticated/PUBLIC hold privileges on 0 of 207 tables).
+      - name: Pre-create schema roles
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "DO \$\$
+          DECLARE r TEXT;
+          BEGIN
+            FOREACH r IN ARRAY ARRAY['of_app','of_readonly','anon','authenticated','service_role'] LOOP
+              IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = r) THEN
+                EXECUTE format('CREATE ROLE %I NOLOGIN', r);
+              END IF;
+            END LOOP;
+          END \$\$;"
+
+      # ⚠️ The baseline is NOT a pg_dump of prod, despite what this step was named.
+      # See the provenance correction in ci.yml's "Load schema baseline" step.
+      # NOTE: unlike ci.yml, e2e.yml has NO self-heal step, so it runs against an
+      # 0071-era schema — currently 57 migrations stale. Flagged, not fixed here.
+      - name: Load schema baseline
+        run: |
+          if [ -f db/baseline.sql ]; then
+            psql "$DATABASE_URL" -f db/baseline.sql
+          else
+            echo "::warning::db/baseline.sql absent — server initDb bootstrap will build the schema on first request."
+          fi
+
+      - name: Build client
+        run: npm run build --workspace=client
+
+      - name: Start the app (serves built client + API on :3005)
+        env:
+          NODE_ENV: production
+          OPENFIREHOUSE_DEMO: 'true'   # explicit on the spawning step so the server process definitely inherits it (skips authLimiter)
+        run: |
+          echo "server env → OPENFIREHOUSE_DEMO=$OPENFIREHOUSE_DEMO NODE_ENV=$NODE_ENV"
+          node server/src/index.js &
+          echo "APP_PID=$!" >> "$GITHUB_ENV"
+
+      - name: Wait for /health, then warm initDb + demo seed
+        run: |
+          npx --yes wait-on -t 60000 http://localhost:3005/health
+          # Poll the PUBLIC setup-status (NOT auth-limited) until the seed has created
+          # users. Hitting /api/* also triggers the server's lazy initDb + seeds. This
+          # avoids burning the auth rate limit (max 30/15min/IP) during warm-up.
+          # ⚠️ THIS LOOP MUST FAIL IF IT NEVER SEES THE SEEDED STATE.
+          # It used to `break` on match and otherwise just fall through, so a
+          # never-seeded app proceeded to the suite anyway: chief/1234 would not
+          # exist, apiLogin would 401, and EVERY journey spec failed with
+          # "login for chief should succeed (401)" — pointing at auth, which was
+          # fine. The real cause could be a renamed field in /api/setup-status
+          # (see server/src/tests/setupStatusContract.test.js). A readiness gate
+          # that cannot report "I was never ready" turns broken into confusing.
+          seeded=0
+          for i in $(seq 1 45); do
+            body=$(curl -s http://localhost:3005/api/setup-status || true)
+            echo "setup-status: $body"
+            case "$body" in *'"needsFirstRun":false'*) echo "seeded after ~$((i*2))s"; seeded=1; break;; esac
+            sleep 2
+          done
+          if [ "$seeded" -ne 1 ]; then
+            echo "::error::Readiness gate FAILED — /api/setup-status never reported \"needsFirstRun\":false after ~90s."
+            echo "The app is NOT seeded. Running the suite now would fail every journey at login"
+            echo "with a misleading 401. Check: (a) did the demo seed run (SEED_DEMO=true)?"
+            echo "(b) did the shape of /api/setup-status change? The gate string-matches"
+            echo "'\"needsFirstRun\":false' — see server/src/tests/setupStatusContract.test.js."
+            echo "--- last body seen: $body"
+            exit 1
+          fi
+          # One login check to confirm auth is up before the suite runs.
+          curl -s -o /dev/null -w 'login check: %{http_code}\n' -X POST http://localhost:3005/api/auth/login \
+            -H 'Content-Type: application/json' -d '{"username":"chief","password":"1234"}'
+
+      - name: Install Playwright browser
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run E2E (desktop project)
+        # BLOCKING gate. History: the fresh-CI boot stalled because utils/supabase.js
+        # called createClient() with an empty anon key and threw at module load, so React
+        # never mounted (white screen). Fixed on main (40ad010): guard createClient and
+        # export supabase=null when the key is absent. The last failure after that was a
+        # harness bug — LoginScreen defaults to the Quick Demo tab, so uiLogin now clicks
+        # the Username/Password toggle first (8e5bd33). Green at 8 passed / 14 fixme-skipped.
+        working-directory: e2e
+        run: npx playwright test --project=desktop
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report
+          retention-days: 14

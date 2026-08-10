@@ -637,9 +637,13 @@ function ImportLog({ log }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function DataImport() {
+export default function DataImport({ stations = [], selectedStation = null }) {
   const [activeTab, setActiveTab] = useState('wizard');
   const [step,      setStep]      = useState('type');
+  // Per-station grain (0072): a roster import targets ONE station. Default to the
+  // picked house; multi-house depts must choose explicitly before committing.
+  const isMultiHouse = Array.isArray(stations) && stations.length > 1;
+  const [importStationId, setImportStationId] = useState(selectedStation || '');
 
   // Wizard state
   const [recordType,   setRecordType]   = useState('');
@@ -732,9 +736,17 @@ export default function DataImport() {
 
     try {
       if (recordType === 'runlist') {
+        if (isMultiHouse && !importStationId) {
+          setImportError('Choose which station this roster imports into before committing.');
+          setImporting(false);
+          return;
+        }
         const d = new Date();
         const localDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        const result = await api.post('/api/import/run-list', { rows: validRows, date: localDate });
+        const result = await api.post('/api/import/run-list', {
+          rows: validRows, date: localDate,
+          ...(importStationId ? { station_id: Number(importStationId) } : {}),
+        });
         succeeded = result.data?.crew ?? validRows.length;
         failed    = 0;
       } else {
@@ -793,7 +805,7 @@ export default function DataImport() {
         ].map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id)}
             className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-              activeTab === t.id ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+              activeTab === t.id ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
             }`}>{t.label}</button>
         ))}
       </div>
@@ -864,6 +876,26 @@ export default function DataImport() {
                 fileName={parsedData?.fileName}
                 sourceSystem={sourceSystem}
               />
+              {recordType === 'runlist' && isMultiHouse && (
+                <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 rounded-xl">
+                  <label className="block text-xs font-bold text-amber-800 dark:text-amber-300 mb-1.5">
+                    Import this roster into station
+                  </label>
+                  <select
+                    value={importStationId}
+                    onChange={(e) => setImportStationId(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-amber-300 dark:border-amber-800 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-gray-100"
+                  >
+                    <option value="">— Choose a station —</option>
+                    {stations.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-1.5">
+                    Your department has more than one station — a roster belongs to one house.
+                  </p>
+                </div>
+              )}
               {importError && (
                 <div className="mt-3 p-3 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900 rounded-xl text-xs text-red-700 dark:text-red-300">
                   {importError}

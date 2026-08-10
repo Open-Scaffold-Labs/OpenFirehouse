@@ -1,0 +1,76 @@
+-- 0112-drop-orphaned-prototype-tables.sql
+-- Phase 5 (HARDEN THE TAIL) — remove five orphaned tables from two abandoned
+-- prototypes. Matt's explicit sign-off, 2026-07-27 (F13 requires it for any
+-- destructive change regardless of there being no real users).
+--
+-- WHY THEY EXISTED, AND WHY NOTHING EVER LOCKED THEM
+-- --------------------------------------------------
+-- These five were created DIRECTLY ON THE DATABASE, outside the migration
+-- ledger. They appear nowhere in docs/migrations/ and nowhere in db.js — they
+-- entered the repo only via db/baseline.sql, a snapshot taken FROM live prod on
+-- 2026-07-16 in the commit titled "refresh baseline.sql from live prod
+-- (122 -> 150 tables)". That 28-table gap is the whole story.
+--
+-- Every RLS sweep we have ever run enumerated tables the MIGRATIONS knew about.
+-- These were invisible to that process, so no sweep ever saw them. This was not
+-- a lock that was removed; it was a lock that could never have been applied.
+-- That is the durable lesson: a schema audit driven by migration files cannot
+-- see anything created by hand.
+--
+-- WHAT THEY ARE (identified from their columns, not from guesswork)
+--   wedge_members / wedge_department_access — user_id and created_by are UUIDs.
+--     OpenFirehouse user ids are INTEGERS everywhere (see lesson #14). UUID user
+--     ids mean Supabase Auth: a prototype on a different authentication model
+--     entirely. Rows: one invite code 'MAPLEWOOD-DEMO' and one member.
+--   fs_inspections / fs_permits / fs_properties — squashed lowercase columns
+--     (propertyid, scheduleddate, createdat) and station_id scoping: the naming
+--     convention that PREDATES the current fi_* prevention suite. These are its
+--     superseded ancestors.
+--
+-- EVIDENCE OF DISUSE, ALL VERIFIED BEFORE WRITING THIS FILE
+--   * Zero references in openfirehouse-phase5, openfirehouse, OpenFirehouseMobile
+--     and limitless-stack-hub (word-boundary search, baseline.sql excluded). The
+--     single hit is a COMMENT in 0104 listing invite_code among keys it left
+--     alone — no constraint, no change.
+--   * No FOREIGN KEY from any live table points at them. The only two FKs are
+--     internal (fs_inspections/fs_permits -> fs_properties), so the trio drops
+--     cleanly together.
+--   * No VIEW, FUNCTION, TRIGGER or RULE depends on any of them.
+--   * All 10 rows are demo seed data created 2026-07-02; every fs_ row's notes
+--     column literally reads "Demo seed record" / "Demo seed".
+--
+-- NOT TOUCHED — DO NOT CONFUSE THESE:
+--   * fs_hazmat_* — the live ERG reference tables, used ~45 times in
+--     routes/hazmat.js alone. Different tables, similar prefix.
+--   * fi_* — the CURRENT fire-prevention suite. This migration removes their
+--     dead ancestors, not them.
+--   * identity_backfill_log — ALSO has no RLS, and is DELIBERATELY correct:
+--     migration 0036 created it owner-only and revoked ALL privileges from
+--     of_app, anon, authenticated and service_role. Verified live: it grants
+--     nothing to anyone, which is stricter than RLS. It was wrongly flagged as
+--     a gap during the Phase 5 audit; that flag is retracted. LEAVE IT ALONE.
+--
+-- ROW BACKUP (the complete contents at drop time, so this is reversible):
+--   fs_permits                — 0 rows.
+--   fs_properties             — 3 rows, ids 1..3: "Maplewood Town Hall & Public
+--     Safety Building"; "Riverside Plaza Strip Mall"; "ABC Chemical Corp —
+--     Warehouse B". All station_id=1, all notes containing "Demo seed record".
+--   fs_inspections            — 5 rows, ids 1..5, all station_id=1, propertyid
+--     in (1,2,3), inspectors "Sarah Chen"/"Mike Torres", results Pass /
+--     Scheduled / "Violations Found". All notes containing "Demo seed".
+--   wedge_department_access   — 1 row: department_id=1,
+--     invite_code='MAPLEWOOD-DEMO', created_by=NULL, created 2026-07-02.
+--   wedge_members             — 1 row: department_id=1, role='member',
+--     email='draaen@mac.com', user_id=6f75cfc5-43af-4eb3-a916-2573732ef625,
+--     created 2026-07-02.
+--   (Full JSON of every row is in the wiki log entry for 2026-07-27.)
+--
+-- Order matters: the children reference fs_properties, so they go first. No
+-- CASCADE is used anywhere — if an unexpected dependency exists, this migration
+-- should FAIL LOUDLY rather than quietly destroying something we did not audit.
+
+DROP TABLE IF EXISTS public.fs_inspections;
+DROP TABLE IF EXISTS public.fs_permits;
+DROP TABLE IF EXISTS public.fs_properties;
+DROP TABLE IF EXISTS public.wedge_members;
+DROP TABLE IF EXISTS public.wedge_department_access;

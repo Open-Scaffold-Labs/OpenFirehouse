@@ -46,6 +46,14 @@ const apiLimiter = rateLimit({
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
+  // Demo/CI instances (OPENFIREHOUSE_DEMO=true) authenticate many times from a
+  // SINGLE IP — the E2E suite logs in per worker and every page load fires
+  // /api/auth/refresh, and a handful of people clicking the live demo at once do
+  // the same — which trips this 30/15min brute-force guard (429) even though a
+  // demo instance is not a brute-force target. Skip it there. PROD NEVER SETS
+  // OPENFIREHOUSE_DEMO, so production keeps full brute-force protection unchanged.
+  // (E2E 429 fix, 2026-07-14.)
+  skip: () => String(process.env.OPENFIREHOUSE_DEMO || '').trim().toLowerCase() === 'true',
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many authentication attempts. Try again later.' },
@@ -90,6 +98,35 @@ app.options('*', cors({
 // so mount BEFORE the global express.json() parser.
 app.use('/api/stripe-webhook', express.raw({ type: 'application/json', limit: '1mb' }), require('./routes/stripeWebhook'));
 
+// The offline drain carries the SERVED notice PDF verbatim (Prevention Core P3.6,
+// TRAP 1: the bytes the officer handed the owner are the legal instrument and are
+// stored as-is, never re-rendered). Those bytes blow past express.json()'s 100 KB
+// default, so this path gets its own parser — mounted FIRST, because the global
+// parser below would otherwise reject the body before the route ever sees it. This
+// only widens the parser; auth, the fi gate, and the per-op size caps all still run
+// downstream (routes/fiSync.js caps a notice at 12 MB).
+app.use('/api/fi-sync/batch', express.json({ limit: '20mb' }));
+
+// 4C.2 — CAD ingest must hold the RAW bytes before anything can fail on them.
+// Mounted BEFORE the global express.json() for two reasons, both proven against
+// this express version rather than assumed:
+//   (a) express.json() only parses when the content-type is application/json.
+//       The same JSON sent as text/plain, form-urlencoded, or with no
+//       content-type yields req.body === {} with a 200 and no error — and every
+//       CAD adapter reads `req.body || {}`. routes/cad.js already notes that
+//       real vendors post non-JSON content-types.
+//   (b) MALFORMED JSON makes express.json() answer 400 from inside the
+//       middleware chain, so handleVendorWebhook is never entered. A receipt
+//       written at the top of that handler would therefore miss the unparseable
+//       message that NENA i3 4.12.3.7 specifically requires be logged with its
+//       raw bytes. "Persist before parse" is only true if persist happens before
+//       the JSON PARSER, not before our handler.
+// body-parser sets req._body once it has read the stream, so the global
+// express.json() below sees the body as already parsed and skips it — the same
+// mechanism the Stripe raw-body webhook above relies on.
+const cadRawCapture = require('./cad/rawCapture');
+app.use('/api/cad', cadRawCapture.captureBuffer, cadRawCapture.normalizeBody);
+
 app.use(express.json());
 app.use(cookieParser());
 
@@ -100,21 +137,24 @@ app.use('/api/admin/sign-license', require('./routes/adminSignLicense'));
 app.use('/api/checkout',           require('./routes/checkout'));
 app.use('/api/cron/reconcile',     require('./routes/cronReconcile'));
 app.use('/api/cron/retention',     require('./routes/cronRetention'));
+app.use('/api/cron/report-delivery', require('./routes/cronReportDelivery'));
+app.use('/api/cron/neris-sweep',   require('./routes/cronNerisSweep'));
+// 3.1b — the permit expiry ladder. ⚠ Its 14:30 UTC schedule in vercel.json is a CORRECTNESS
+// constraint (the UTC day must equal every US department's local day); see the route header.
+app.use('/api/cron/permit-expiry', require('./routes/cronPermitExpiry'));
 // NOTE: /api/license runtime endpoints moved BEHIND requireAuth (post-login,
 // per-department gating) — see the authed mount below. Only the public license
 // retrieval page (/license) stays here.
 app.use('/license',                require('./routes/license'));
 
-// ── Cache headers for GET requests ──────────────────────────────────────────
-// Tells browsers/CDN to reuse GET responses for 30 seconds before revalidating.
-// Cuts repeated fetches when the user navigates between modules quickly.
-// POST/PATCH/DELETE are never cached (mutations must always hit the server).
-app.use((req, res, next) => {
-  if (req.method === 'GET' && req.path.startsWith('/api/')) {
-    res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
-  }
-  next();
-});
+// ── Cache headers for API reads: no-store by DEFAULT ────────────────────────
+// REPLACED the old blanket `max-age=30, stale-while-revalidate=60` (2026-07-11):
+// that default legally served operational data up to 90s stale — it bit the iPad
+// client on /api/fi-inspections (post-sync pre-edit values) and exposed
+// /api/cad/alerts' ping→refetch to cached answers. Caching is now a deliberate
+// per-route decision (routes set their own header after this and win — e.g.
+// streetview 24h, mapkit-token 25min). See middleware/apiCacheHeaders.js.
+app.use(require('./middleware/apiCacheHeaders'));
 
 // ── DB readiness flag — set true once initDb() resolves ─────────────────────
 let dbReady = false;
@@ -200,6 +240,16 @@ app.use(async (req, res, next) => {
 
 // ── Auth routes (public) ────────────────────────────────────────────────────
 app.use('/api/auth', authLimiter, require('./routes/auth'));
+// 5.7 (0113) — department-authored custom roles. Chief-only; built-ins immutable.
+app.use('/api/roles',                require('./routes/roles'));
+// 5.4 (Phase 5) — the customer-visible audit trail. Read-only over audit_log;
+// record-level history only (the market bar), no tenant-wide or auth-event feed.
+app.use('/api/audit',                require('./routes/auditTrail'));
+// 0111 (Phase 5) — TOTP MFA enrolment + lifecycle. Behind authLimiter, not the
+// generous apiLimiter: /confirm verifies a 6-digit code and is therefore a
+// brute-force target in exactly the way the auth routes are. (The login-time
+// exchange lives at /api/auth/mfa and is already covered above.)
+app.use('/api/mfa', authLimiter, require('./routes/mfa'));
 
 // ── First-run setup (public — no auth required, by design) ───────────────────
 // When no users exist, a fresh clone needs a way to create the first chief
@@ -207,14 +257,72 @@ app.use('/api/auth', authLimiter, require('./routes/auth'));
 // bootstrap is needed; /api/setup-status/bootstrap-chief creates the first
 // chief account ONLY when the users table is empty (so this is safe to
 // leave wired in production — it self-disables after first use).
+// `demoMode` mirrors SEED_DEMO — the SAME switch that decides whether the
+// Maplewood demo accounts (chief/officer/bchief/member/dispatch, password 1234)
+// are seeded at all (db.js DEMO_LABELS). The login screen reads it so it can
+// only ever advertise credentials that actually exist. Without this the quick-
+// login role cards, the "1234 for all demo accounts" placeholder and the printed
+// credential line rendered UNCONDITIONALLY — so a real department that deployed
+// correctly (SEED_DEMO unset, BOOTSTRAP_CHIEF_* used) still saw a login page
+// offering one-click logins for accounts their database does not contain. First
+// screen a fire chief ever sees. Reported as a fact, never inferred client-side:
+// the client cannot know the server's seed configuration.
+// ⚠️⚠️ THIS ENDPOINT HAS FAR MORE CONSUMERS THAN IT LOOKS. DO NOT RENAME OR DROP
+// A FIELD WITHOUT UPDATING ALL OF THEM. It is not just a first-run helper — it is
+// the readiness probe for most of the test estate:
+//   · 20+ server test files poll it before running (checks, fieldSync, csCustody,
+//     hiringEngine, workOrders, inventory, provisioningIsolation, …). They only
+//     check status===200, so they tolerate shape changes.
+//   · .github/workflows/e2e.yml — the CI readiness gate — RAW STRING MATCHES the
+//     body for `"needsFirstRun":false`. No type system will catch a rename here.
+//   · client/src/App.jsx            → needsFirstRun (first-run detection)
+//   · client/src/components/LoginScreen.jsx → demoMode (may we offer quick login)
+// Frozen by server/src/tests/setupStatusContract.test.js — if you change the
+// shape, that test tells you, loudly, instead of CI hanging for 90s and then
+// failing every journey with a misleading 401.
+//
+// ⚠️ ASK THE DATABASE, NOT THE ENV VAR. This was gated on SEED_DEMO first and
+// that was WRONG in the one way that mattered: SEED_DEMO describes what happened
+// at BOOT, not what is in the table now. db.js fast-paths on stations.seeded_at,
+// so a deployment seeded once keeps its demo accounts forever even after the var
+// is removed — which is exactly production's state (accounts present, SEED_DEMO
+// unset). Gating on the env var therefore hid a working demo login from the
+// surface prospective departments are shown. Shipped and caught live 2026-08-04.
+//
+// Whether to OFFER a one-click demo login is a question about whether those
+// accounts EXIST. So ask that. The UI then cannot drift from reality: a real
+// department's clean install has no demo rows and gets a plain sign-in form,
+// while any deployment that actually carries the demo accounts keeps its fast
+// path — with no env var for anyone to remember, set, or lose.
+const DEMO_USERNAMES = ['chief', 'officer', 'bchief', 'member', 'dispatch'];
+
 app.get('/api/setup-status', async (req, res) => {
   try {
-    const { rows } = await db.pool.query('SELECT COUNT(*) AS c FROM users');
-    const usersExist = parseInt(rows[0].c) > 0;
-    res.json({ usersExist, needsFirstRun: !usersExist });
+    // One round trip: total users + how many of the demo set are present.
+    const { rows } = await db.pool.query(
+      `SELECT COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE username = ANY($1))::int AS demo
+         FROM users`,
+      [DEMO_USERNAMES]
+    );
+    const usersExist = rows[0].total > 0;
+    res.json({
+      usersExist,
+      needsFirstRun: !usersExist,
+      // Present only when the accounts are really there. SEED_DEMO is still
+      // honoured so a fresh demo deploy shows the fast path on its very first
+      // load, before the seed has populated anything.
+      demoMode: rows[0].demo > 0 || process.env.SEED_DEMO === 'true',
+    });
   } catch (e) {
-    // DB not ready or users table missing — likely first-run
-    res.json({ usersExist: false, needsFirstRun: true, dbError: e.message });
+    // DB not ready or users table missing — likely first-run. Fail closed on
+    // demoMode: never offer credentials we could not confirm exist.
+    res.json({
+      usersExist: false,
+      needsFirstRun: true,
+      demoMode: false,
+      dbError: e.message,
+    });
   }
 });
 
@@ -254,6 +362,9 @@ app.use('/api/streetview', require('./routes/streetview'));
 
 // ── TV data (public — PIN-protected, no JWT, for wall-mounted displays) ─────
 app.use('/api/tv-data', require('./routes/tvData'));
+// Station-display PAIRING — the public redeem route (a display is unauthenticated) is
+// mounted BEFORE requireAuth; the chief create/list/revoke router is mounted after (below).
+app.use('/api/station-displays', authLimiter, require('./routes/stationDisplays').publicRouter);
 
 // ── Radio ingest (public — API-key-protected, no JWT, for station SDR hardware) ─
 app.use('/api/radio-ingest', require('./routes/radioIngest'));
@@ -318,7 +429,11 @@ app.use('/api/license',              require('./routes/licenseRuntime').authedRo
 // (The /api/narrative-drafts review queue was removed 2026-06-10: AI narrative
 // generation is gone entirely — officers write incident narratives directly.)
 app.use('/api/active-board',         require('./routes/activeBoard'));
+app.use('/api/reconciliation',       require('./routes/reconciliation'));
+app.use('/api/response-reports',     require('./routes/responseReports'));
+app.use('/api/report-schedules',      require('./routes/reportSchedules'));
 app.use('/api/members',              require('./routes/members'));
+app.use('/api/station-displays',     require('./routes/stationDisplays').authedRouter); // 2.3 chief create/list/revoke
 // AVL connection/device management (chief-only; the public ingest is in routes/avl.js).
 app.use('/api/avl',                  require('./routes/avlAdmin'));
 app.use('/api/departments',          require('./routes/departments'));
@@ -359,6 +474,7 @@ app.put('/api/stations/tv-pin', require('./middleware/requireRole').requireChief
   }
 });
 app.use('/api/stations',             require('./routes/stations'));   // P4.3 firehouse CRUD — mounted after /api/stations/tv-pin so the specific routes win
+app.use('/api/neris-registry',       require('./routes/nerisRegistry')); // SR — chief-gated NERIS station/unit registration
 app.use('/api/apparatus',            require('./routes/apparatus'));
 app.use('/api/units',                require('./routes/units'));
 app.use('/api/notifications',        require('./routes/notificationPrefs'));
@@ -366,18 +482,40 @@ app.use('/api/alerts',               require('./routes/alerts'));
 app.use('/api/incidents',            require('./routes/incidents'));
 app.use('/api/incidents',            require('./routes/respond'));
 app.use('/api/training',             require('./routes/training'));
-app.use('/api/maintenance',          require('./routes/maintenance'));
-app.use('/api',                      require('./routes/checklists'));
+app.use('/api/work-orders',          require('./routes/workOrders'));        // 2.2 (0083)
+app.use('/api/defects',              require('./routes/defects'));           // 2.2 (0083)
+app.use('/api/checks',               require('./routes/checks'));            // 2.1 (0082)
 app.use('/api/shifts',               require('./routes/shifts'));
 app.use('/api/shift-patterns',        require('./routes/shiftPatterns'));
 app.use('/api/leave',                 require('./routes/leaveRequests'));
+app.use('/api/leave-types',           require('./routes/leaveTypes'));   // 1.2a leave banks (types + balances + ledger)
 app.use('/api/shift-swaps',           require('./routes/shiftSwaps'));
 app.use('/api/coverage',              require('./routes/coverageWorkbench'));
 app.use('/api/station-log',          require('./routes/stationLog'));
 app.use('/api/fi-properties',        require('./routes/fiProperties'));
 app.use('/api/fi-inspections/:id/photos', require('./routes/fiInspectionPhotos'));
+app.use('/api/fi-inspections',       require('./routes/fiSchedule'));           // P3: batch-schedule + bulk-assign (before the /:id CRUD)
 app.use('/api/fi-inspections',       require('./routes/fiInspections'));
 app.use('/api/fi-permits',           require('./routes/fiPermits'));
+app.use('/api/permit-jobs',          require('./routes/permitJobs'));
+app.use('/api/fi-permit-types',      require('./routes/fiPermitTypes'));
+app.use('/api/fi-fee-schedules',     require('./routes/fiFeeSchedules'));
+app.use('/api/fi-invoices',          require('./routes/fiInvoices'));
+app.use('/api/fi-payments',          require('./routes/fiPayments'));
+app.use('/api/fi-code-library',      require('./routes/fiCodeLibrary'));      // P1 (2026-07-12)
+app.use('/api/fi-inspection-types',  require('./routes/fiInspectionTypes'));  // P1
+app.use('/api/fi-checklists',        require('./routes/fiChecklists'));       // P1
+app.use('/api/fi-inspections',       require('./routes/fiWorkflow'));         // P2: /:id/complete + /:id/answers
+app.use('/api/fi-inspections',       require('./routes/fiNotices'));          // P2.3: /:id/notice(s)
+app.use('/api/fi-notices',           require('./routes/fiNotices').pdfRouter); // P2.3: /:noticeId/pdf stream
+app.use('/api/fi-inspections',       require('./routes/fiSignatures'));       // P3: /:id/signatures capture + list
+app.use('/api/fi-signatures',        require('./routes/fiSignatures').imageRouter); // P3: /:sigId/image stream
+app.use('/api/fi-inspections',       require('./routes/fiService'));           // P3.5: /:id/service — the service-of-notice ladder (0053)
+app.use('/api/fi-service',           require('./routes/fiService').eventRouter); // P3.5: mail events (the Jones trigger), void, posting photo
+app.use('/api/fi-sync',              require('./routes/fiSync'));             // P3.6: offline day payload + idempotent outbox drain (0054)
+app.use('/api/fi-reports',           require('./routes/fiReports'));          // P3: rows-authoritative violation reads
+app.use('/api/fi-designations',      require('./routes/fiDesignations'));     // P2: rank-independent inspector grants
+app.use('/api/fi-settings',          require('./routes/fiSettings'));         // P2: crew/commit toggles
 app.use('/api/hydrants/import',      require('./routes/hydrantImport'));
 app.use('/api/hydrants',             require('./routes/hydrants'));
 app.use('/api/volunteer-hours',      require('./routes/volunteerHours'));
@@ -389,13 +527,19 @@ app.use('/api/recruitment',          require('./routes/recruitment'));
 app.use('/api/events',               require('./routes/events'));
 app.use('/api/pre-plans',                          require('./routes/prePlanExport'));
 app.use('/api/pre-plans/:id/attachments',          require('./routes/prePlanAttachments'));
+app.use('/api/pre-plans/:id/photos',               require('./routes/prePlanPhotos'));
 app.use('/api/pre-plans',                          require('./routes/prePlans'));
 app.use('/api/drills',               require('./routes/drills'));
 app.use('/api/courses',              require('./routes/courses'));
 app.use('/api/assets',               require('./routes/assets'));
-app.use('/api/cylinders',            require('./routes/cylinders'));
+app.use('/api/asset-tests',          require('./routes/assetTests'));        // 2.3 (0084)
+app.use('/api/inventory',            require('./routes/inventory'));         // 2.4 (0085)
+app.use('/api/scan',                 require('./routes/scan').router);       // 2.5 (0086)
+app.use('/api/cs',                   require('./routes/cs'));                // 2.7 (0087, Dale-gated)
 app.use('/api/fill-stations',        require('./routes/fillStations'));
 app.use('/api/cad-connections',       require('./routes/cadConnections'));
+app.use('/api/cad-ingest',            require('./routes/cadIngestMonitor'));  // 4C.4 (0127)
+app.use('/api/cron-health',           require('./routes/cronHealth'));        // X-PHASE (0128)
 app.use('/api/investigations',        require('./routes/investigations'));
 app.use('/api/pay-entries',           require('./routes/payEntries'));
 app.use('/api/crr-visits',            require('./routes/crrVisits'));
@@ -404,7 +548,6 @@ app.use('/api/budget-lines',          require('./routes/budgetLines'));
 app.use('/api/budget-transactions',   require('./routes/budgetTransactions'));
 app.use('/api/nfirs-reports',         require('./routes/nfirsReports'));
 app.use('/api/station-config',        require('./routes/stationConfig'));
-app.use('/api/iso-report',            require('./routes/isoReport'));
 app.use('/api/qualifications',        require('./routes/qualifications'));
 app.use('/api/apparatus-assignments', require('./routes/apparatusAssignments'));
 app.use('/api/run-list',             require('./routes/runList'));
@@ -413,6 +556,9 @@ app.use('/api/personnel-actions',     require('./routes/personnelActions'));
 app.use('/api/exposure-records',      require('./routes/exposureTracking'));
 app.use('/api/shift-trades',          require('./routes/shiftTrades'));
 app.use('/api/daily-staffing',        require('./routes/dailyStaffing'));
+app.use('/api/staffing',              require('./routes/staffing'));      // 1.4: rules + coverage view
+app.use('/api/vacancies',             require('./routes/vacancies'));     // 1.4: unified vacancy record
+app.use('/api/hiring',                require('./routes/hiring'));        // 1.5: ordered hiring engine
 app.use('/api/apparatus-oos',         require('./routes/apparatusOOS'));
 app.use('/api/timesheets',            require('./routes/timesheets'));
 app.use('/api/grievances',            require('./routes/grievances'));
@@ -454,7 +600,13 @@ app.use('/api/dashboard/briefing',  require('./routes/dashboardBriefing'));
 app.use('/api/dashboard/today',     require('./routes/dashboardToday'));
 app.use('/api/weather',             require('./routes/weather'));
 app.use('/api/cadets',              require('./routes/cadets'));
-app.use('/api/response-analytics',  require('./routes/responseAnalytics'));
+// RETIRED 4.1h — /api/response-analytics computed `incidents.time ->
+// incidents."dispatchTime"` and called it "turnout". dispatchTime has NO LIVE
+// WRITER (absent from incUpdate's allowlist, from the CAD pipeline, and from
+// the incident form) so all ten populated values on prod are seed fixtures, and
+// `time -> dispatchTime` is not turnout anyway — it is wrong by two segments.
+// Replaced by /api/response-reports/compliance, which reads the unit-status
+// ladder. The page it fed now points there.
 app.use('/api/user',                 require('./routes/userPrefs'));
 app.use('/api/attachments',         require('./routes/attachments'));
 app.use('/api/correspondence',     require('./routes/correspondence'));
@@ -462,7 +614,6 @@ app.use('/api/email-ingest',        require('./routes/emailIngest'));
 app.use('/api/intelligence',       require('./routes/intelligence'));
 app.use('/api/webhooks',           require('./routes/webhooks'));
 app.use('/api/live-share',         require('./routes/liveShare'));
-app.use('/api/vacancy-fill',       require('./routes/vacancyFill'));
 app.use('/api/active-resources',   require('./routes/activeResources'));
 app.use('/api/incident-media',    require('./routes/incidentMedia'));
 app.use('/api/ng911',            require('./routes/ng911'));
@@ -660,7 +811,10 @@ async function runSeeds() {
     './seed-assistant.js',
     './seed-apparatusPositions.js',
     './seed-policyAcknowledgments.js',
-    './seed-fiPermits.js',
+    // seed-fiPermits.js removed 2026-07-16: it was a second, redundant permits
+    // seeder written against a non-existent column set (permit_number/applicant_*)
+    // and never inserted a row. Permits are seeded correctly via fiPermits.create()
+    // in seed-fireInspections.js (one permits seed, one owner). — Matt/Dale
     './seed-examAssignments.js',
     './seed-donations.js',
     './seed-assistantFeedback.js',
@@ -671,7 +825,6 @@ async function runSeeds() {
     './seed-shiftSwaps.js',
     './seed-workflowTasks.js',
     './seed-memberAvailability.js',
-    './seed-vacancyFill.js',
     './seed-ng911.js',
     './seed-ftoTracker.js',
     './seed-activityEntries.js',

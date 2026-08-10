@@ -6,11 +6,13 @@ const { pool } = require('../db');
 
 module.exports = async function hydrantFeed(start, end, options) {
   const { rows } = await pool.query(`
-    SELECT id, hydrant_number, location, next_test_date, status
+    SELECT id, "hydrantNumber" AS hydrant_number,
+           "streetAddress" AS location,
+           "nextTestDue" AS next_test_date, status
     FROM hydrants
     WHERE department_id = $3
-      AND next_test_date BETWEEN $1 AND $2
-    ORDER BY next_test_date
+      AND "nextTestDue" BETWEEN $1 AND $2
+    ORDER BY "nextTestDue"
   `, [start, end, options.stationId]);
 
   return rows.map(r => {

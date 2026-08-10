@@ -3,7 +3,98 @@ import {
   Clock, AlertTriangle, CheckCircle, Loader2, RefreshCw,
   TrendingUp, Users, Calendar, Download,
 } from 'lucide-react';
-import { api } from '../utils/api';
+import { api, getStoredUser } from '../utils/api';
+import { isBcPlus } from '../data/auth';
+
+// ── Qualified-OT export (§225 / W-2 Box 12 TT) — chief-only, advisory (1.2f) ──────
+function QualifiedOtExport() {
+  const canView = isBcPlus(getStoredUser());
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true); setError(null);
+    try { const r = await api.get(`/api/ot-equalization/qualified-export?year=${year}`); setData(r.data); }
+    catch (e) { setError(e.message || 'Could not load the qualified-OT export.'); }
+    finally { setLoading(false); }
+  }, [year]);
+  useEffect(() => { if (canView) load(); }, [canView, load]);
+  if (!canView) return null;
+
+  function downloadCsv() {
+    if (!data?.members?.length) return;
+    const rows = [['Member', 'Qualifying OT hours', 'Half-premium $ (if rate known)', 'Dollars complete', 'Unclassified hours']];
+    for (const m of data.members) rows.push([m.member_name, m.qualifyingHours, m.dollarsComplete ? m.halfPremiumDollars : '', m.dollarsComplete ? 'yes' : 'partial', m.unclassifiedHours]);
+    const csv = rows.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    const a = document.createElement('a'); a.href = url; a.download = `qualified-ot-${year}.csv`; a.click(); URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 dark:border-gray-700">
+        <div>
+          <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100">Qualified overtime — W-2 Box 12 (TT)</h2>
+          <p className="text-[11px] text-gray-500 dark:text-gray-400">Advisory for your payroll system · not payroll-of-record</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <select value={year} onChange={e => setYear(parseInt(e.target.value))}
+            className="border border-gray-200 dark:border-gray-700 rounded-xl px-2 py-1.5 text-sm dark:bg-gray-900 dark:text-gray-100">
+            {[2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <button onClick={downloadCsv} disabled={!data?.members?.length}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold bg-gray-800 text-white rounded-xl hover:bg-gray-900 disabled:opacity-40">
+            <Download size={14} aria-hidden="true" /> CSV
+          </button>
+        </div>
+      </div>
+      <div className="p-4">
+        {loading && <div className="flex items-center gap-2 text-gray-500 py-4 justify-center"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>}
+        {error && !loading && <div className="rounded-lg bg-red-50 dark:bg-red-950/50 text-red-700 dark:text-red-300 px-3 py-2 text-sm">{error}</div>}
+        {!loading && !error && data && (
+          data.members.length === 0 ? (
+            <p className="text-sm text-gray-500 dark:text-gray-400 py-2">No overtime recorded for {year}.</p>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="text-[10px] font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700">
+                    <th className="text-left py-2 pr-2">Member</th>
+                    <th className="text-right py-2 px-2">Qualifying OT</th>
+                    <th className="text-right py-2 px-2">Half-premium $</th>
+                    <th className="text-right py-2 pl-2">Unclassified</th>
+                  </tr></thead>
+                  <tbody>
+                    {data.members.map(m => (
+                      <tr key={m.member_id} className="border-b border-gray-50 dark:border-gray-800 last:border-0">
+                        <td className="py-2 pr-2 text-gray-900 dark:text-gray-100">{m.member_name}</td>
+                        <td className="py-2 px-2 text-right">{m.qualifyingHours}h</td>
+                        <td className="py-2 px-2 text-right">{m.dollarsComplete ? `$${m.halfPremiumDollars.toLocaleString()}` : (m.halfPremiumDollars > 0 ? `$${m.halfPremiumDollars.toLocaleString()}*` : '—')}</td>
+                        <td className={`py-2 pl-2 text-right ${m.unclassifiedHours > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-gray-400'}`}>{m.unclassifiedHours > 0 ? `${m.unclassifiedHours}h` : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {data.members.some(m => !m.dollarsComplete && m.halfPremiumDollars >= 0) && (
+                <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-2">* Dollars are partial — some qualifying OT has no regular rate entered; payroll applies the rate to the qualifying hours.</p>
+              )}
+              {data.unclassifiedHoursTotal > 0 && (
+                <div className="mt-2 flex items-start gap-2 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 px-3 py-2 text-xs">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" aria-hidden="true" />
+                  <span>{data.unclassifiedHoursTotal}h of overtime has no FLSA basis set — classify it so it's counted correctly (unclassified OT is never assumed to qualify).</span>
+                </div>
+              )}
+              <p className="mt-3 text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed">{data.advisory}</p>
+            </>
+          )
+        )}
+      </div>
+    </div>
+  );
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -268,6 +359,9 @@ export default function FLSADashboard() {
           This dashboard is for internal tracking — consult your labor attorney for payroll compliance.
         </p>
       </div>
+
+      {/* Qualified overtime (§225 / W-2 Box 12 TT) export — chief only (1.2f) */}
+      <QualifiedOtExport />
     </div>
   );
 }

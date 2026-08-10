@@ -19,6 +19,9 @@ const actions = require('../utils/aiActionRegistry');
 // model + key-safe error handling. Prompt-injection guarding is applied at the
 // call sites below via promptGuard (the dispatcher knows which part is data).
 const { callAI } = require('../utils/aiClient');
+// The AI-never-writes-the-legal-record boundary, enforced in code rather than in a
+// prompt. See utils/aiNarrativeGuard.js for why that distinction cost something.
+const { stripForbiddenKeys } = require('../utils/aiNarrativeGuard');
 
 // ── POST /api/ai/action — unified dispatcher ────────────────────────────────
 
@@ -69,6 +72,32 @@ router.post('/', async (req, res) => {
 
     // Format the result
     const formatted = actionDef.formatResult(rawResult);
+
+    // ── AI-NARRATIVE BOUNDARY — enforced HERE, centrally ──────────────────────
+    // Doctrine (Matt, 2026-06-10): AI never writes into the legal record. An action
+    // may declare `forbiddenResultKeys`; those keys are stripped from the result
+    // before it leaves the server, whatever the model returned.
+    //
+    // Why central and not in the handler: `ai_log_incident`'s prompt already said
+    // "Do NOT include a notes field", and the client read `notes` off the result
+    // anyway. The instruction and the enforcement lived in different places, so the
+    // instruction was the only thing standing between a model completion and the
+    // subpoenable narrative. Stripping at the one chokepoint every action passes
+    // through means a NEW action cannot reintroduce the hole by omission.
+    //
+    // Scoped per-action deliberately: other actions legitimately return a `notes`
+    // key that has nothing to do with the incident record (the staffing forecast
+    // returns per-day `notes` about coverage concerns), so a blanket deep strip
+    // would break them. Logic is pure + unit-tested in utils/aiNarrativeGuard.
+    const dropped = stripForbiddenKeys(formatted && formatted.result, actionDef.forbiddenResultKeys);
+    if (dropped.length) {
+      // Log it: this is the only way we ever learn whether the model actually
+      // ignores the instruction. Ids and key NAMES only, never the stripped content.
+      console.log(JSON.stringify({
+        kind: 'ai_forbidden_key_stripped', action, keys: dropped,
+        department_id: stationId, user_id: req.user.id,
+      }));
+    }
 
     res.json({
       ...formatted,

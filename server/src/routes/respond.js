@@ -97,6 +97,7 @@ router.get('/:incidentId/staffing', async (req, res) => {
       [incidentId, deptId]);
     if (inc.rowCount === 0) return res.status(404).json({ error: 'Incident not found', code: 'NOT_FOUND' });
     const incidentDate = inc.rows[0].date;
+    const incidentStationId = inc.rows[0].station_id;
 
     // Position template (required certs + min rank per seat) joined to apparatus.
     const posRes = await pool.query(
@@ -137,13 +138,13 @@ router.get('/:incidentId/staffing', async (req, res) => {
       return { member: byName || null, linked: false };
     };
 
-    // Career baseline: the run list FOR THE INCIDENT'S DATE — the SAME date-keyed
-    // read the web run-list board uses (GET /api/run-list/today?date=…), so the
-    // iPad staffing board and the web run list always reflect the same run_lists
-    // row. (The board then overlays incident responders + qualification scoring.)
+    // Career baseline: the run list FOR THE INCIDENT'S STATION + DATE — the SAME
+    // per-station read the web run-list board uses (0072), so the iPad staffing board
+    // and the web run list always reflect the same run_lists row. (The board then
+    // overlays incident responders + qualification scoring.)
     const rlRes = await pool.query(
-      'SELECT date, payload FROM run_lists WHERE department_id = $1 AND date = $2 ORDER BY submitted_at DESC LIMIT 1',
-      [deptId, incidentDate]);
+      'SELECT date, payload FROM run_lists WHERE department_id = $1 AND station_id = $2 AND date = $3 ORDER BY submitted_at DESC LIMIT 1',
+      [deptId, incidentStationId, incidentDate]);
     const runList = rlRes.rows[0] || null;
     const crewByPosition = new Map();
     if (runList) {

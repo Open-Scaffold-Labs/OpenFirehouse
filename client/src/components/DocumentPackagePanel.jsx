@@ -32,7 +32,7 @@ const DOC_ICONS = {
 
 // ── Status badge ──────────────────────────────────────────────────────────────
 function StatusBadge({ score, included }) {
-  if (!included) return <span className="text-xs text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded">N/A</span>;
+  if (!included) return <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded">N/A</span>;
   if (score === 100) return <span className="text-xs text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded font-medium">Complete</span>;
   if (score >= 50) return <span className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded font-medium">In Progress</span>;
   return <span className="text-xs text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/50 px-2 py-0.5 rounded font-medium">{score > 0 ? 'Incomplete' : 'Not Started'}</span>;
@@ -54,7 +54,7 @@ function DocumentRow({ doc, incidentId, incidentData, onRefresh }) {
         }`}
       >
         {doc.included ? (
-          expanded ? <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" /> : <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />
+          expanded ? <ChevronDown className="w-4 h-4 text-gray-500 dark:text-gray-400 shrink-0" /> : <ChevronRight className="w-4 h-4 text-gray-500 dark:text-gray-400 shrink-0" />
         ) : <Circle className="w-4 h-4 text-gray-300 dark:text-gray-600 shrink-0" />}
 
         <Icon className={`w-5 h-5 shrink-0 ${doc.included ? (doc.score === 100 ? 'text-emerald-500' : 'text-blue-500') : 'text-gray-300 dark:text-gray-600'}`} />
@@ -65,7 +65,7 @@ function DocumentRow({ doc, incidentId, incidentData, onRefresh }) {
             {doc.required && <span className="text-[10px] text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 px-1.5 py-0.5 rounded">Required</span>}
           </div>
           {doc.detail && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">{doc.detail}</p>}
-          {doc.reason && <p className="text-xs text-gray-400 mt-0.5">{doc.reason}</p>}
+          {doc.reason && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{doc.reason}</p>}
           {doc.status && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Status: {doc.status}</p>}
         </div>
 
@@ -86,7 +86,7 @@ function DocumentRow({ doc, incidentId, incidentData, onRefresh }) {
             <div key={cat.label} className="mb-3 last:mb-0">
               <div className="flex items-center gap-2 mb-1.5">
                 <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">{cat.label}</span>
-                <span className="text-[10px] text-gray-400">{cat.complete}/{cat.total}</span>
+                <span className="text-[10px] text-gray-500 dark:text-gray-400">{cat.complete}/{cat.total}</span>
               </div>
               <div className="space-y-1 pl-2">
                 {cat.checks.map(check => (
@@ -98,7 +98,7 @@ function DocumentRow({ doc, incidentId, incidentData, onRefresh }) {
                     )}
                     <div className="flex-1 min-w-0">
                       <span className={check.complete ? 'text-gray-600 dark:text-gray-300' : 'text-gray-900 dark:text-gray-100'}>{check.label}</span>
-                      {check.value && <span className="text-xs text-gray-400 ml-2">{check.value}</span>}
+                      {check.value && <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">{check.value}</span>}
                       {check.detail && <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">{check.detail}</p>}
                     </div>
                     {!check.complete && check.aiAction && (
@@ -131,7 +131,7 @@ function DocumentRow({ doc, incidentId, incidentData, onRefresh }) {
                   <span className={m.hasExposure ? 'text-gray-600 dark:text-gray-300' : 'text-gray-900 dark:text-gray-100'}>
                     {m.rank ? `${m.rank} ` : ''}{m.name}
                   </span>
-                  <span className="text-xs text-gray-400">{m.hasExposure ? 'Covered' : 'Missing'}</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">{m.hasExposure ? 'Covered' : 'Missing'}</span>
                 </div>
               ))}
             </div>
@@ -209,7 +209,7 @@ export default function DocumentPackagePanel({ incidentId, incidentData }) {
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 text-sm text-gray-400 py-3">
+      <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 py-3">
         <Loader2 className="w-4 h-4 animate-spin" />
         Loading document package...
       </div>
@@ -233,12 +233,12 @@ export default function DocumentPackagePanel({ incidentId, incidentData }) {
         aria-expanded={expanded}
         className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
       >
-        {expanded ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+        {expanded ? <ChevronDown className="w-4 h-4 text-gray-500 dark:text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-500 dark:text-gray-400" />}
         <Package className="w-5 h-5 text-indigo-500" />
         <div className="flex-1 text-left">
           <div className="flex items-center gap-2">
             <span className="font-semibold text-sm text-gray-900 dark:text-gray-100">{pkg.label}</span>
-            <span className="text-[10px] text-gray-400">{completeDocs.length}/{includedDocs.length} documents</span>
+            <span className="text-[10px] text-gray-500 dark:text-gray-400">{completeDocs.length}/{includedDocs.length} documents</span>
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400">{pkg.description}</p>
         </div>
@@ -266,7 +266,7 @@ export default function DocumentPackagePanel({ incidentId, incidentData }) {
             <div className="flex items-center gap-2">
               <button
                 onClick={(e) => { e.stopPropagation(); fetchPackage(); }}
-                className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 flex items-center gap-1"
+                className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 flex items-center gap-1"
               >
                 <RefreshCw className="w-3.5 h-3.5" /> Refresh
               </button>

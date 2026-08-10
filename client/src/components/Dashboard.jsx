@@ -4,7 +4,7 @@ import {
   AlertTriangle, CheckCircle2, Clock, TrendingUp,
   ChevronRight, Shield, Activity, Bell, Tv, SlidersHorizontal,
   Wrench, FileText, Scale, Package, Heart, Calendar,
-  BookOpen, ClipboardList, DollarSign,
+  BookOpen, ClipboardList, DollarSign, Siren,
 } from 'lucide-react';
 import { api } from '../utils/api';
 import { canClearCalls } from '../data/auth';
@@ -13,6 +13,7 @@ import ScreenErrorBoundary from './ScreenErrorBoundary';
 import WeatherWidget from './WeatherWidget';
 import DutyBoard from './DutyBoard';
 import AIActionButton from './AIActionButton';
+import { useAttentionCount } from '../hooks/useAttentionCount';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -56,7 +57,7 @@ function StatCard({ label, value, icon: Icon, color, sub, onClick }) {
       <div className="min-w-0">
         <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{value}</p>
         <p className="text-sm text-gray-500 dark:text-gray-400">{label}</p>
-        {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+        {sub && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{sub}</p>}
       </div>
     </button>
   );
@@ -98,7 +99,7 @@ function Panel({ title, icon: Icon, action, onAction, children, empty, emptyMsg 
         )}
       </div>
       {empty ? (
-        <div className="px-5 py-8 text-center text-sm text-gray-400">{emptyMsg}</div>
+        <div className="px-5 py-8 text-center text-sm text-gray-500 dark:text-gray-400">{emptyMsg}</div>
       ) : (
         <div className="divide-y divide-gray-50 dark:divide-gray-800">{children}</div>
       )}
@@ -134,7 +135,7 @@ function TodayCalendarStrip({ entries, onNavigate }) {
         </button>
       </div>
       {entries.length === 0 ? (
-        <p className="text-sm text-gray-400 text-center py-4">No scheduled activities today</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">No scheduled activities today</p>
       ) : (
         <div className="space-y-2">
           {entries.slice(0, 8).map(e => (
@@ -180,8 +181,13 @@ function HealthScorecard({ scorecard, onNavigate }) {
     {
       key: 'training',
       label: 'Training',
-      value: `${scorecard.training.compliance}%`,
-      sublabel: 'Compliant',
+      // compliance is null when the department has no certification data at all.
+      // The server used to score that void as 100% and render GREEN — "we are
+      // compliant" read off a screen that meant "we could not read anything".
+      // It now sends status:'unknown' + compliance:null, and this must say so
+      // rather than print "null%".
+      value: scorecard.training.compliance === null ? '—' : `${scorecard.training.compliance}%`,
+      sublabel: scorecard.training.compliance === null ? 'No cert data' : 'Compliant',
       status: scorecard.training.status,
       page: 'training',
     },
@@ -196,8 +202,8 @@ function HealthScorecard({ scorecard, onNavigate }) {
     {
       key: 'budget',
       label: 'Budget',
-      value: `${scorecard.budget.remaining}%`,
-      sublabel: 'Remaining',
+      value: scorecard.budget.remaining === null ? '—' : `${scorecard.budget.remaining}%`,
+      sublabel: scorecard.budget.remaining === null ? 'No budget set' : 'Remaining',
       status: scorecard.budget.status,
       page: 'budget',
     },
@@ -207,6 +213,18 @@ function HealthScorecard({ scorecard, onNavigate }) {
     green: { bg: 'bg-green-50 dark:bg-green-950/50', border: 'border-l-green-500', indicator: 'bg-green-500', text: 'text-green-700 dark:text-green-300' },
     yellow: { bg: 'bg-yellow-50 dark:bg-yellow-950/50', border: 'border-l-yellow-500', indicator: 'bg-yellow-500', text: 'text-yellow-700 dark:text-yellow-300' },
     red: { bg: 'bg-red-50 dark:bg-red-950/50', border: 'border-l-red-500', indicator: 'bg-red-500', text: 'text-red-700 dark:text-red-300' },
+    // 'unknown' = we have no data to score. It is NOT a verdict, so it must not
+    // borrow one: green would claim compliance we cannot see, and yellow (the
+    // old `|| statusColors.yellow` fallback) claims a warning nobody assessed.
+    // Neutral grey, and the card reads "—". Absence is reported, never scored.
+    //
+    // WEIGHTS ARE NOT ARBITRARY — they follow c06df75's ruling. gray-400 on white
+    // is 2.6:1 against a 4.5 floor; that pass replaced every bare `text-gray-400`
+    // on this surface with `text-gray-500 dark:text-gray-400`. The swatch and the
+    // border are non-text UI (WCAG 1.4.11, 3:1), and every sibling indicator here
+    // is a -500 weight, so grey matches at -500 rather than reintroducing the
+    // cluster that pass closed.
+    unknown: { bg: 'bg-gray-50 dark:bg-gray-950/50', border: 'border-l-gray-500', indicator: 'bg-gray-500', text: 'text-gray-600 dark:text-gray-400' },
   };
 
   return (
@@ -276,7 +294,7 @@ function ActionScorecard({ summary, onNavigate }) {
 
 // ─── main ─────────────────────────────────────────────────────────────────────
 
-export default function Dashboard({ onNavigate, settings, prefs, onRespond, user, selectedStation = null }) {
+export default function Dashboard({ onNavigate, settings, prefs, onRespond, user, selectedStation = null, unreadMessageCount = 0 }) {
   const stationName = settings?.stationName    || 'Station 14';
   const deptName    = settings?.departmentName || 'Maplewood VFD';
   const minCrew     = settings?.minCrewSize    || 3;
@@ -397,9 +415,20 @@ export default function Dashboard({ onNavigate, settings, prefs, onRespond, user
       .slice(0, 6);
   }, [shifts]);
 
-  // ── total alerts ──
+  // ── alerts ──
+  // TWO numbers here, deliberately, because they are two different claims:
+  //
+  //   attentionCount — the shell-wide "needs attention" figure, from the ONE
+  //     definition (hooks/useAttentionCount.js). The header pill makes the same
+  //     claim the sidebar bell makes, so it must be the same number. It used to
+  //     be derived locally from this page's summary data and read "1" while the
+  //     bell read "47".
+  //   panelAlerts — the count of rows the Alerts PANEL below actually lists. A
+  //     container's count has to equal its contents; showing the shell-wide
+  //     figure on a panel that lists three items would be a new lie, not a fix.
   const summaryAlerts = summary?.alerts || [];
-  const totalAlerts = summaryAlerts.length || (expiredCerts.length + soonCerts.length + serviceAlerts.length + understaffedShifts.length);
+  const panelAlerts = summaryAlerts.length || (expiredCerts.length + soonCerts.length + serviceAlerts.length + understaffedShifts.length);
+  const { total: attentionCount } = useAttentionCount(user, unreadMessageCount);
 
   // ── greeting ──
   const hour = new Date().getHours();
@@ -463,10 +492,10 @@ export default function Dashboard({ onNavigate, settings, prefs, onRespond, user
           >
             <Tv size={16} /> TV Mode
           </button>
-          {totalAlerts > 0 && (
+          {attentionCount > 0 && (
             <div className="flex items-center gap-2 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900 px-3 py-2 rounded-lg">
               <Bell size={15} className="text-red-600 dark:text-red-400" />
-              <span className="text-sm font-semibold text-red-700 dark:text-red-300">{totalAlerts} alert{totalAlerts > 1 ? 's' : ''} need attention</span>
+              <span className="text-sm font-semibold text-red-700 dark:text-red-300">{attentionCount} item{attentionCount === 1 ? '' : 's'} need{attentionCount === 1 ? 's' : ''} attention</span>
             </div>
           )}
         </div>
@@ -481,28 +510,48 @@ export default function Dashboard({ onNavigate, settings, prefs, onRespond, user
           `}</style>
           <div className="bg-red-900 text-white rounded-xl p-4 animate-pulse-banner">
             <div className="flex items-center gap-3 text-sm flex-wrap">
-              <span className="text-xl flex-shrink-0">🚨</span>
-              <span className="font-bold">INCIDENT ACTIVE</span>
-              <span className="text-red-200">|</span>
-              <span className="font-semibold">{activeBoard.type}</span>
-              <span className="text-red-200">|</span>
-              <span className="font-semibold">{activeBoard.address}</span>
-              <span className="text-red-200">|</span>
-              <span className="font-mono font-semibold">{
-                (() => {
-                  const elapsed = Math.floor((Date.now() - new Date(activeBoard.dispatched_at).getTime()) / 1000);
-                  const h = Math.floor(elapsed / 3600);
-                  const m = Math.floor((elapsed % 3600) / 60);
-                  const s = elapsed % 60;
-                  return h > 0
-                    ? `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-                    : `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-                })()
-              }</span>
-              <span className="text-red-200">|</span>
-              <span>👥 {activeBoard.personnel_count} personnel</span>
-              <span className="text-red-200">|</span>
-              <span>🚒 {activeBoard.units_count} units</span>
+              {/* lucide, not an emoji. Emoji render per-platform (a different glyph
+                  on Windows, Android and macOS), don't inherit currentColor or font
+                  weight, and a screen reader announces "police cars revolving light"
+                  in the middle of an emergency banner. Everything else in this app
+                  is lucide; the most important banner in it should not be the
+                  exception. */}
+              <Siren size={20} className="shrink-0 text-white" aria-hidden="true" />
+              {/* "ACTIVE INCIDENT", matching The Board and the duty board — the
+                  same banner was called INCIDENT ACTIVE here and ACTIVE INCIDENT
+                  one click away. Segments are built and FILTERED, because the
+                  separators used to render around absent values: an incident with
+                  no type printed a bare "| |" on the most urgent row on screen. */}
+              {(() => {
+                const elapsed = Math.max(0, Math.floor((Date.now() - new Date(activeBoard.dispatched_at).getTime()) / 1000));
+                const d = Math.floor(elapsed / 86400);
+                const h = Math.floor((elapsed % 86400) / 3600);
+                const m = Math.floor((elapsed % 3600) / 60);
+                const s = elapsed % 60;
+                const pad = (n) => String(n).padStart(2, '0');
+                // Days are spelled out. A 34-hour call rendered "34:53:15", which
+                // reads as a wall-clock time, not as "this has been running a day
+                // and a half".
+                const clock = d > 0
+                  ? `${d}d ${pad(h)}:${pad(m)}:${pad(s)}`
+                  : h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+
+                const segments = [
+                  { key: 'label', node: <span className="font-bold">ACTIVE INCIDENT</span> },
+                  activeBoard.type    && { key: 'type',    node: <span className="font-semibold">{activeBoard.type}</span> },
+                  activeBoard.address && { key: 'address', node: <span className="font-semibold">{activeBoard.address}</span> },
+                  { key: 'clock', node: <span className="font-mono font-semibold">{clock}</span> },
+                  Number.isFinite(Number(activeBoard.personnel_count)) && { key: 'personnel', node: <span className="inline-flex items-center gap-1.5"><Users size={14} aria-hidden="true" />{activeBoard.personnel_count} personnel</span> },
+                  Number.isFinite(Number(activeBoard.units_count))     && { key: 'units',     node: <span className="inline-flex items-center gap-1.5"><Truck size={14} aria-hidden="true" />{activeBoard.units_count} units</span> },
+                ].filter(Boolean);
+
+                return segments.map((seg, i) => (
+                  <span key={seg.key} className="flex items-center gap-3">
+                    {i > 0 && <span className="text-red-200" aria-hidden="true">|</span>}
+                    {seg.node}
+                  </span>
+                ));
+              })()}
               <div className="ml-auto flex items-center gap-2 flex-shrink-0">
                 <button
                   onClick={() => onRespond && onRespond({
@@ -512,9 +561,14 @@ export default function Dashboard({ onNavigate, settings, prefs, onRespond, user
                     units: activeBoard.units || '',
                     dispatched_at: activeBoard.dispatched_at || new Date().toISOString(),
                   })}
-                  className="bg-green-500 text-white font-black text-xs px-4 py-1.5 rounded-xl hover:bg-green-400 transition-colors shadow-lg"
+                  /* green-700, measured. White 12px bold needs 4.5:1 — green-500
+                     (shipped) is 2.22:1 and green-600 is 3.22:1, so the obvious
+                     one-step darkening would still have failed. green-700 is
+                     4.94:1. Numbers computed from the built stylesheet's own
+                     oklch tokens, sanity-checked white-on-black = 21.00. */
+                  className="inline-flex items-center gap-1.5 bg-green-700 text-white font-black text-xs px-4 py-1.5 rounded-xl hover:bg-green-800 transition-colors shadow-lg"
                 >
-                  I'm Responding 🚒
+                  <Truck size={14} aria-hidden="true" /> I&apos;m Responding
                 </button>
                 {/* Dispatch-controlled: only Dispatch or a Chief can clear the call. */}
                 {canClearCalls(user) && (
@@ -547,7 +601,7 @@ export default function Dashboard({ onNavigate, settings, prefs, onRespond, user
 
       {/* ── hidden widgets notice ── */}
       {hiddenCount > 0 && (
-        <div className="flex items-center gap-2 text-xs text-gray-400 bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2.5">
+        <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2.5">
           <SlidersHorizontal size={13} />
           <span>{hiddenCount} widget{hiddenCount !== 1 ? 's' : ''} hidden — change this in your account menu → <strong>Customize My View</strong></span>
         </div>
@@ -598,7 +652,7 @@ export default function Dashboard({ onNavigate, settings, prefs, onRespond, user
       {/* ── alerts + upcoming shifts ── */}
       {(show.alerts || show.shifts) && (
       <div className={`grid ${show.alerts && show.shifts && isOfficer ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'} gap-6`}>
-        {show.alerts && isOfficer && <Panel title={`Alerts${totalAlerts > 0 ? ` (${totalAlerts})` : ''}`} icon={Bell} empty={totalAlerts === 0} emptyMsg="No active alerts — station looks good!">
+        {show.alerts && isOfficer && <Panel title={`Alerts${panelAlerts > 0 ? ` (${panelAlerts})` : ''}`} icon={Bell} empty={panelAlerts === 0} emptyMsg="No active alerts — station looks good!">
           {summaryAlerts.length > 0 ? (
             summaryAlerts.map((a, i) => (
               <div key={i} className="px-4 py-3">
@@ -680,7 +734,7 @@ export default function Dashboard({ onNavigate, settings, prefs, onRespond, user
                 <p className="text-sm font-medium text-gray-800 dark:text-gray-100 truncate">{inc.type}</p>
                 <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{inc.address}</p>
               </div>
-              <span className="text-xs text-gray-400 whitespace-nowrap">{formatDate(inc.date)}</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">{formatDate(inc.date)}</span>
             </div>
           ))}
         </Panel>}
@@ -720,7 +774,7 @@ export default function Dashboard({ onNavigate, settings, prefs, onRespond, user
                   </span>
                 </div>
               ))}
-              {expiredCerts.length + soonCerts.length > 3 && <p className="text-xs text-gray-400">+{expiredCerts.length + soonCerts.length - 3} more</p>}
+              {expiredCerts.length + soonCerts.length > 3 && <p className="text-xs text-gray-500 dark:text-gray-400">+{expiredCerts.length + soonCerts.length - 3} more</p>}
             </div>
           )}
         </Panel>}
@@ -750,7 +804,7 @@ export default function Dashboard({ onNavigate, settings, prefs, onRespond, user
           })().map(({ label, icon: Icon, page }) => (
             <button key={page} onClick={() => onNavigate(page)}
               className="flex flex-col items-center gap-2 p-4 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-red-300 dark:hover:border-red-800 hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors text-center group">
-              <Icon size={20} className="text-gray-400 group-hover:text-red-600 transition-colors" />
+              <Icon size={20} className="text-gray-500 dark:text-gray-400 group-hover:text-red-600 transition-colors" />
               <span className="text-xs font-medium text-gray-600 dark:text-gray-300 group-hover:text-red-700">{label}</span>
             </button>
           ))}

@@ -1,6 +1,9 @@
 // Open Firehouse Service Worker
 const CACHE_NAME = 'openfirehouse-v0.18.1';
-const API_CACHE  = 'openfirehouse-api-v2'; // v2: W4.4 — active-incident + hazmat material caching, fixed offline fallback
+const API_CACHE  = 'openfirehouse-api-v3'; // v3 (2026-07-11): operational surfaces moved SWR → network-first
+                                           // (a cached cad/alerts answer to the Realtime ping→refetch delayed
+                                           // new-dispatch renders by a poll cycle); v2: W4.4 active-incident +
+                                           // hazmat material caching, fixed offline fallback
 
 // Top 20 ERG guides and all TIH isolation data pre-cached for offline field use.
 // Guides chosen by incident frequency: common flammables, corrosives, TIH gases,
@@ -73,34 +76,79 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // API calls: cacheable endpoints use stale-while-revalidate; others network-first
+  // API calls: three tiers (2026-07-11 — replaces the single SWR list):
+  //  • REFERENCE (ERG hazmat): stale-while-revalidate. The dataset is versioned
+  //    yearly — serving cache instantly is correct AND fast for field lookups.
+  //  • OPERATIONAL (dispatch, unit status, field data): NETWORK-FIRST with a
+  //    cache fallback. The old SWR here was a life-safety accuracy bug: the
+  //    Realtime "ping → refetch /api/cad/alerts" was answered from cache, so a
+  //    NEW call's banner rendered a poll-cycle late; a post-edit refetch could
+  //    show pre-edit values (the same class that bit the iPad — OFM T.7).
+  //    Network-first keeps W4.4's offline promise (cache still answers when the
+  //    network is gone) while never serving stale data when the network is up.
+  //  • Everything else: network-only with an offline error.
   if (url.pathname.startsWith('/api/')) {
-    // These endpoints are safe to serve from cache when offline.
-    // W4.4 (2026-06-10): added the ACTIVE-INCIDENT surfaces (active-board,
-    // cad/alerts, units/status) and the field-critical hazmat lookups
-    // (material/:un, placard/:code) — "pre-plans, hazmat, hydrants, and the
-    // active incident actually work offline" per roadmap 3.4.
-    const CACHEABLE_APIS = [
-      '/api/pre-plans', '/api/hydrants', '/api/knox-keys', '/api/members',
+    const REFERENCE_APIS = [
       '/api/hazmat/guide/', '/api/hazmat/search', '/api/hazmat/material/',
       '/api/hazmat/placard/',
+    ];
+    const OPERATIONAL_APIS = [
+      '/api/pre-plans', '/api/hydrants', '/api/knox-keys', '/api/members',
       '/api/active-board', '/api/cad/alerts', '/api/units/status',
     ];
-    const isCacheable = event.request.method === 'GET' && CACHEABLE_APIS.some(p => url.pathname.startsWith(p));
+    // On a degraded fireground connection, waiting on a dead-slow network is as
+    // bad as a hang — after this timeout the cached copy answers and the still-
+    // in-flight fetch refreshes the cache in the background for the next read.
+    const OPERATIONAL_NETWORK_TIMEOUT_MS = 5000;
 
-    if (isCacheable) {
-      // Stale-while-revalidate: serve cache immediately, update in background.
-      // W4.4 bugfix: the old fallback chain was `cached || fetchPromise ||
-      // offline503` — a Promise is always truthy, so the 503 branch was
-      // unreachable, and a cache-miss while offline resolved respondWith with
-      // null (a TypeError, surfacing as a raw network error mid-incident).
+    const isGet = event.request.method === 'GET';
+    const isReference   = isGet && REFERENCE_APIS.some(p => url.pathname.startsWith(p));
+    const isOperational = isGet && OPERATIONAL_APIS.some(p => url.pathname.startsWith(p));
+
+    const offline503 = () => new Response(
+      JSON.stringify({ error: 'Offline — no cached data available', data: [] }),
+      { status: 503, headers: { 'Content-Type': 'application/json' } }
+    );
+
+    if (isOperational) {
+      // Network-first: fresh when reachable; cached when offline or dead-slow.
       event.respondWith(
         caches.open(API_CACHE).then(cache =>
           cache.match(event.request).then(cached => {
-            const offline503 = () => new Response(
-              JSON.stringify({ error: 'Offline — no cached data available', data: [] }),
-              { status: 503, headers: { 'Content-Type': 'application/json' } }
-            );
+            // `network` NEVER rejects (it resolves null on failure) so every
+            // consumer below can use plain .then — a rejecting handle here is
+            // how the W4.4-class bug happens (respondWith receives a rejected
+            // promise → the page sees a raw network error instead of the clean
+            // offline 503; this exact slip was caught by audit before v3 shipped).
+            const network = fetch(event.request).then(response => {
+              // Cache only good answers; pass every real response through so a
+              // 401 (token refresh) or 5xx reaches the app's own error handling
+              // — cache must never mask an auth or server error.
+              if (response.ok) cache.put(event.request, response.clone());
+              return response;
+            }).catch(() => null);
+            const timeout = new Promise(resolve =>
+              setTimeout(() => resolve(null), OPERATIONAL_NETWORK_TIMEOUT_MS));
+            return Promise.race([network, timeout]).then(winner => {
+              if (winner) return winner;              // a real network answer won
+              if (cached) return cached;              // offline / dead-slow → last-known-good
+              return network.then(r => r || offline503()); // no cache: better slow than 503-at-5s
+            });
+          })
+        )
+      );
+      return;
+    }
+
+    if (isReference) {
+      // Stale-while-revalidate: serve cache immediately, update in background.
+      // W4.4 bugfix retained: `cached || fetchPromise || offline503` was broken —
+      // a Promise is always truthy, so the 503 branch was unreachable, and a
+      // cache-miss while offline resolved respondWith with null (a TypeError,
+      // surfacing as a raw network error mid-incident).
+      event.respondWith(
+        caches.open(API_CACHE).then(cache =>
+          cache.match(event.request).then(cached => {
             const fetchPromise = fetch(event.request).then(response => {
               if (response.ok) cache.put(event.request, response.clone());
               return response;

@@ -223,7 +223,7 @@ export default function EmailIngest() {
                   {emailContent && (
                     <button
                       onClick={copyToClipboard}
-                      className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 flex items-center gap-1"
+                      className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 flex items-center gap-1"
                     >
                       {copied ? <Check size={14} /> : <Copy size={14} />}
                       {copied ? 'Copied' : 'Copy'}
@@ -252,7 +252,7 @@ export default function EmailIngest() {
               <button
                 onClick={handleClassify}
                 disabled={loading || !emailContent.trim()}
-                className="w-full bg-red-600 text-white font-semibold py-3 rounded-xl hover:bg-red-700 disabled:bg-gray-300 dark:disabled:bg-gray-700 transition-colors flex items-center justify-center gap-2"
+                className="w-full bg-red-600 text-white font-semibold py-3 rounded-xl hover:bg-red-700 disabled:bg-gray-200 disabled:text-gray-600 dark:disabled:bg-gray-700 dark:disabled:text-gray-300 transition-colors flex items-center justify-center gap-2"
               >
                 {loading && <Loader2 size={18} className="animate-spin" />}
                 {loading ? 'Analyzing...' : 'Classify Email'}
@@ -347,7 +347,7 @@ export default function EmailIngest() {
                 <button
                   onClick={handleFileDocument}
                   disabled={loading}
-                  className="flex-1 bg-red-600 text-white font-semibold py-3 rounded-xl hover:bg-red-700 disabled:bg-gray-300 dark:disabled:bg-gray-700 transition-colors flex items-center justify-center gap-2"
+                  className="flex-1 bg-red-600 text-white font-semibold py-3 rounded-xl hover:bg-red-700 disabled:bg-gray-200 disabled:text-gray-600 dark:disabled:bg-gray-700 dark:disabled:text-gray-300 transition-colors flex items-center justify-center gap-2"
                 >
                   {loading && <Loader2 size={18} className="animate-spin" />}
                   {loading ? 'Filing...' : 'File Document'}

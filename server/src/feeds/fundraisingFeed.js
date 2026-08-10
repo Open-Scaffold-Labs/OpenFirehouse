@@ -6,7 +6,7 @@ const { pool } = require('../db');
 
 module.exports = async function fundraisingFeed(start, end, options) {
   const { rows } = await pool.query(`
-    SELECT id, title, start_date, end_date, status, goal_amount, raised_amount
+    SELECT id, name AS title, start_date, end_date, status, goal_amount, raised_amount
     FROM fundraising_campaigns
     WHERE department_id = $3
       AND (start_date BETWEEN $1 AND $2

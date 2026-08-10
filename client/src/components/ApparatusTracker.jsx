@@ -325,7 +325,7 @@ export default function ApparatusTracker({ selectedStation = null }) {
                             <span className="text-xl leading-none">{TYPE_ICONS[unit.type] || '🚒'}</span>
                             <div>
                               <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{unit.designation}</p>
-                              <p className="text-xs text-gray-400">{unit.make} {unit.model}</p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">{unit.make} {unit.model}</p>
                             </div>
                           </div>
                         </td>
@@ -352,7 +352,12 @@ export default function ApparatusTracker({ selectedStation = null }) {
                         </td>
                         {/* Operator */}
                         <td className="px-4 py-3.5 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
-                          {unit.assignedOperator || <span className="text-gray-300 dark:text-gray-600">Unassigned</span>}
+                          {/* Was `text-gray-300 dark:text-gray-600` — the pair is INVERTED: the
+                              pale shade was serving light mode and the dark shade dark mode, so
+                              it failed in BOTH (1.47:1 light, 2.35:1 dark). "Unassigned" is a
+                              real data value an officer reads off the apparatus table, not
+                              decoration, so it needs to clear AA rather than merely look quiet. */}
+                          {unit.assignedOperator || <span className="italic text-gray-500 dark:text-gray-400">Unassigned</span>}
                         </td>
                         {/* Actions */}
                         <td className="px-4 py-3.5">
@@ -482,7 +487,7 @@ export default function ApparatusTracker({ selectedStation = null }) {
         </div>
       )}
 
-      <p className="text-xs text-gray-400 text-center">
+      <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
         Showing {displayed.length} of {units.length} apparatus
         {filterStatus !== 'All' && ` · Filtered by: ${filterStatus}`}
       </p>

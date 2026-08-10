@@ -3,7 +3,7 @@ import {
   ArrowLeft, Plus, Search, MapPin, Building2, Shield,
   AlertTriangle, Droplets, Flame, Zap, FileText,
   Phone, User, ChevronDown, ChevronUp, Pencil, Trash2,
-  CheckCircle2, XCircle, Calendar, Wrench, Layers, Loader2, Download, Paperclip,
+  CheckCircle2, XCircle, Calendar, Wrench, Layers, Loader2, Download, Paperclip, Camera,
 } from 'lucide-react';
 import {
   RISK_LEVELS, RISK_COLORS,
@@ -13,6 +13,7 @@ import { api } from '../utils/api';
 import PrePlanForm from './PrePlanForm';
 import AIActionButton from './AIActionButton';
 import AttachmentGallery from './AttachmentGallery';
+import PrePlanPhotoGallery from './PrePlanPhotoGallery';
 import { loadMapKit, resolveCoordinate } from '../utils/mapkit';
 import { nfpa291Class, nfpaGlyph } from '../utils/nfpa291';
 
@@ -187,7 +188,11 @@ function Section({ title, icon: Icon, iconColor = 'text-red-600 dark:text-red-40
 
 // ─── Plan Detail ──────────────────────────────────────────────────────────────
 
-function PlanDetail({ plan, onBack, onEdit, onDelete }) {
+// `onNavigate` is threaded in from the parent because the Knox Box row links out to Knox
+// management. It was referenced but never passed, so the "View in Knox Mgmt" button threw
+// `onNavigate is not defined` on click — optional chaining does not save an UNDECLARED
+// binding, only a null value. Caught by the no-undef gate.
+function PlanDetail({ plan, onBack, onEdit, onDelete, onNavigate }) {
   const staleDays = plan.lastUpdated
     ? Math.floor((Date.now() - new Date(plan.lastUpdated)) / (1000 * 60 * 60 * 24))
     : null;
@@ -468,13 +473,66 @@ function PlanDetail({ plan, onBack, onEdit, onDelete }) {
         </div>
       </Section>
 
-      {/* Attachments */}
-      <Section title="Photos & Attachments" icon={Paperclip} iconColor="text-indigo-600 dark:text-indigo-400" collapseSignal={collapseSignal}>
+      {/* Tactical sketch — drawn on the apparatus iPad (parity-audit D1: this vector
+          artifact was previously invisible on the web; the fire marshal could never
+          see what the officer drew). Rendered on a dark surface matching the drawing
+          canvas so the full palette (incl. near-white) reads faithfully. */}
+      {Array.isArray(plan.tacticalSketch) && plan.tacticalSketch.length > 0 && (
+        <Section title="Tactical Sketch" icon={Pencil} iconColor="text-rose-500 dark:text-rose-400" collapseSignal={collapseSignal}>
+          <div className="pt-1">
+            <TacticalSketch strokes={plan.tacticalSketch} />
+            <p className="text-[10px] text-gray-400 mt-1.5 italic">
+              Drawn in the field on the apparatus tablet — re-editable there; shown here and on the PDF export.
+            </p>
+          </div>
+        </Section>
+      )}
+
+      {/* Photos (T.10 — first-class: captioned/categorized, surfaced at dispatch on Size-Up) */}
+      <Section title="Photos" icon={Camera} iconColor="text-blue-600 dark:text-blue-400" collapseSignal={collapseSignal}>
+        <div className="pt-1">
+          <PrePlanPhotoGallery planId={plan.id} />
+        </div>
+      </Section>
+
+      {/* Attachments (documents) */}
+      <Section title="Attachments" icon={Paperclip} iconColor="text-indigo-600 dark:text-indigo-400" collapseSignal={collapseSignal}>
         <div className="pt-1">
           <AttachmentGallery planId={plan.id} />
         </div>
       </Section>
     </div>
+  );
+}
+
+// ─── Tactical sketch (SVG render of the iPad's vector strokes) ────────────────
+// Strokes are SVG path strings {d, color, width} in the tablet canvas's local
+// coordinate space; the viewBox is fitted to their bounding box.
+function TacticalSketch({ strokes }) {
+  const valid = (strokes ?? []).filter(s => s && typeof s.d === 'string' && s.d.length > 1);
+  if (valid.length === 0) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const s of valid) {
+    const nums = s.d.match(/-?\d+(?:\.\d+)?/g) ?? [];
+    for (let i = 0; i + 1 < nums.length; i += 2) {
+      const x = parseFloat(nums[i]), y = parseFloat(nums[i + 1]);
+      if (Number.isFinite(x) && Number.isFinite(y)) {
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (!Number.isFinite(minX)) return null;
+  const pad = 16;
+  const vb = `${minX - pad} ${minY - pad} ${Math.max(1, maxX - minX) + pad * 2} ${Math.max(1, maxY - minY) + pad * 2}`;
+  return (
+    <svg viewBox={vb} className="w-full max-h-[420px] rounded-xl border border-gray-200 dark:border-gray-700"
+      style={{ background: '#0e1521' }} role="img" aria-label="Tactical sketch drawn on the apparatus tablet">
+      {valid.map((s, i) => (
+        <path key={i} d={s.d} fill="none" stroke={s.color || '#f9fafb'} strokeWidth={s.width || 4}
+          strokeLinecap="round" strokeLinejoin="round" />
+      ))}
+    </svg>
   );
 }
 
@@ -616,6 +674,7 @@ export default function PreIncidentPlans({ onNavigate }) {
           onBack={() => setSelected(null)}
           onEdit={handleEdit}
           onDelete={handleDelete}
+          onNavigate={onNavigate}
         />
         {formOpen && (
           <PrePlanForm

@@ -64,7 +64,13 @@ module.exports = {
     const p = req.body || {};
 
     // TODO: confirm against a real Zuercher webhook capture.
-    const alertId = String(p.event_id || p.cad_event_number || `zu-${Date.now()}`);
+    // Raw vendor id ONLY — no fallback here. Synthesis moved to
+    // processDispatch (cad/alertIdentity.js), which is the one place the
+    // DEPARTMENT is known: NENA namespaces an identifier by the agency that
+    // created it, and the old `${prefix}-${Date.now()}` fallback was
+    // non-deterministic — a vendor retry minted a NEW id and defeated the
+    // duplicate guard exactly when it was needed.
+    const alertId = p.event_id || p.cad_event_number || null;
     const address = String(p.location_address || p.address || '');
     const units = Array.isArray(p.assigned_units)
       ? p.assigned_units.join(',')

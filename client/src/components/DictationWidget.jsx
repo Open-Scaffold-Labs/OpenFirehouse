@@ -17,6 +17,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Mic, MicOff, X, Flame } from 'lucide-react';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { fireCleanup } from '../utils/fireTranscript';
+import { fabSlotCls } from '../utils/fabRail';
 
 export default function DictationWidget() {
   const [expanded, setExpanded] = useState(false);
@@ -133,7 +134,7 @@ export default function DictationWidget() {
     <>
       {/* ── Expanded transcript panel ──────────────────────────────────── */}
       {expanded && (
-        <div className="fixed bottom-24 right-[5.5rem] z-50 w-72 bg-gray-900 text-white rounded-2xl shadow-2xl border border-gray-700 overflow-hidden">
+        <div className="fixed bottom-[5.5rem] right-20 z-50 w-72 bg-gray-900 text-white rounded-2xl shadow-2xl border border-gray-700 overflow-hidden">
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-2.5 bg-gray-800 border-b border-gray-700">
             <div className="flex items-center gap-2">
@@ -203,7 +204,7 @@ export default function DictationWidget() {
       {/* ── Floating mic button ────────────────────────────────────────── */}
       <button
         onClick={handleToggle}
-        className={`fixed bottom-6 right-[5.5rem] z-40 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all ${
+        className={`${fabSlotCls('dictation')} z-40 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all ${
           listening
             ? 'bg-red-600 animate-pulse hover:bg-red-700 ring-4 ring-red-600/30'
             : 'bg-gray-800 hover:bg-gray-700'

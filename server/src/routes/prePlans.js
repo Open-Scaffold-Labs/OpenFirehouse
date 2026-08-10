@@ -1,10 +1,27 @@
 'use strict';
 const express = require('express');
 const router  = express.Router();
-const { prePlans: db } = require('../db');
+const { prePlans: db, prePlanPhotos } = require('../db');
 const { findBestMatch } = require('../utils/addressNormalize');
 
-router.get('/', async (req, res) => { try { res.json({ data: await db.all(req.user.department_id) }); } catch(e) { res.status(500).json({ error: 'Failed to fetch pre-plans' }); } });
+// GET /api/pre-plans — the department's whole pre-plan list.
+//
+// Each row carries `photoCount`. The mobile Size-Up matches the pre-plan from the
+// DEVICE's cached copy of this list (offline-first, 2026-07-13) rather than calling
+// /by-address on a live call — so anything the Building Intel card needs has to ride
+// the cached row, or it silently vanishes in a dead zone. One grouped count query for
+// the whole department, not one per plan. Best-effort: a count failure degrades to 0
+// and must never break the list itself.
+router.get('/', async (req, res) => {
+  try {
+    const rows = await db.all(req.user.department_id);
+    let counts = {};
+    try { counts = await prePlanPhotos.countsByDept(req.user.department_id); } catch { /* leave empty */ }
+    res.json({ data: rows.map((r) => ({ ...r, photoCount: counts[r.id] ?? 0 })) });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to fetch pre-plans' });
+  }
+});
 
 // GET /api/pre-plans/by-address?address=... — fuzzy match for CAD auto-surface
 // Must be before /:id to avoid routing conflict
@@ -15,7 +32,12 @@ router.get('/by-address', async (req, res) => {
     const all = await db.all(req.user.department_id);
     const match = findBestMatch(address, all);
     if (!match) return res.json({ data: null, score: 0 });
-    res.json({ data: match.plan, score: match.score });
+    // photoCount: one indexed query so Size-Up's Building Intel card can show
+    // "N photos" without a storage round-trip at dispatch (T.10). Best-effort —
+    // a count failure must never break the pre-plan match itself.
+    let photoCount = 0;
+    try { photoCount = await prePlanPhotos.countForPlan(match.plan.id, req.user.department_id); } catch { /* 0 */ }
+    res.json({ data: match.plan, score: match.score, photoCount });
   } catch(e) {
     res.status(500).json({ error: 'Failed to match address' });
   }

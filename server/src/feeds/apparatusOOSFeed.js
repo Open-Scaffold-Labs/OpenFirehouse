@@ -8,7 +8,7 @@ module.exports = async function apparatusOOSFeed(start, end, options) {
   const { rows } = await pool.query(`
     SELECT oos.id, oos.apparatus_id, oos.reason, oos.start_date, oos.end_date,
            oos.status,
-           a.name AS apparatus_name
+           a.designation AS apparatus_name
     FROM apparatus_oos oos
     LEFT JOIN apparatus a ON a.id = oos.apparatus_id
     WHERE oos.department_id = $3

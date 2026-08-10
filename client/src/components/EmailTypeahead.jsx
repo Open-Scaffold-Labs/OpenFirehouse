@@ -196,7 +196,7 @@ export default function EmailTypeahead({
                     }}
                     className={`w-full px-3 py-2 text-left text-sm transition-colors flex items-center justify-between gap-2 ${
                       isSelected
-                        ? 'bg-red-50 dark:bg-red-950/50 text-gray-900 dark:text-gray-100'
+                        ? 'bg-red-50 dark:bg-red-950/50 text-red-900 dark:text-red-100'
                         : 'hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'
                     }`}
                   >

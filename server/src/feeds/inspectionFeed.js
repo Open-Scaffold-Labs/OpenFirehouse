@@ -6,15 +6,29 @@ const { pool } = require('../db');
 
 module.exports = async function inspectionFeed(start, end, options) {
   const { rows } = await pool.query(`
-    SELECT fi.id, fi.property_id, fi.inspection_date, fi.next_inspection_date,
-           fi.status, fi.inspector_name, fi.result,
+    SELECT fi.id, fi."propertyId" AS property_id,
+           fi."scheduledDate" AS inspection_date,
+           fi."followUpDate" AS next_inspection_date,
+           fi."inspectorName" AS inspector_name, fi.result,
            p.name AS property_name
-    FROM fire_inspections fi
-    LEFT JOIN fi_properties p ON p.id = fi.property_id
+    FROM fi_inspections fi
+    LEFT JOIN fi_properties p ON p.id = fi."propertyId"
     WHERE fi.department_id = $3
-      AND (fi.inspection_date BETWEEN $1 AND $2
-           OR fi.next_inspection_date BETWEEN $1 AND $2)
-    ORDER BY COALESCE(fi.next_inspection_date, fi.inspection_date)
+      -- Soft-delete filter. fi_inspections is a LEGAL RECORD and is soft-delete
+      -- only; a deleted inspection must not reappear on a department calendar.
+      -- incidentFeed and grievanceFeed both filter theirs; this one did not.
+      --
+      -- It went unnoticed because the omission was harmless while the query was
+      -- broken: this feed used to name fire_inspections, which exists in no
+      -- schema, so it threw and returned [] every time. Repointing it at the
+      -- real table (1fb98c6, today) made it return rows for the first time --
+      -- and prod currently holds 2 soft-deleted rows out of 8, so that fix
+      -- would have put deleted legal records onto the calendar. Fixing a query
+      -- can wake a dormant defect in the same query.
+      AND fi.deleted_at IS NULL
+      AND (fi."scheduledDate" BETWEEN $1 AND $2
+           OR fi."followUpDate" BETWEEN $1 AND $2)
+    ORDER BY COALESCE(fi."followUpDate", fi."scheduledDate")
   `, [start, end, options.stationId]);
 
   const entries = [];

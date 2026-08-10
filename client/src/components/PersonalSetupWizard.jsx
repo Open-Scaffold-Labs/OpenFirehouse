@@ -318,7 +318,7 @@ export default function PersonalSetupWizard({ user, onComplete }) {
 
       <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 flex items-center justify-between">
         <button onClick={() => step > 0 && setStep(step - 1)} disabled={step === 0}
-          className="flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-30">
+          className="flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-30">
           <ChevronLeft size={14} /> Back
         </button>
         {step < STEPS.length - 1 ? (

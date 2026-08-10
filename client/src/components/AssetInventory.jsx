@@ -90,7 +90,7 @@ function StatCard({ label, value, icon: Icon, color, sub }) {
 
 // ─── main ─────────────────────────────────────────────────────────────────────
 
-export default function AssetInventory() {
+function EquipmentRegistry() {
   const [assets, setAssets]       = useState([]);
   const [loading, setLoading]     = useState(true);
   const [search, setSearch]       = useState('');
@@ -431,6 +431,32 @@ export default function AssetInventory() {
           onCancel={() => setDeleteTarget(null)}
         />
       )}
+    </div>
+  );
+}
+
+
+// ─── 2.4: the Asset & Inventory page is now tabbed — Equipment (the registry above),
+// Supplies (par inventory, 0085), Requisitions. Crew see the page (PAGE_ACCESS 1);
+// privileged writes stay server-gated + UI-gated inside each tab. ─────────────────
+import Supplies from './Supplies';
+
+export default function AssetInventory() {
+  const [tab, setTab] = useState('equipment');
+  return (
+    <div>
+      <div className="px-4 sm:px-6 pt-4 max-w-6xl mx-auto">
+        <div className="flex gap-1 border-b border-gray-200 dark:border-gray-700 text-sm">
+          {[['equipment', 'Equipment'], ['supplies', 'Supplies'], ['requisitions', 'Requisitions']].map(([id, label]) => (
+            <button key={id} onClick={() => setTab(id)}
+              className={`px-3 py-2 -mb-px border-b-2 ${tab === id ? 'border-blue-600 text-blue-600 font-medium' : 'border-transparent text-gray-500'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {tab === 'equipment' && <EquipmentRegistry />}
+      {tab !== 'equipment' && <Supplies view={tab} />}
     </div>
   );
 }

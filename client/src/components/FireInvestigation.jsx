@@ -575,7 +575,7 @@ export default function FireInvestigation() {
           {['All', 'Open', 'Active', 'Referred', 'Closed'].map(s => (
             <button key={s} onClick={() => setStatusFlt(s)}
               className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors ${
-                statusFlt === s ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                statusFlt === s ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
               }`}>{s}</button>
           ))}
         </div>
@@ -583,7 +583,7 @@ export default function FireInvestigation() {
           {['All', ...CAUSE_CLASSIFICATIONS].map(c => (
             <button key={c} onClick={() => setCauseFlt(c)}
               className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors ${
-                causeFlt === c ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                causeFlt === c ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
               }`}>{c}</button>
           ))}
         </div>

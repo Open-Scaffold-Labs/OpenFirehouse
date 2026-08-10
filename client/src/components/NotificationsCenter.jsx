@@ -12,6 +12,7 @@ import { useAlerts } from '../hooks/useAlerts';
 const DEFAULT_THRESHOLDS = { certExpiry: 30, apparatusService: 30, assetInspection: 30, shiftMinCrew: 3 };
 import { useWorkflowAlerts } from '../hooks/useWorkflowAlerts';
 import { useBulletinAlerts } from '../hooks/useBulletinAlerts';
+import { useAttentionCount } from '../hooks/useAttentionCount';
 import { getStoredUser } from '../utils/api';
 
 // ─── severity config ──────────────────────────────────────────────────────────
@@ -63,7 +64,7 @@ function StatCard({ label, value, dot, sub }) {
       <div>
         <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{value}</p>
         <p className="text-sm text-gray-500 dark:text-gray-400">{label}</p>
-        {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+        {sub && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{sub}</p>}
       </div>
     </div>
   );
@@ -214,7 +215,7 @@ function UnreadBulletinRow({ bulletin, onRead, type }) {
 
 // ─── main ─────────────────────────────────────────────────────────────────────
 
-export default function NotificationsCenter({ onNavigate, user }) {
+export default function NotificationsCenter({ onNavigate, user, unreadMessageCount = 0 }) {
   const [thresholds, setThresholds] = useState({ ...DEFAULT_THRESHOLDS });
   const [dismissed,  setDismissed]  = useState(new Set());
   const [showDismissed, setShowDismissed] = useState(false);
@@ -225,10 +226,27 @@ export default function NotificationsCenter({ onNavigate, user }) {
   const { alerts: staticAlerts, error: alertsError } = useAlerts(user, thresholds);
   const { alerts: workflowAlerts } = useWorkflowAlerts();
 
+  // ONE DEFINITION, SHARED WITH THE BELL (Matt, 2026-08-05: "bell badge and
+  // notifications should be the same thing"). The topbar bell and this page's
+  // headline number used to be two different sets — the bell counted non-info
+  // alerts + unread bulletins/notices + unread DMs, while "Total Active" counted
+  // every severity minus session dismissals and ignored comms entirely — so the
+  // badge said 47 and the page it opened said 36, with no way to see why.
+  // This is the bell's formula, computed from the SAME inputs App.jsx uses:
+  // useAlerts(user) with no thresholds hits the same cache entry the bell reads,
+  // so the two numbers cannot drift. Deliberately NOT dismissal-filtered — the
+  // bell doesn't know about this page's session-local dismissals, and a headline
+  // that silently diverged from the badge on dismissal would recreate the bug.
   // Bulletin / Daily Notice unread tracking — uses shared cache, no extra fetch
   const {
     unreadDaily, unreadBulletin,
   } = useBulletinAlerts();
+
+  // The bell's number, from the ONE definition (hooks/useAttentionCount.js).
+  // This used to re-derive the arithmetic here, which closed the 47-vs-36 symptom
+  // while leaving its cause — a formula living in two places — in the codebase.
+  // It then drifted again on two more surfaces (portal 36, dashboard 1).
+  const { total: needsAttention } = useAttentionCount(user, unreadMessageCount);
 
   // Merge static + workflow alerts, sorted by severity then date
   const allAlerts = useMemo(() => {
@@ -296,10 +314,10 @@ export default function NotificationsCenter({ onNavigate, user }) {
 
       {/* stat cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-        <StatCard label="Total Active"   value={activeAlerts.length}  dot="bg-gray-400"   sub="across all modules" />
+        <StatCard label="Needs Attention" value={needsAttention}       dot="bg-amber-400"  sub="the number on the bell" />
         <StatCard label="Critical"       value={criticalCount}        dot="bg-red-500"    sub="require immediate action" />
         <StatCard label="Warnings"       value={warningCount}         dot="bg-amber-500"  sub="need attention soon" />
-        <StatCard label="Unread Messages" value={unreadDaily.length + unreadBulletin.length} dot="bg-blue-500" sub="bulletins & notices" />
+        <StatCard label="Unread Messages" value={unreadDaily.length + unreadBulletin.length + unreadMessageCount} dot="bg-blue-500" sub="bulletins, notices & DMs" />
         <StatCard label="Dismissed"      value={dismissedAlerts.length} dot="bg-emerald-400" sub="resolved or snoozed" />
       </div>
 
@@ -390,7 +408,7 @@ export default function NotificationsCenter({ onNavigate, user }) {
         <div className="space-y-3">
           <button
             onClick={() => setShowDismissed((v) => !v)}
-            className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+            className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
           >
             <ChevronDown size={15} className={`transition-transform ${showDismissed ? 'rotate-180' : ''}`} />
             {showDismissed ? 'Hide' : 'Show'} dismissed alerts ({dismissedAlerts.length})

@@ -1,24 +1,27 @@
 'use strict';
 /**
- * seed-dailyStaffing.js — Populate daily_staffing table for Jan–Jun 2026.
- * Rotates all 12 members across three apparatus (Engine 1, Ladder 1, Rescue 1).
- * Skips if already seeded.
+ * seed-dailyStaffing.js — Populate the date-keyed RIDING BOARD (apparatus_assignments)
+ * for Jan–Jun 2026. Rotates all 12 members across three apparatus (Engine 1, Ladder 1,
+ * Rescue 1). Skips if already seeded.
+ *
+ * 1.1c-b / migration 0070: daily_staffing was folded into apparatus_assignments (hours
+ * live on the on-duty assignment). This seed writes to the board so local dev matches prod.
  */
 
 const { pool } = require('./db');
 
 module.exports = async function seedDailyStaffing() {
   const check = await pool.query(
-    'SELECT COUNT(*) FROM daily_staffing WHERE station_id = 1'
+    "SELECT COUNT(*) FROM apparatus_assignments WHERE date = '2026-01-01' AND hours IS NOT NULL"
   );
   if (parseInt(check.rows[0].count, 10) > 0) {
     console.log('Daily staffing seed: already seeded, skipping.');
     return;
   }
 
-  // Fetch all members for dynamic ID lookup
+  // Fetch all members for dynamic ID lookup (department_id needed for the board's tenant key)
   const { rows: members } = await pool.query(
-    'SELECT id, name, rank FROM members WHERE station_id = 1 ORDER BY id'
+    'SELECT id, name, rank, department_id FROM members WHERE station_id = 1 ORDER BY id'
   );
   if (members.length === 0) {
     console.log('Daily staffing seed: no members found, skipping.');
@@ -66,18 +69,18 @@ module.exports = async function seedDailyStaffing() {
         for (const position of app.positions) {
           const memberName = roster[rosterIdx % roster.length];
           const member = m(memberName);
-          if (!member) { rosterIdx++; continue; }
+          if (!member || member.department_id == null) { rosterIdx++; continue; }
 
           const startTime = isWeekend ? '07:00' : '08:00';
           const endTime = isWeekend ? '19:00' : '17:00';
           const hours = isWeekend ? 12 : 9;
 
           await pool.query(
-            `INSERT INTO daily_staffing
-               (station_id, date, member_id, position, apparatus_id, status, start_time, end_time, hours, notes, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
-             ON CONFLICT DO NOTHING`,
-            [1, date, member.id, position, app.id, 'on_duty', startTime, endTime, hours, '']
+            `INSERT INTO apparatus_assignments
+               (department_id, station_id, date, member_id, position_name, apparatus_id, status, start_time, end_time, hours, notes, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+             ON CONFLICT (department_id, date, apparatus_id, position_name) DO NOTHING`,
+            [member.department_id, 1, date, member.id, position, app.id, 'on_duty', startTime, endTime, hours, '']
           );
           inserted++;
           rosterIdx++;

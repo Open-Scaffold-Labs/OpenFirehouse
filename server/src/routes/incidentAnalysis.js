@@ -42,26 +42,23 @@ router.get('/stats', async (req, res) => {
       [sid, startDate]
     );
 
-    // Response time analysis
-    let responseTimes = [];
-    let totalDuration = [];
-    for (const inc of incidents) {
-      if (inc.dispatchTime && inc.time) {
-        const dt = parseMinutes(inc.dispatchTime);
-        const arr = parseMinutes(inc.time);
-        if (dt !== null && arr !== null && arr > dt && (arr - dt) < 60) {
-          responseTimes.push(arr - dt);
-        }
-      }
-      if (inc.dispatchTime && inc.clearTime) {
-        const dt = parseMinutes(inc.dispatchTime);
-        const ct = parseMinutes(inc.clearTime);
-        if (dt !== null && ct !== null && ct > dt) {
-          totalDuration.push(ct - dt);
-        }
-      }
-    }
-
+    // RESPONSE-TIME ANALYSIS REMOVED — 4.1h.
+    //
+    // This computed `dispatchTime -> time` from free-text HH:MM columns and
+    // required arr > dt. On production that filter matched ZERO of the 18 live
+    // incidents, so avgResponseTime and p90Response have always been null here —
+    // the route reported nothing and said nothing about reporting nothing.
+    //
+    // It was also the OPPOSITE direction to the other analytics route, which
+    // read `time -> dispatchTime`, and it used a nearest-rank percentile while
+    // that one used none at all. Three surfaces, three answers, off a column
+    // (`dispatchTime`) that has no live writer at all.
+    //
+    // Response times now have exactly one owner: GET
+    // /api/response-reports/compliance, computed from the unit-status ladder and
+    // attributed to a call by its CAD run number. A second implementation of a
+    // number a chief publishes is not redundancy, it is a disagreement waiting
+    // to be discovered by an auditor.
     // Type breakdown
     const typeCounts = {};
     for (const inc of incidents) {
@@ -109,21 +106,18 @@ router.get('/stats', async (req, res) => {
       .sort((a, b) => b.count - a.count)
       .slice(0, 10);
 
-    const avgResponse = responseTimes.length > 0
-      ? Math.round(responseTimes.reduce((s, t) => s + t, 0) / responseTimes.length * 10) / 10
-      : null;
 
-    const p90Response = responseTimes.length >= 5
-      ? Math.round(responseTimes.sort((a, b) => a - b)[Math.floor(responseTimes.length * 0.9)] * 10) / 10
-      : null;
+
+
 
     res.json({
       totalIncidents: incidents.length,
-      avgResponseTime: avgResponse,
-      p90ResponseTime: p90Response,
-      avgDuration: totalDuration.length > 0
-        ? Math.round(totalDuration.reduce((s, t) => s + t, 0) / totalDuration.length * 10) / 10
-        : null,
+      // Response times live at /api/response-reports/compliance now (4.1h).
+      // These stay as explicit nulls rather than disappearing, so a client
+      // reading them gets "not measured here" instead of undefined.
+      avgResponseTime: null,
+      p90ResponseTime: null,
+      avgDuration: null,   // same: derived from the writer-less dispatchTime column
       typeCounts,
       monthlyData,
       dayOfWeek,

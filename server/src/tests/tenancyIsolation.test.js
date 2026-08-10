@@ -117,6 +117,8 @@ if (!TENANCY_TEST_DB) {
         ['shifts',              `DELETE FROM shifts WHERE notes LIKE '${MARK}%'`],
         ['mutual_aid',          `DELETE FROM mutual_aid WHERE notes LIKE '${MARK}%'`],
         ['mutual_aid_agreements', `DELETE FROM mutual_aid_agreements WHERE partner_agency LIKE '${MARK}%'`],
+        // fi_violations first — FK to fi_inspections is ON DELETE RESTRICT (0047).
+        ['fi_violations',       `DELETE FROM fi_violations WHERE inspection_id IN (SELECT id FROM fi_inspections WHERE notes LIKE '${MARK}%')`],
         ['fi_inspections',      `DELETE FROM fi_inspections WHERE notes LIKE '${MARK}%'`],
         ['fi_permits',          `DELETE FROM fi_permits WHERE notes LIKE '${MARK}%'`],
         ['fi_properties',       `DELETE FROM fi_properties WHERE name LIKE '${MARK}%'`],
@@ -342,24 +344,27 @@ if (!TENANCY_TEST_DB) {
       // code path real departments use — so schema drift can't silently break
       // the fixtures.
 
-      // ════════════════════ vacancy-fill ════════════════════
-      await t.test('vacancy-fill: station B cannot accept/patch/cancel a station-1 vacancy', async () => {
-        const created = await api('POST', '/api/vacancy-fill', tokenA, { shift_date: '2026-06-10', shift_name: `${MARK}-SHIFT` });
+      // ════════════════════ vacancies (1.4 — replaces vacancy-fill) ════════════════════
+      await t.test('vacancies: station B cannot fill/cancel a station-1 vacancy', async () => {
+        const created = await api('POST', '/api/vacancies', tokenA, { shift_date: '2026-06-10', position_name: `${MARK}-POS` });
         assert.strictEqual(created.status, 201, 'control: station A creates its vacancy');
         const vid = created.json.data.id;
 
-        const accept = await api('POST', `/api/vacancy-fill/${vid}/accept`, tokenB, { member_id: 999, member_name: 'Pwned' });
-        assert.strictEqual(accept.status, 404, 'cross-tenant accept must 404');
+        // Guarded engine updates find no row in the attacker's department → 409
+        // VACANCY_NOT_OPEN (never a 200, never a leak of the row's existence state).
+        const fill = await api('POST', `/api/vacancies/${vid}/fill`, tokenB, { member_id: 999 });
+        assert.strictEqual(fill.status, 409, 'cross-tenant fill must be refused');
 
-        const patch = await api('PATCH', `/api/vacancy-fill/${vid}`, tokenB, { notes: 'pwned' });
-        assert.strictEqual(patch.status, 404, 'cross-tenant PATCH must 404');
+        const cancel = await api('POST', `/api/vacancies/${vid}/cancel`, tokenB, { reason: 'pwned' });
+        assert.strictEqual(cancel.status, 409, 'cross-tenant cancel must be refused');
 
-        const del = await api('DELETE', `/api/vacancy-fill/${vid}`, tokenB);
-        assert.strictEqual(del.status, 404, 'cross-tenant cancel must 404');
+        // The retired island stays retired: the old route is gone entirely.
+        const legacy = await api('POST', '/api/vacancy-fill', tokenA, { shift_date: '2026-06-10' });
+        assert.strictEqual(legacy.status, 404, 'retired /api/vacancy-fill must not resurface');
 
-        const row = (await pool.query('SELECT status, notes FROM vacancy_fill WHERE id = $1', [vid])).rows[0];
+        const row = (await pool.query('SELECT status FROM vacancies WHERE id = $1', [vid])).rows[0];
         assert.strictEqual(row.status, 'open', 'vacancy status was mutated cross-tenant');
-        assert.strictEqual(row.notes, '', 'vacancy notes were mutated cross-tenant');
+        await pool.query(`DELETE FROM vacancies WHERE id = $1`, [vid]);
       });
 
       // ════════════════════ knox-keys ════════════════════
@@ -639,9 +644,11 @@ if (!TENANCY_TEST_DB) {
       // ════════════════════ run-list (date+station scoped /today snapshot) ════════════════════
       await t.test('run-list: station B /today never returns station-1 crew', async () => {
         const today = new Date().toISOString().slice(0, 10);
+        // Per-station roster grain (0072): run_lists is keyed on (department_id, station_id,
+        // date) and station_id is NOT NULL — supply station 1's department explicitly.
         await pool.query(
-          `INSERT INTO run_lists (station_id, date, payload)
-           VALUES (1, $1, $2)`,
+          `INSERT INTO run_lists (department_id, station_id, date, payload)
+           VALUES ((SELECT department_id FROM stations WHERE id = 1), 1, $1, $2)`,
           [today, JSON.stringify({ crew: [{ name: `${MARK} Firefighter` }] })]
         );
         const ctrlA = await api('GET', `/api/run-list/today?date=${today}`, tokenA);

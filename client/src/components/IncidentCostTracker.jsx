@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, DollarSign, FileText, AlertTriangle, ChevronDown, ChevronRight, Trash2, X, TrendingUp } from 'lucide-react';
+import { localToday } from '../utils/localDay';
+import useDialog from '../hooks/useDialog';
 
 const API = import.meta.env.VITE_API_URL || '';
 const PAYMENT_LABELS = { not_billed:'Not Billed', billed:'Billed', partial:'Partial', paid:'Paid', waived:'Waived', collections:'Collections' };
@@ -37,9 +39,13 @@ function CostLineEditor({ label, items, onChange, placeholder }) {
 }
 
 function CostModal({ onSave, onClose, initial }) {
+  // Dialog semantics + focus management (see hooks/useDialog.js). NO Escape-to-close.
+  const dlg = useDialog();
+
   const [members, setMembers] = useState([]);
   const [f, setF] = useState(initial || {
-    incident_number:'', incident_date: new Date().toISOString().slice(0,10), incident_type:'', location:'',
+    // localToday(), not toISOString() — the UTC day is tomorrow after 20:00 EDT.
+    incident_number:'', incident_date: localToday(), incident_type:'', location:'',
     apparatus_costs:[], personnel_costs:[], material_costs:[], other_costs:[],
     billable: false, billed_to:'', notes:'', calculated_by:''
   });
@@ -52,9 +58,9 @@ function CostModal({ onSave, onClose, initial }) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-start justify-center pt-6 z-50 overflow-y-auto">
-      <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-full max-w-2xl p-6 m-4">
+      <div {...dlg.dialogProps} className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-full max-w-2xl p-6 m-4">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">{initial ? 'Edit Incident Cost' : 'New Incident Cost Report'}</h3>
+          <h3 id={dlg.titleId} className="text-lg font-bold text-gray-900 dark:text-gray-100">{initial ? 'Edit Incident Cost' : 'New Incident Cost Report'}</h3>
           <button onClick={onClose} aria-label="Close dialog" className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"><X size={20} /></button>
         </div>
         <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">

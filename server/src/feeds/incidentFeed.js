@@ -6,7 +6,8 @@ const { pool } = require('../db');
 
 module.exports = async function incidentFeed(start, end, options) {
   const { rows } = await pool.query(`
-    SELECT id, incident_number, type, date, time, location, status
+    SELECT id, "incidentNumber" AS incident_number, type, date, time,
+           address AS location
     FROM incidents
     WHERE department_id = $3 AND date BETWEEN $1 AND $2 AND deleted_at IS NULL
     ORDER BY date, time

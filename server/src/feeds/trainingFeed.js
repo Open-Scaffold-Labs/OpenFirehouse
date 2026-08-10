@@ -11,10 +11,11 @@ const { pool } = require('../db');
 module.exports = async function trainingFeed(start, end, options) {
   // ── Training sessions ─────────────────────────────────────────────────────
   const { rows: sessions } = await pool.query(`
-    SELECT id, title, type, date, hours, instructor, location, status
+    SELECT id, "courseName" AS title, type, "completedDate" AS date,
+           hours, instructor, location, status
     FROM training
-    WHERE department_id = $3 AND date BETWEEN $1 AND $2
-    ORDER BY date
+    WHERE department_id = $3 AND "completedDate" BETWEEN $1 AND $2
+    ORDER BY "completedDate"
   `, [start, end, options.stationId]);
 
   const sessionEntries = sessions.map(r => ({
@@ -42,7 +43,7 @@ module.exports = async function trainingFeed(start, end, options) {
   const { rows: certs } = await pool.query(`
     SELECT q.id, q.member_id, q.cert_name, q.expiry_date,
            m.name AS member_name
-    FROM qualifications q
+    FROM member_qualifications q
     LEFT JOIN members m ON m.id = q.member_id
     WHERE q.department_id = $3
       AND q.expiry_date IS NOT NULL

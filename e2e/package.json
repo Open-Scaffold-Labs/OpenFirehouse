@@ -1,0 +1,17 @@
+{
+  "name": "openfirehouse-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "End-to-end system test harness for OpenFirehouse (web + PWA).",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:ipad": "playwright test --project=ipad-13-landscape --project=ipad-11-portrait --project=ipad-mini",
+    "test:offline": "playwright test journeys/03-offline-field-day.spec.js",
+    "test:headed": "playwright test --headed",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1"
+  }
+}

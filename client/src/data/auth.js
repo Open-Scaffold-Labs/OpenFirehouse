@@ -23,11 +23,16 @@ export const ROLES = {
   chief:               { label: 'Fire Chief',            level: 3, color: 'text-red-700',     bg: 'bg-red-100'     },
   deputy_chief:        { label: 'Deputy Chief',          level: 3, color: 'text-red-600',     bg: 'bg-red-50'      },
   battalion_chief:     { label: 'Battalion Chief',       level: 3, color: 'text-orange-700',  bg: 'bg-orange-100'  },
-  training_battalion:  { label: 'Training Battalion',    level: 3, color: 'text-purple-700',  bg: 'bg-purple-100'  },
+  // Training roles carry the HUE OF THE LINE RANK THEY MATCH (see the note above),
+  // one shade deeper on a lighter ground so they read as the same authority without
+  // inventing a second meaning. They were purple/violet, which broke the standing
+  // ruling that violet marks AI surfaces and nothing else — a role badge wearing it
+  // dilutes the one signal enforcing the AI-legal-record boundary.
+  training_battalion:  { label: 'Training Battalion',    level: 3, color: 'text-orange-800',  bg: 'bg-orange-50'   },
   // ── Officers (level 2) ───────────────────────────────────────────────────
   officer:             { label: 'Captain',               level: 2, color: 'text-amber-700',   bg: 'bg-amber-100'   },
   lieutenant:          { label: 'Lieutenant',            level: 2, color: 'text-yellow-700',  bg: 'bg-yellow-100'  },
-  training_captain:    { label: 'Training Captain',      level: 2, color: 'text-violet-700',  bg: 'bg-violet-100'  },
+  training_captain:    { label: 'Training Captain',      level: 2, color: 'text-amber-800',   bg: 'bg-amber-50'    },
   dispatch:            { label: 'Dispatch',              level: 2, color: 'text-indigo-700',  bg: 'bg-indigo-100'  },
   // ── Line Members (level 1) ───────────────────────────────────────────────
   member:              { label: 'Firefighter',           level: 1, color: 'text-blue-700',    bg: 'bg-blue-100'    },
@@ -61,7 +66,7 @@ export const UNIT_PAGES = new Set([
   'equipment-checkout',
   'assets',             // asset & inventory
   // Inspections (parity with the iPad Inspections tab)
-  'inspections', 'inspection-search', 'inspection-entry', 'inspection-checklist', 'inspector-status',
+  'inspections', 'inspection-checklist', 'inspector-status',
   // Pre-plans + size-up reference (parity with iPad)
   'preplans',
   'hydrants',
@@ -123,6 +128,7 @@ export const PAGE_ACCESS = {
   wellness:             1,
   apparatus:            1,
   maintenance:          1,
+  narcotics:            1, // 2.7: crew author administer/waste; privileged doors server-gated (PIN + role)
   checklists:           1,
   incidents:            1,
   preplans:             2,
@@ -137,8 +143,9 @@ export const PAGE_ACCESS = {
   'shift-trades':       1,   // members initiate their own trades
   'equipment-checkout': 1,   // members check out their own gear
   'incident-map':       1,   // everyone can view the map
+  'dispatch-archive':   1,   // the run history — every member can look up a call they ran
   'commander-cam':      2,   // officers can access Commander Cam
-  'vacancy-fill':       2,   // officers manage auto vacancy fill
+  'vacancy-fill':       2,   // officers manage vacancies (1.4 unified record; page id kept for nav continuity)
   'ng911':              2,   // officers view NG911 console
   'fto-tracker':        2,   // officers manage FTO tracking
   'knox-keys':          2,   // officers manage Knox boxes, members can view
@@ -161,8 +168,7 @@ export const PAGE_ACCESS = {
   'aid-agreements':     2,
   nfirs:                2,
   inspections:            1,
-  'inspection-search':    1,
-  'inspection-entry':     1,
+  'prevention-center':    1,
   'inspection-checklist': 1,
   'inspector-status':     1,
   violations:             1,
@@ -180,8 +186,9 @@ export const PAGE_ACCESS = {
   recruitment:          2,
   scba:                 2,
   hazmat:               2,
-  assets:               2,
+  assets:               1, // 2.4: crew see supplies/requisitions (privileged writes server-gated)
   reports:              2,
+  reconciliation:       2,   // read officer+; the repair write is chief-only, server-enforced
   'after-action':       2,
   'meeting-minutes':    2,
   'doc-vault':          2,
@@ -197,7 +204,7 @@ export const PAGE_ACCESS = {
   grievances:           2,
   'incident-costs':     2,
   ai:                   2,   // AI scheduling
-  analytics:            2,   // AI response analytics
+  analytics:            2,   // NFPA response-time compliance (4.1h — no longer AI)
   'workflows':          2,   // AI workflow orchestration
   'incident-intel':     2,   // AI incident intelligence
   'training-ai':        2,   // AI training recommender

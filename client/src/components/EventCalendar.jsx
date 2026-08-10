@@ -1,3 +1,4 @@
+// impeccable-disable overused-font: print-template HTML uses web-safe fonts deliberately
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   ChevronLeft, ChevronRight, CalendarDays, List, Plus,
@@ -10,12 +11,14 @@ import {
   CloudRain, Cloud, Sun, Snowflake, Thermometer, Droplets,
   Eye, Sunrise, Sunset, Loader2, RefreshCw, ChevronRight as ChevronR,
   ShieldCheck, GraduationCap, Wallet, UserCheck, CircleDot, Tv,
-  Save, Printer,
+  Save, Printer, Sparkles,
 } from 'lucide-react';
 import { EVENT_TYPES, EVENT_TYPE_COLORS, RSVP_STATUSES } from '../data/events';
 import { api, getStoredUser } from '../utils/api';
 import { actingDisplayRank } from '../utils/actingRank';
+import { localToday } from '../utils/localDay';
 import EventForm from './EventForm';
+import AllStationsBoard from './AllStationsBoard';
 import { useBulletinAlerts } from '../hooks/useBulletinAlerts';
 import { markRead } from '../utils/bulletinReads';
 // RadioFeedZone moved to Incident Operations → Radio Feed nav item
@@ -247,7 +250,7 @@ export function BoardHeader({ officer: officerProp }) {
           {/* Clock */}
           <div className="text-right">
             <p className="text-2xl font-black text-gray-900 dark:text-gray-100 tabular-nums">{timeStr}</p>
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Station Time</p>
+            <p className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">Station Time</p>
           </div>
           <div className="w-px h-10 bg-gray-200 dark:bg-gray-700" />
 
@@ -319,11 +322,11 @@ function AIBriefingBar() {
 
   if (loading) {
     return (
-      <div className="bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 rounded-2xl px-5 py-3 flex items-center gap-3 animate-pulse">
-        <div className="w-8 h-8 rounded-full bg-gray-700" />
+      <div className="rounded-2xl border border-violet-200 dark:border-violet-900 bg-violet-50 dark:bg-violet-950/40 px-5 py-3 flex items-center gap-3 animate-pulse">
+        <div className="w-8 h-8 rounded-full bg-violet-200 dark:bg-violet-900" />
         <div className="flex-1 space-y-1.5">
-          <div className="h-3 bg-gray-700 rounded w-2/3" />
-          <div className="h-2.5 bg-gray-700/50 rounded w-1/2" />
+          <div className="h-3 bg-violet-200 dark:bg-violet-900 rounded w-2/3" />
+          <div className="h-2.5 bg-violet-100 dark:bg-violet-900/60 rounded w-1/2" />
         </div>
       </div>
     );
@@ -334,35 +337,48 @@ function AIBriefingBar() {
   const insight = briefing.insights[activeIdx];
   const total = briefing.insights.length;
 
-  // Priority-based bar color
-  const barColors = {
-    1: 'from-red-900 via-red-800 to-red-900',
-    2: 'from-amber-900 via-amber-800 to-amber-900',
-    3: 'from-slate-800 via-slate-700 to-slate-800',
-    5: 'from-emerald-900 via-emerald-800 to-emerald-900',
-  };
-  const barColor = barColors[insight.priority] || barColors[3];
+  // This bar used to paint itself by insight PRIORITY — priority 1 rendered a
+  // red gradient, which put an advisory AI note in the same red as the ACTIVE
+  // INCIDENT banner directly below it. On a narrow viewport they read as two
+  // identical red slabs, so the emergency was chromatically indistinguishable
+  // from a maintenance tip. Standing ruling #2 also says AI is SOLID VIOLET, no
+  // gradients, and no AI surface wears anything else. Priority now rides as a
+  // text label in the meta row: the ordering still decides what shows first,
+  // and red stays reserved for things that are actually an emergency.
+  const priorityLabel = { 1: 'High priority', 2: 'Medium priority', 5: 'For information' }[insight.priority] || null;
 
+  // WEIGHT, not just hue. Making this bar solid violet-700 fixed the collision
+  // with the red ACTIVE INCIDENT banner — but it then became the most saturated
+  // element on the page, so an AI advisory out-shouted the actual emergency one
+  // row below it. Hierarchy has to be: active incident > AI note. So the surface
+  // is now a quiet violet-tinted card with a violet rail carrying the identity —
+  // unmistakably the AI colour, deliberately not the loudest thing on screen.
+  // The incident banner keeps its saturated fill and its pulse; nothing else does.
   return (
-    <div className={`bg-gradient-to-r ${barColor} rounded-2xl px-5 py-3.5 shadow-lg`}>
-      <div className="flex items-center gap-3">
-        <span className="text-2xl flex-shrink-0">{insight.icon || '🔔'}</span>
+    <div className="rounded-2xl border border-violet-200 dark:border-violet-900 bg-violet-50 dark:bg-violet-950/40 shadow-sm overflow-hidden">
+      <div className="flex items-center gap-3 border-l-4 border-violet-600 dark:border-violet-500 px-5 py-3.5">
+        <Sparkles size={18} className="shrink-0 text-violet-600 dark:text-violet-400" aria-hidden="true" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-white/50">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-violet-700 dark:text-violet-300">
               AI Briefing
             </span>
+            {priorityLabel && (
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-violet-700/80 dark:text-violet-300/80">
+                {priorityLabel}
+              </span>
+            )}
             {total > 1 && (
-              <span className="text-[10px] text-white/40">
+              <span className="text-[10px] text-violet-700/70 dark:text-violet-300/70">
                 {activeIdx + 1}/{total}
               </span>
             )}
           </div>
-          <p className="text-sm font-bold text-white leading-snug mt-0.5 truncate">
+          <p className="text-sm font-bold text-gray-900 dark:text-gray-100 leading-snug mt-0.5 truncate">
             {insight.headline}
           </p>
           {insight.detail && (
-            <p className="text-xs text-white/60 mt-0.5 truncate">{insight.detail}</p>
+            <p className="text-xs text-gray-600 dark:text-gray-300 mt-0.5 truncate">{insight.detail}</p>
           )}
         </div>
         {total > 1 && (
@@ -372,7 +388,7 @@ function AIBriefingBar() {
                 key={i}
                 onClick={() => setActiveIdx(i)}
                 aria-label={`Show insight ${i + 1}`}
-                className={`w-1.5 h-1.5 rounded-full transition-all ${i === activeIdx ? 'bg-white dark:bg-gray-900 w-4' : 'bg-white/30'}`}
+                className={`h-1.5 rounded-full transition-all ${i === activeIdx ? 'bg-violet-600 dark:bg-violet-400 w-4' : 'bg-violet-300 dark:bg-violet-700 w-1.5'}`}
               />
             ))}
           </div>
@@ -401,16 +417,31 @@ function ActiveIncidentBanner() {
   return (
     <div className="bg-red-900 text-white rounded-2xl px-5 py-4 shadow-lg border border-red-700" style={{ animation: 'pulse-ring 2s cubic-bezier(0.4,0,0.6,1) infinite' }}>
       <div className="flex items-center gap-4 text-sm flex-wrap">
-        <span className="text-xl shrink-0">🚨</span>
+        {/* lucide, not an emoji — see the note on the Dashboard's copy of this banner. */}
+        <Siren size={20} className="shrink-0 text-white" aria-hidden="true" />
         <span className="font-black uppercase tracking-wide text-red-100">Active Incident</span>
-        <span className="h-4 w-px bg-red-600" />
-        <span className="font-bold">{activeBoard.type}</span>
-        <span className="text-red-300">—</span>
-        <span className="font-bold">{activeBoard.address}</span>
-        <span className="h-4 w-px bg-red-600" />
+        {/* Only render a separator when there is something on both sides of it —
+            an incident with no type printed "ACTIVE INCIDENT | — 123 Main St",
+            i.e. a dash standing in for a missing value on the most urgent banner
+            in the app. Absent data should be absent, not punctuated. */}
+        {activeBoard.type && (
+          <>
+            <span className="h-4 w-px bg-red-600" aria-hidden="true" />
+            <span className="font-bold">{activeBoard.type}</span>
+          </>
+        )}
+        {activeBoard.address && (
+          <>
+            <span className="h-4 w-px bg-red-600" aria-hidden="true" />
+            <span className="font-bold">{activeBoard.address}</span>
+          </>
+        )}
+        <span className="h-4 w-px bg-red-600" aria-hidden="true" />
         <span className="flex items-center gap-2">
-          <Users size={14} /> {activeBoard.personnel_count}
-          <Truck size={14} className="ml-2" /> {activeBoard.units_count}
+          <Users size={14} aria-hidden="true" />
+          <span><span className="sr-only">Personnel: </span>{activeBoard.personnel_count ?? 0}</span>
+          <Truck size={14} className="ml-2" aria-hidden="true" />
+          <span><span className="sr-only">Units: </span>{activeBoard.units_count ?? 0}</span>
         </span>
       </div>
     </div>
@@ -476,7 +507,10 @@ function ReadinessCards() {
       value: `${sc.budget?.remaining ?? '—'}%`,
       sub: 'remaining this FY',
       status: sc.budget?.status || 'green',
-      iconBg: 'bg-violet-500',
+      // Not violet: ruling #2 reserves violet for AI surfaces, and nothing else
+      // wears it. Budget is a plain metric tile sitting one row below the AI
+      // briefing bar, which is the surface violet is supposed to identify.
+      iconBg: 'bg-teal-600',
     },
   ];
 
@@ -570,14 +604,14 @@ export function DailyNotices({ highlightId, onHighlightConsumed }) {
               </span>
             )}
           </div>
-          <span className="text-[10px] text-gray-400 uppercase tracking-wide">Today's shift</span>
+          <span className="text-[10px] text-gray-600 dark:text-gray-400 uppercase tracking-wide">Today's shift</span>
         </div>
       </div>
 
       {/* Notice rows */}
       <div className="divide-y divide-gray-50 dark:divide-gray-800">
         {dailyNotices.length === 0 ? (
-          <div className="px-5 py-8 text-center text-gray-400">
+          <div className="px-5 py-8 text-center text-gray-500 dark:text-gray-400">
             <Bell size={22} className="mx-auto mb-2 opacity-30" />
             <p className="text-sm">No notices posted for today's shift.</p>
           </div>
@@ -601,7 +635,7 @@ export function DailyNotices({ highlightId, onHighlightConsumed }) {
                     <p className={`text-sm leading-snug ${read ? 'text-gray-600 dark:text-gray-300' : 'font-bold text-gray-900 dark:text-gray-100'}`}>
                       {b.title}
                     </p>
-                    <p className="text-[11px] text-gray-400 mt-0.5">
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
                       {b.author_name || 'Station'} · {fmtTime(b.created_at)}
                     </p>
                   </div>
@@ -612,7 +646,7 @@ export function DailyNotices({ highlightId, onHighlightConsumed }) {
                 {open && (
                   <div className="px-5 pb-4 pt-1 bg-red-50/20 dark:bg-red-950/20 border-t border-red-100/60 dark:border-red-900/60">
                     <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">{b.body}</p>
-                    <p className="text-[10px] text-gray-400 mt-2 flex items-center gap-1">
+                    <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-2 flex items-center gap-1">
                       <CheckCircle2 size={10} className="text-green-500" /> Marked as read
                     </p>
                   </div>
@@ -782,11 +816,11 @@ function fmtMonthYear(year, month) {
 }
 
 function isToday(iso) {
-  return iso === new Date().toISOString().slice(0, 10);
+  return iso === localToday();
 }
 
 function isPast(iso) {
-  return iso < new Date().toISOString().slice(0, 10);
+  return iso < localToday();
 }
 
 function rsvpCounts(rsvps = []) {
@@ -866,7 +900,14 @@ function isCommandRank(rank, position) {
   );
 }
 
-function RunList({ onCrewLoaded }) {
+function RunList({ onCrewLoaded, selectedStation = null, stations = [], onStationChange = null }) {
+  // Multi-house depts post a SEPARATE riding board per station (per-station grain,
+  // migration 0072). With no house picked, show the all-houses rollup instead of a
+  // single board (the server 400s a station-less run-list read for a multi-house dept).
+  const isMultiHouse = Array.isArray(stations) && stations.length > 1;
+  const stationName = selectedStation && Array.isArray(stations)
+    ? (stations.find((s) => s.id === selectedStation)?.name || null)
+    : null;
   const [crew,         setCrew]         = useState([]);
   const [todayData,    setTodayData]    = useState(null);
   const [shiftLabel,   setShiftLabel]   = useState('');
@@ -877,20 +918,22 @@ function RunList({ onCrewLoaded }) {
   const [recallList,   setRecallList]   = useState([]);
   const [recallInput,  setRecallInput]  = useState('');
 
-  // Returns today's date in LOCAL time as YYYY-MM-DD (matches how shift dates are stored)
-  function localToday() {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  }
-
   const loadRunList = useCallback(async (isInitialLoad = false) => {
     if (isInitialLoad) setLoading(true);
     const today = localToday();
+    // Multi-house + no station picked → the all-houses rollup owns the view; don't
+    // fetch a single board (a station-less read 400s STATION_REQUIRED for such depts).
+    if (isMultiHouse && !selectedStation) {
+      setCrew([]); setSubmittedAt(null);
+      if (isInitialLoad) setLoading(false);
+      return;
+    }
+    const stationQ = selectedStation ? `&station_id=${selectedStation}` : '';
     try {
       const [shiftsRaw, tRes, savedRunList] = await Promise.all([
         api.get(`/api/shifts?date=${today}`).catch(() => []),
         api.get('/api/dashboard/today').catch(() => null),
-        api.get(`/api/run-list/today?date=${today}&_=${Date.now()}`).catch(() => null),
+        api.get(`/api/run-list/today?date=${today}${stationQ}&_=${Date.now()}`).catch(() => null),
       ]);
 
       const allShifts = Array.isArray(shiftsRaw?.data) ? shiftsRaw.data
@@ -932,10 +975,11 @@ function RunList({ onCrewLoaded }) {
     } finally {
       if (isInitialLoad) setLoading(false);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedStation, isMultiHouse]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load once on mount. No auto-refresh — the run list only changes when
-  // "Save to Board" is clicked on the Assignment Board (or "Submit Run List" here).
+  // Load on mount and whenever the picked station changes. No auto-refresh —
+  // the run list only changes when "Save to Board" is clicked on the Assignment
+  // Board (or "Submit Run List" here).
   useEffect(() => {
     loadRunList(true);
   }, [loadRunList]);
@@ -1003,17 +1047,15 @@ function RunList({ onCrewLoaded }) {
   async function handleSubmit() {
     setSubmitting(true);
     try {
-      // crew is the flat normalized array — same format as apparatus_assignments query results.
-      // Storing the flat crew array lets the TV display reconstruct the run list directly.
-      const payload = {
-        date:        localToday(),   // local date, not UTC, to match shift storage format
-        shift_label: shiftLabel,
-        crew:        crew,           // flat array with member_name/rank/apparatus_name/position_name
-        recall_list: recallList,
-        submitted_at: new Date().toISOString(),
-      };
-      await api.post('/api/run-list', payload);
+      // 1.1b consolidation: the run list is DERIVED server-side from today's
+      // apparatus_assignments — we publish by date and re-read the snapshot, we
+      // do NOT post a client-authored crew[]. Assign crew on the Assignment
+      // Board; this button freezes those assignments into the dated record.
+      // Per-station grain: scope the publish to the picked house (multi-house depts
+      // require it; single-house depts omit it and the server resolves the one house).
+      await api.post('/api/run-list', { date: localToday(), ...(selectedStation ? { station_id: selectedStation } : {}) });
       setSubmittedAt(new Date().toISOString());
+      await loadRunList(false); // reflect exactly what the server derived
     } catch (_) {
       // still mark as submitted locally even if server save fails
       setSubmittedAt(new Date().toISOString());
@@ -1124,6 +1166,11 @@ function RunList({ onCrewLoaded }) {
     setTimeout(() => { try { w.print(); } catch (_) { /* user can print manually */ } }, 300);
   }
 
+  // Multi-house command view: no single house picked → show every station at a glance.
+  if (isMultiHouse && !selectedStation) {
+    return <AllStationsBoard onSelectStation={onStationChange || undefined} />;
+  }
+
   return (
     <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
 
@@ -1133,6 +1180,11 @@ function RunList({ onCrewLoaded }) {
           <div className="flex items-center gap-2">
             <ClipboardList size={16} className="text-red-600 dark:text-red-400" />
             <span className="text-sm font-black text-gray-900 dark:text-gray-100 uppercase tracking-wide">Run List</span>
+            {stationName && (
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 dark:bg-red-950/50 text-red-700 dark:text-red-300" title="This board is scoped to one station">
+                {stationName}
+              </span>
+            )}
             {shiftLabel && (
               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300">{shiftLabel}</span>
             )}
@@ -1161,10 +1213,14 @@ function RunList({ onCrewLoaded }) {
             >
               <Pencil size={11} /> {editMode ? 'Done' : 'Edit'}
             </button>
+            {/* Blue, not red. Red is the app's EMERGENCY colour — the active-incident
+                banner, the dispatch nav and the alert pill all wear it. Saving a run
+                list is the most ordinary write on this screen; dressing it as danger
+                both overstates it and dilutes red where red actually means something. */}
             <button
               onClick={handleSubmit}
               disabled={submitting}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white text-[11px] font-bold rounded-lg transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-[11px] font-bold rounded-lg transition-colors"
             >
               {submitting ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
               {submittedAt ? 'Update' : 'Submit Run List'}
@@ -1278,7 +1334,17 @@ function RunList({ onCrewLoaded }) {
                               {getInitials(name)}
                             </div>
                             <div className="min-w-0">
-                              <p className="text-[11px] font-semibold text-gray-800 dark:text-gray-100 truncate">{name}</p>
+                              <p className="text-[11px] font-semibold text-gray-800 dark:text-gray-100 truncate flex items-center gap-1">
+                                {name}
+                                {m.detailed && (
+                                  <span
+                                    className="shrink-0 px-1 py-px rounded text-[8px] font-black bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300"
+                                    title={m.home_station_name ? `Detailed in from ${m.home_station_name}` : 'Detailed in from another station'}
+                                  >
+                                    DETAIL{m.home_station_name ? ` · ${m.home_station_name}` : ''}
+                                  </span>
+                                )}
+                              </p>
                               <p className="text-[9px] text-gray-400 capitalize">{rank}</p>
                             </div>
                           </div>
@@ -1631,7 +1697,7 @@ function ActivityCalendar({ year, month }) {
     return map;
   }, [entries]);
 
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = localToday();
 
   if (loading) {
     return (
@@ -1667,7 +1733,13 @@ function ActivityCalendar({ year, month }) {
       <div className="grid grid-cols-7 gap-0">
         {cells.map((day, idx) => {
           if (!day) {
-            return <div key={`empty-${idx}`} className="aspect-square bg-gray-50/30 border border-gray-100 dark:border-gray-700" />;
+            // Out-of-month filler. `bg-gray-50/30` had no dark twin, so in dark
+            // mode a near-white wash sat over the page and these EMPTY cells
+            // became the brightest, highest-contrast thing on the grid — muted
+            // content advancing instead of receding. Same class as the light-only
+            // unread tint fixed 2026-08-05: a light value with no dark counterpart
+            // is not "neutral", it inverts the hierarchy.
+            return <div key={`empty-${idx}`} aria-hidden="true" className="aspect-square bg-gray-50/30 dark:bg-gray-950/60 border border-gray-100 dark:border-gray-800" />;
           }
 
           const iso     = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -1814,7 +1886,13 @@ function MonthCalendar({ events, year, month, onDaySelect, selectedDay, members 
       <div className="grid grid-cols-7 gap-0">
         {cells.map((day, idx) => {
           if (!day) {
-            return <div key={`empty-${idx}`} className="aspect-square bg-gray-50/30 border border-gray-100 dark:border-gray-700" />;
+            // Out-of-month filler. `bg-gray-50/30` had no dark twin, so in dark
+            // mode a near-white wash sat over the page and these EMPTY cells
+            // became the brightest, highest-contrast thing on the grid — muted
+            // content advancing instead of receding. Same class as the light-only
+            // unread tint fixed 2026-08-05: a light value with no dark counterpart
+            // is not "neutral", it inverts the hierarchy.
+            return <div key={`empty-${idx}`} aria-hidden="true" className="aspect-square bg-gray-50/30 dark:bg-gray-950/60 border border-gray-100 dark:border-gray-800" />;
           }
 
           const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -2178,7 +2256,7 @@ function ListView({ events, onEdit, onDelete, onRsvpChange, members = [] }) {
 
 // AGENDA VIEW
 function AgendaView({ events }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localToday();
   const upcoming = [...events]
     .filter(e => e.date >= today)
     .sort((a, b) => a.date.localeCompare(b.date) || (a.startTime || '').localeCompare(b.startTime || ''))
@@ -2225,7 +2303,7 @@ function AgendaView({ events }) {
 
 // ─── MAIN COMPONENT ─────────────────────────────────────────────────────────
 
-export default function EventCalendar({ highlightBulletinId, onHighlightConsumed }) {
+export default function EventCalendar({ highlightBulletinId, onHighlightConsumed, selectedStation = null, stations = [], onStationChange = null }) {
   const today = new Date();
   const [events, setEvents] = useState([]);
   const [members, setMembers] = useState([]);
@@ -2366,7 +2444,9 @@ export default function EventCalendar({ highlightBulletinId, onHighlightConsumed
         <ReadinessCards />
 
         {/* ═══ LAYER 2: THE RUN LIST — Apparatus-centric daily roster ═══ */}
-        <RunList onCrewLoaded={(c) => {
+        <RunList
+          selectedStation={selectedStation} stations={stations} onStationChange={onStationChange}
+          onCrewLoaded={(c) => {
           const oic = c.find(m => m.position === 'Officer in Charge');
           if (oic) setOfficer({ name: oic.member_name || oic.name, rank: oic.member_rank || oic.rank });
         }} />
@@ -2410,7 +2490,7 @@ export default function EventCalendar({ highlightBulletinId, onHighlightConsumed
                       onClick={() => setView(v)}
                       className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                         view === v
-                          ? 'bg-red-600 text-white shadow-sm'
+                          ? 'bg-blue-600 text-white shadow-sm'
                           : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100'
                       }`}
                     >
@@ -2420,7 +2500,7 @@ export default function EventCalendar({ highlightBulletinId, onHighlightConsumed
                 </div>
                 <button
                   onClick={() => { setEditing(null); setFormOpen(true); }}
-                  className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white font-semibold rounded-xl hover:bg-red-700 transition-colors shadow-md hover:shadow-lg text-sm"
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-colors shadow-md hover:shadow-lg text-sm"
                 >
                   <Plus size={16} /> Add Event
                 </button>

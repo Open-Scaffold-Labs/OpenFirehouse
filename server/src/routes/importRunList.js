@@ -22,6 +22,13 @@
 const express = require('express');
 const router = express.Router();
 const { pool, runInTransaction } = require('../db');
+// 0066 fix: this was CALLED at the seat-resolve step but never required — every
+// import request died with a ReferenceError inside the transaction (rolled back,
+// so no data harm, but the feature was dead). Same resolver the run-list board uses.
+const { resolveCrewSeats } = require('../utils/resolveCrewSeats');
+// 1.1b consolidation: assignments are the store of record; the snapshot is
+// DERIVED from them by the same one-brain helper POST /api/run-list uses.
+const { publishSnapshot, resolveRosterStation } = require('../utils/runListPublish');
 
 const MAX_ROWS = 500;
 const MAX_LEN = 120;
@@ -111,9 +118,14 @@ router.post('/', require('../middleware/requireRole').requireChief, async (req, 
     async function upsertApparatus(unit) {
       const key = normDesig(unit);
       if (appByDesig.has(key)) return appByDesig.get(key);
+      // 0066: department_id written EXPLICITLY. Relying on the sync trigger to
+      // derive it from station_id is the cross-tenant corruption path (the value
+      // in stationId here is the DEPARTMENT id, not a station id).
+      // station_id is written as explicit NULL — the column DEFAULTs to 1, which
+      // would tag every imported rig with another department's house.
       const ins = await client.query(
-        `INSERT INTO apparatus (designation, type, year, station_id)
-         VALUES ($1, $2, $3, $4) RETURNING id`,
+        `INSERT INTO apparatus (designation, type, year, department_id, station_id)
+         VALUES ($1, $2, $3, $4, NULL) RETURNING id`,
         [unit, inferType(unit), new Date().getFullYear(), stationId]);
       const id = ins.rows[0].id;
       appByDesig.set(key, id);
@@ -145,8 +157,8 @@ router.post('/', require('../middleware/requireRole').requireChief, async (req, 
       const finalRank = rank || deriveRank(position);
       const role = position || 'Firefighter';
       const ins = await client.query(
-        `INSERT INTO members ("memberNumber", name, rank, role, joined, status, station_id)
-         VALUES ($1, $2, $3, $4, $5, 'Active', $6) RETURNING id`,
+        `INSERT INTO members ("memberNumber", name, rank, role, joined, status, department_id, station_id)
+         VALUES ($1, $2, $3, $4, $5, 'Active', $6, NULL) RETURNING id`,
         [memberNumber, name, finalRank, role, date, stationId]);
       const id = ins.rows[0].id;
       memByName.set(key, id);
@@ -166,32 +178,81 @@ router.post('/', require('../middleware/requireRole').requireChief, async (req, 
         member_rank: r.rank || deriveRank(r.position),
         apparatus_id: apparatusId,
         apparatus_name: r.unit,
-        position_id: null,
+        // position_id is resolved below — NOT hardcoded null any more.
         position_name: position,
       });
     }
 
-    // ── write the run_lists snapshot (upsert by station+date) ─────────────────
-    const payload = {
-      date,
-      crew,
-      shift_label: shiftLabel,
-      submitted_at: new Date().toISOString(),
-      source: 'import',
-    };
+    // ── RESOLVE EACH RIDER TO A REAL SEAT ────────────────────────────────────
+    // This used to be `position_id: null`, hardcoded, on every row. The career
+    // run-list overlay therefore filled ZERO seats while reporting mode:'career'.
+    //
+    // Same resolver the web run-list board uses (utils/resolveCrewSeats.js), so
+    // both writers behave identically. A rider we cannot place keeps a NULL seat
+    // and is REPORTED back to the importer — never guessed. A spreadsheet that
+    // says "Firefighter" is telling us a RANK, not a seat, and we do not decide
+    // which of three firefighters was on the nozzle.
+    const seatRows = await client.query(
+      'SELECT id, apparatus_id, position_name FROM apparatus_positions WHERE department_id = $1',
+      [stationId]
+    );
+    const seatResult = resolveCrewSeats(crew, seatRows.rows);
+    crew.length = 0;
+    crew.push(...seatResult.crew);
+
+    // ── consolidation (1.1b → 1.1c-a): assignments are the STORE OF RECORD ───
+    // An import IS one day's riding board, keyed on (department, date). REPLACE
+    // the (dept, date) board (so a re-import is idempotent — same rows in, same
+    // board out), then PUBLISH the snapshot FROM those assignments: the exact
+    // derivation POST /api/run-list uses (utils/runListPublish, one brain). No
+    // phantom shift, no ambiguity — assignments carry the date directly. A
+    // rotation link is not applicable to a date-based import, so shift_id is NULL.
+    // 1.1c-b (0070): the board now also carries PAYROLL HOURS rows (daily_staffing was
+    // folded in). A roster import restates SEAT assignments only — it must NEVER erase or
+    // reattribute recorded tour hours. So delete only pure seat rows (hours IS NULL), and
+    // guard the upsert so it can't overwrite the member on an hours-bearing seat.
+    // 0072: an import IS one STATION's daily riding board. Resolve which station —
+    // single-house → its one station; multi-house must name station_id (never guess).
+    // The imported seat rows are stamped with that station so they land on the right
+    // per-station board (and the published snapshot is keyed to it).
+    const rosterStationId = await resolveRosterStation(client, stationId, req.body && req.body.station_id);
+    if (rosterStationId == null) {
+      const e = new Error('This department has multiple stations — specify station_id for the import');
+      e.status = 400; e.code = 'STATION_REQUIRED';
+      throw e;
+    }
     await client.query(
-      `INSERT INTO run_lists (station_id, date, payload, submitted_at)
-       VALUES ($1, $2, $3, NOW())
-       ON CONFLICT (station_id, date)
-         DO UPDATE SET payload = EXCLUDED.payload, submitted_at = NOW()`,
-      [stationId, date, JSON.stringify(payload)]);
+      'DELETE FROM apparatus_assignments WHERE department_id = $1 AND station_id = $2 AND date = $3 AND hours IS NULL',
+      [stationId, rosterStationId, date]);
+    for (const c of crew) {
+      // ON CONFLICT: the seat is unique per (dept, date, apparatus, position_name);
+      // if the sheet lists the same seat twice, last rider wins (never a 500). The
+      // WHERE guard leaves any hours-bearing row's member intact (no payroll reattribution).
+      await client.query(
+        `INSERT INTO apparatus_assignments (apparatus_id, position_id, member_id, department_id, station_id, position_name, date)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (department_id, date, apparatus_id, position_name)
+           DO UPDATE SET member_id = EXCLUDED.member_id, position_id = EXCLUDED.position_id, station_id = EXCLUDED.station_id
+           WHERE apparatus_assignments.hours IS NULL`,
+        [c.apparatus_id, c.position_id || null, c.member_id, stationId, rosterStationId, c.position_name || '', date]);
+    }
+    const published = await publishSnapshot(client, stationId, rosterStationId, date, { source: 'import', shiftLabel });
 
       return {
         date,
-        crew: crew.length,
+        crew: published.crew.length,
         apparatusCreated,
         membersCreated,
         units: [...new Set(rows.map((r) => r.unit))].length,
+        // HOW MANY RIDERS ACTUALLY GOT A SEAT, and why the rest didn't.
+        // The import used to report "35 crew imported ✓" while writing 35 NULL
+        // seats. It looked like a success and delivered an empty run list to the
+        // staffing board. The user is now told the truth.
+        seating: {
+          seated:   seatResult.seated,
+          unseated: seatResult.unseated,
+          issues:   seatResult.issues.slice(0, 50),
+        },
       };
     });
     res.json({ data: summary });

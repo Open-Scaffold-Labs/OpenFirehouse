@@ -1152,7 +1152,7 @@ export default function HelpPanel({ user, currentPage, onClose }) {
 
         {/* Footer */}
         <div className="px-5 py-3 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-950 flex items-center justify-between">
-          <p className="text-[10px]"><span className="text-gray-500 dark:text-gray-400 font-semibold">OPEN</span><span className="text-red-400 font-semibold">FIREHOUSE</span> <span className="text-gray-400">v{__APP_VERSION__} · Open Source</span></p>
+          <p className="text-[10px]"><span className="text-gray-500 dark:text-gray-400 font-semibold">OPEN</span><span className="text-red-600 dark:text-red-400 font-semibold">FIREHOUSE</span> <span className="text-gray-500 dark:text-gray-400">v{__APP_VERSION__} · Open Source</span></p>
           <button
             onClick={() => { setTab('search'); setSearchQuery(''); }}
             className="flex items-center gap-1 text-[10px] text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 font-semibold"

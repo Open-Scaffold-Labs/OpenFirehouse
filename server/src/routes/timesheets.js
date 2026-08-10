@@ -1,9 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../db');
+const { requireOfficer, requireChief } = require('../middleware/requireRole');
 
-// GET / — list timesheets (filter by period, member, status)
-router.get('/', async (req, res) => {
+// GET / — list timesheets (filter by period, member, status) (officer+)
+// Market gate: a dept-wide timesheet listing is a supervisor view ("officers
+// see their station"). Member self-view ("personnel see their own") is a P4
+// follow-up — it needs members.user_id populated to map a login to its member
+// row (CLAUDE.md: currently unpopulated), so it isn't wired here.
+router.get('/', requireOfficer, async (req, res) => {
   try {
     const stationId = req.user.department_id;
     const { period_start, period_end, member_id, status } = req.query;
@@ -27,8 +32,8 @@ router.get('/', async (req, res) => {
   }
 });
 
-// POST /generate — auto-generate timesheets for a FLSA period
-router.post('/generate', async (req, res) => {
+// POST /generate — auto-generate timesheets for a FLSA period (officer+)
+router.post('/generate', requireOfficer, async (req, res) => {
   try {
     const stationId = req.user.department_id;
     const { period_start, period_end } = req.body;
@@ -42,12 +47,20 @@ router.post('/generate', async (req, res) => {
       [stationId]
     );
 
-    // Get station config for FLSA
+    // FLSA config — 1.1a: from DEPARTMENTS (the tenant), station fallback.
+    // The old read was `stations WHERE id = <dept id>` — wrong row multi-house.
     const { rows: cfgRows } = await pool.query(
-      `SELECT dept_type, flsa_work_period, flsa_ot_threshold FROM stations WHERE id = $1`,
+      `SELECT flsa_work_period, flsa_ot_threshold FROM departments WHERE id = $1`,
       [stationId]
     );
-    const cfg = cfgRows[0] || {};
+    let cfg = cfgRows[0] || {};
+    if (!cfg.flsa_work_period) {
+      const { rows: stRows } = await pool.query(
+        `SELECT flsa_work_period, flsa_ot_threshold FROM stations WHERE department_id = $1 ORDER BY id LIMIT 1`,
+        [stationId]
+      );
+      cfg = stRows[0] || {};
+    }
     const flsaPeriod = `${cfg.flsa_work_period || 14}-day`;
 
     let generated = 0;
@@ -59,10 +72,13 @@ router.post('/generate', async (req, res) => {
       );
       if (existing.length > 0) continue;
 
-      // Calculate hours from daily_staffing
+      // (0067: generate's INSERT below writes department_id explicitly)
+      // Calculate worked hours from the date-keyed riding board (1.1c-b / 0070):
+      // the assignment IS the timecard line — daily_staffing was folded into
+      // apparatus_assignments, so hours now live on the seat/assignment the member rode.
       const { rows: staffing } = await pool.query(`
         SELECT COALESCE(SUM(hours), 0) AS total
-        FROM daily_staffing
+        FROM apparatus_assignments
         WHERE department_id = $4 AND member_id = $1 AND date BETWEEN $2 AND $3
       `, [member.id, period_start, period_end, stationId]);
 
@@ -73,13 +89,18 @@ router.post('/generate', async (req, res) => {
         WHERE department_id = $4 AND member_id = $1 AND ot_date BETWEEN $2 AND $3
       `, [member.id, period_start, period_end, stationId]);
 
-      // Get leave hours
+      // Get leave DAYS overlapping the period — 1.1a fix: the old query used
+      // snake_case columns (start_date) that DON'T EXIST on leave_requests
+      // (they're camelCase-quoted) and lowercase 'approved' — it THREW on every
+      // generate and leave hours never counted. Count only the overlap days.
       const { rows: leaveData } = await pool.query(`
-        SELECT COUNT(*) AS days
+        SELECT COALESCE(SUM(
+          (LEAST("endDate"::date, $3::date) - GREATEST("startDate"::date, $2::date)) + 1
+        ), 0) AS days
         FROM leave_requests
-        WHERE department_id = $4 AND member_id = $1
-          AND status = 'approved'
-          AND start_date <= $3 AND end_date >= $2
+        WHERE department_id = $4 AND "memberId" = $1
+          AND status = 'Approved'
+          AND "startDate"::date <= $3::date AND "endDate"::date >= $2::date
       `, [member.id, period_start, period_end, stationId]);
 
       const regularHours = parseFloat(staffing[0].total) || 0;
@@ -88,7 +109,7 @@ router.post('/generate', async (req, res) => {
       const leaveHours = leaveDays * 24; // career = 24h shifts
 
       await pool.query(`
-        INSERT INTO timesheets (station_id, member_id, period_start, period_end, regular_hours, ot_hours, leave_hours, total_hours, flsa_period, status)
+        INSERT INTO timesheets (department_id, member_id, period_start, period_end, regular_hours, ot_hours, leave_hours, total_hours, flsa_period, status)
         VALUES ($9, $1, $2, $3, $4, $5, $6, $7, $8, 'draft')
       `, [
         member.id, period_start, period_end,
@@ -105,14 +126,14 @@ router.post('/generate', async (req, res) => {
   }
 });
 
-// POST / — create single timesheet
-router.post('/', async (req, res) => {
+// POST / — create single timesheet (officer+; 0067: department_id explicit)
+router.post('/', requireOfficer, async (req, res) => {
   try {
     const stationId = req.user.department_id;
     const { member_id, period_start, period_end, regular_hours, ot_hours, leave_hours, trade_hours, flsa_period, notes } = req.body;
     const total = (parseFloat(regular_hours) || 0) + (parseFloat(ot_hours) || 0);
     const { rows } = await pool.query(`
-      INSERT INTO timesheets (station_id, member_id, period_start, period_end, regular_hours, ot_hours, leave_hours, trade_hours, total_hours, flsa_period, notes)
+      INSERT INTO timesheets (department_id, member_id, period_start, period_end, regular_hours, ot_hours, leave_hours, trade_hours, total_hours, flsa_period, notes)
       VALUES ($11, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING *
     `, [member_id, period_start, period_end,
@@ -124,8 +145,8 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PATCH /:id — update timesheet
-router.patch('/:id', async (req, res) => {
+// PATCH /:id — update timesheet (officer+)
+router.patch('/:id', requireOfficer, async (req, res) => {
   try {
     const stationId = req.user.department_id;
     const allowed = ['regular_hours', 'ot_hours', 'leave_hours', 'trade_hours', 'total_hours', 'status', 'approved_by', 'notes'];
@@ -153,8 +174,11 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
-// POST /export — generate CSV export of timesheets for a period
-router.post('/export', async (req, res) => {
+// POST /export — generate CSV export of timesheets for a period (chief+)
+// Market gate: a full-department payroll export is an admin/HR/chief-scope
+// action (viewing others' wages/hours in a payroll export sits above the
+// supervisor tier). Consistent with payEntries POST = requireChief.
+router.post('/export', requireChief, async (req, res) => {
   try {
     const stationId = req.user.department_id;
     const { period_start, period_end } = req.body;
@@ -181,8 +205,8 @@ router.post('/export', async (req, res) => {
   }
 });
 
-// DELETE /:id
-router.delete('/:id', async (req, res) => {
+// DELETE /:id (officer+)
+router.delete('/:id', requireOfficer, async (req, res) => {
   try {
     const stationId = req.user.department_id;
     await pool.query('DELETE FROM timesheets WHERE id = $1 AND department_id = $2', [req.params.id, stationId]);

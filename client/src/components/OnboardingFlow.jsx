@@ -388,7 +388,7 @@ export default function OnboardingFlow({ user, onDone, onNavigate }) {
             {step > 1 && step < 4 && (
               <button
                 onClick={() => setStep((s) => s - 1)}
-                className="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+                className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
               >
                 <ChevronLeft size={15} /> Back
               </button>

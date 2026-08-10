@@ -58,6 +58,13 @@ export const offlineQueue = {
       method,
     });
     save(items);
+    // Nudge the flusher to try NOW. Without this, a write that fails while the
+    // browser is still "online" (a server blip, a 502 from a proxy — not a real
+    // offline event) would sit until the next offline→online transition or a
+    // reload. The flusher (OfflineBanner) listens for this and attempts a drain.
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(new Event('of:offline-queue-push'));
+    }
     return true;
   },
   getAll() { return load(); },

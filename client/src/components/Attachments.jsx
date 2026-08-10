@@ -136,7 +136,7 @@ function AttachmentCard({ attachment, onDelete }) {
       <button
         onClick={handleDelete}
         disabled={deleting}
-        className="flex-shrink-0 p-1.5 text-gray-400 hover:text-red-600 hover:bg-white dark:hover:bg-gray-900 rounded-lg transition-colors disabled:opacity-50"
+        className="flex-shrink-0 p-1.5 text-gray-500 dark:text-gray-400 hover:text-red-600 hover:bg-white dark:hover:bg-gray-900 rounded-lg transition-colors disabled:opacity-50"
         title="Delete attachment"
         aria-label={`Delete attachment ${attachment.file_name}`}
       >
@@ -222,7 +222,7 @@ function AddAttachmentForm({ module, recordId, accessLevel, onAdd }) {
         <button
           onClick={() => setFormOpen(false)}
           aria-label="Close add attachment form"
-          className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
+          className="p-1 text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
         >
           <X size={14} />
         </button>
@@ -369,7 +369,7 @@ export default function Attachments({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-8 text-gray-400">
+      <div className="flex items-center justify-center py-8 text-gray-500 dark:text-gray-400">
         <Loader2 size={16} className="animate-spin mr-2" />
         <span className="text-sm">Loading attachments…</span>
       </div>
@@ -394,14 +394,14 @@ export default function Attachments({
             )}
           </span>
         </div>
-        {expanded ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
+        {expanded ? <ChevronUp size={14} className="text-gray-500 dark:text-gray-400" /> : <ChevronDown size={14} className="text-gray-500 dark:text-gray-400" />}
       </button>
 
       {expanded && (
         <div className="space-y-3">
           {/* Attachment List */}
           {attachments.length === 0 ? (
-            <div className="text-center py-6 text-gray-400 bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-700">
+            <div className="text-center py-6 text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-700">
               <Paperclip size={24} className="mx-auto mb-2 opacity-30" />
               <p className="text-sm font-medium">No attachments yet.</p>
               <p className="text-xs mt-1">Click "Add Attachment" to get started.</p>

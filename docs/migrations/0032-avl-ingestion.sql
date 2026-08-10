@@ -81,9 +81,17 @@ END $do$;
 
 DO $do$ BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='of_app') THEN
-    GRANT SELECT, INSERT, UPDATE ON public.avl_connections TO of_app;
+    -- DELETE included: routes/avlAdmin.js DELETE /connections/:id is a hard
+    -- delete. Without it, delete works locally (owner role) but 500s on prod
+    -- under of_app. (Dale review 2026-07-04.) RLS dept_isolation still scopes
+    -- which rows are deletable.
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.avl_connections TO of_app;
     GRANT SELECT, INSERT, UPDATE, DELETE ON public.avl_devices TO of_app;
     GRANT USAGE, SELECT ON SEQUENCE public.avl_connections_id_seq TO of_app;
     GRANT USAGE, SELECT ON SEQUENCE public.avl_devices_id_seq TO of_app;
   END IF;
 END $do$;
+
+INSERT INTO public.of_schema_migrations (filename)
+VALUES ('0032-avl-ingestion.sql')
+ON CONFLICT (filename) DO NOTHING;

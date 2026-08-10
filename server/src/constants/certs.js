@@ -142,6 +142,7 @@ const ALIAS_SOURCE = {
   'driver operator pumps': 'driver_operator_pumper', 'pump operator': 'driver_operator_pumper',
   'pumper': 'driver_operator_pumper',
   'driver operator aerial': 'driver_operator_aerial', 'aerial operator': 'driver_operator_aerial',
+  'driver aerial': 'driver_operator_aerial', 'aerial driver': 'driver_operator_aerial',
   'driver operator tanker tender': 'driver_operator_tanker', 'driver operator tanker': 'driver_operator_tanker',
   'tanker operator': 'driver_operator_tanker', 'tender operator': 'driver_operator_tanker',
   'cdl b': 'cdl_b', 'cdl class b': 'cdl_b', 'cdl-b': 'cdl_b',

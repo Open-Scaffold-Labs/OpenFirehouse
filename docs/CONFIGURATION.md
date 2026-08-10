@@ -99,6 +99,59 @@ npx web-push generate-vapid-keys
 | `VAPID_PRIVATE_KEY`  | unset   | Private key, server-side only. |
 | `VAPID_EMAIL`        | unset   | `mailto:` URL identifying the push-notification sender. |
 
+## Realtime (live push for dispatch, unit status and the maps)
+
+**Push is the PRIMARY channel for dispatch. Configure it.**
+
+Polling is a bounded fallback so a dropped connection degrades instead of going dark — it is
+not an equivalent alternative. On a dispatch surface the difference between instant and
+"up to 20–30 seconds" is operationally real, and you should treat an unconfigured or
+disconnected push channel as a condition to fix, not a supported steady state.
+
+The app will still run with these unset — it will not crash, and every live surface keeps
+refreshing on its poll interval. That is deliberate (a dispatch surface must never
+white-screen over a config problem), and it is what makes a self-host without Supabase
+Realtime *possible*. It is not what makes it *advisable*.
+
+Whichever channel is carrying your data, the surface tells you which one and how fresh it
+is — see "Verifying it actually took" below.
+
+Live push has **two halves, and you need both**. The server *publishes* Supabase Realtime
+Broadcast messages; the browser *subscribes* to them. Configuring only one half is a
+silent no-op — the half you set works and nothing tells you the other is missing.
+
+| Variable | Half | Notes |
+| -------- | ---- | ----- |
+| `SUPABASE_URL` | server (publish) | Your Supabase project URL, e.g. `https://YOUR_PROJECT_REF.supabase.co`. |
+| `SUPABASE_ANON_KEY` | server (publish) | The anon/public key. Settings → API in the Supabase dashboard. |
+| `VITE_SUPABASE_URL` | **client (subscribe)** | The **same** project URL, exposed to the browser at build time. Goes in `client/.env`, not `server/.env`. |
+| `VITE_SUPABASE_ANON_KEY` | **client (subscribe)** | The **same** anon key. Also `client/.env`. |
+
+Both client values are public by design: the anon key grants no data access on its own,
+the authz'd REST API stays the source of truth, and Broadcast messages are only treated
+as "refetch now" signals.
+
+⚠️ **The `VITE_`-prefixed pair is inlined at BUILD time, not read at runtime.** Vite
+substitutes them when the client is compiled, so **changing them requires a rebuild and
+redeploy** — an env-var edit alone does nothing. A missing `VITE_` var is silently
+`undefined`, never a build error.
+
+**Verifying it actually took.** Because the values are compiled in, the built bundle is
+the source of truth. After deploying, grep it:
+
+```bash
+grep -c 'createClient' dist/assets/index-*.js     # 1 = realtime client built, 0 = disabled
+```
+
+The app also shows this to you: when live push is off, the sidebar renders
+`Live push: off · 20s poll` beneath the version, and hovering it names the exact variable
+that is missing.
+
+**Optional strict mode.** Set `REQUIRE_REALTIME=1` on a deploy that *must* have live push
+and the client build will **fail** rather than silently ship with polling — it also
+rejects placeholder values copied from `client/.env.example`. Leave it unset (the default)
+for CI, local development, and any self-host that doesn't use Realtime.
+
 ## CAD integration
 
 One environment variable per CAD vendor in use. See

@@ -51,7 +51,7 @@ export const NAV_ITEMS_BY_GROUP = [
     group: 'Operations',
     items: [
       { id: 'incidents',         label: 'Incident Log'       },
-      { id: 'nfirs',             label: 'NFIRS / NERIS'      },
+      { id: 'nfirs',             label: 'NFIRS'              }, // must match Layout.jsx
       { id: 'hydrants',          label: 'Hydrant Management' },
       { id: 'drills',            label: 'Drills & Courses'   },
       { id: 'stationlog',        label: 'Station Daily Log'  },
@@ -61,7 +61,7 @@ export const NAV_ITEMS_BY_GROUP = [
       { id: 'fireinvestigation', label: 'Fire Investigation' },
       { id: 'hazmat',            label: 'Hazmat Reference (ERG)' },
       { id: 'recall',            label: 'Recall / All-Call'  },
-      { id: 'inspections',       label: 'Fire Inspections'   },
+      { id: 'inspections',       label: 'Properties' },
       { id: 'mutualaid',         label: 'Mutual Aid'         },
       { id: 'calendar',          label: 'Event Calendar'     },
       { id: 'public',            label: 'Public Dashboard'   },

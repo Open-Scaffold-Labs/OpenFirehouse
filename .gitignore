@@ -17,6 +17,12 @@ server/data/
 .env
 .env.local
 .env.*.local
+.env.temp
+*.env.temp
+.env.prod.local
+
+# Supabase CLI scratch state (contains pooler URL, project ref, etc.)
+supabase/.temp/
 
 # macOS
 .DS_Store
@@ -48,3 +54,32 @@ CLAUDE.md
 
 # Internal docs — runbooks, plans, gameplans, audits (not for the public repo)
 docs/internal/
+
+# Loose office/authoring docs at the repo ROOT — this is where sales, marketing,
+# press, and personal memos land, and this repo is bound for PUBLIC AGPL release.
+# Twice now one has sat untracked in the tree (a press release, 2026-07), and once
+# an 836K personal memo was swept into a 143-file refactor commit by a `git add .`
+# (Matt-memo.pages, 502e064, 2026-06-12 — caught + untracked 2026-07-13, never
+# reached the public mirror). Root-anchored ON PURPOSE: the real product docs in
+# docs/guides/ and docs/technical/ are deliberately tracked and must stay that way.
+# If you genuinely need a root-level office doc in the repo: git add -f.
+/*.docx
+/*.doc
+/*.pptx
+/*.ppt
+/*.xlsx
+/*.xls
+/*.pages
+/*.key
+/*.numbers
+.simshots/
+.env.neris.local
+
+# impeccable-ignore-start
+# Ephemeral impeccable output; shared artifacts (config.json, design.json, critique/*.md) stay tracked.
+.impeccable/config.local.json
+.impeccable/hook.cache.json
+.impeccable/hook.pending.json
+.impeccable/*.png
+.impeccable/live/
+# impeccable-ignore-end

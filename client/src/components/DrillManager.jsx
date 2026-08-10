@@ -607,13 +607,13 @@ export default function DrillManager() {
         <div className="flex bg-gray-100 dark:bg-gray-800 rounded-xl p-1">
           <button onClick={() => { setActiveTab('drills'); setExpandedId(null); }}
             className={`flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-              activeTab === 'drills' ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+              activeTab === 'drills' ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
             }`}>
             <Flame size={13} /> Drills ({drills.length})
           </button>
           <button onClick={() => { setActiveTab('courses'); setExpandedId(null); }}
             className={`flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-              activeTab === 'courses' ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+              activeTab === 'courses' ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
             }`}>
             <BookOpen size={13} /> Courses ({courses.length})
           </button>

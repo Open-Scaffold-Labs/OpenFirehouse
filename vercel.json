@@ -16,6 +16,18 @@
     {
       "path": "/api/cron/retention",
       "schedule": "45 13 * * *"
+    },
+    {
+      "path": "/api/cron/neris-sweep",
+      "schedule": "10 * * * *"
+    },
+    {
+      "path": "/api/cron/report-delivery",
+      "schedule": "15 14 * * *"
+    },
+    {
+      "path": "/api/cron/permit-expiry",
+      "schedule": "30 14 * * *"
     }
   ],
   "headers": [

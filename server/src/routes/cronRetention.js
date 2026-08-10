@@ -21,8 +21,13 @@ const express = require('express');
 const router  = express.Router();
 const { pool, radioLog, runWithDepartment } = require('../db');
 const { checkCronAuth } = require('../utils/cronAuth');
+// X-PHASE cron liveness (0128): every cron records its invocation through ONE wrapper,
+// so a cron cannot be added without a ledger row. cronRunCoverage.test.js enumerates these
+// files from source and asserts it. An auth REFUSAL is deliberately not a run — see
+// utils/cronRun.js; a public path must not let an anonymous caller append to a permanent log.
+const { withCronRun } = require('../utils/cronRun');
 
-router.get('/', async (req, res) => {
+router.get('/', withCronRun('retention', async (req, res) => {
   // Fail closed: if CRON_SECRET is unset in production, reject (503) instead of
   // running the retention sweep open. Vercel Cron sends the Bearer secret.
   const auth = checkCronAuth(req);
@@ -66,6 +71,6 @@ router.get('/', async (req, res) => {
     console.error('cron/retention error:', err);
     res.status(500).json({ error: err.message });
   }
-});
+}));
 
 module.exports = router;

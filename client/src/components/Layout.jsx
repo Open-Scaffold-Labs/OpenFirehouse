@@ -6,15 +6,17 @@ import {
   MapPinned, ClipboardCheck, Wrench, BookOpen, MonitorPlay, Banknote, HeartPulse,
   Bell, Shield, Settings, Menu, X, ChevronDown, ChevronRight, LogOut, HelpCircle, MessageSquarePlus,
   FileText, Droplets, BookMarked, NotebookPen, Landmark, HeartHandshake,
-  Radio, Microscope, FolderInput, UserPlus, Wind, DollarSign, FlaskConical, Siren,
+  Radio, Microscope, FolderInput, UserPlus, Wind, DollarSign, FlaskConical, Siren, Syringe,
   RotateCcw, SlidersHorizontal, Megaphone, BarChart3, Users2, ToggleLeft, PiggyBank, Baby,
-  UserCog, ShieldAlert, ArrowLeftRight, Scale,
+  UserCog, ShieldAlert, ShieldCheck, ArrowLeftRight, Scale,
   FileSpreadsheet, CircleOff,
   FileSearch, FolderOpen, Video, Award,
   ClipboardList, KeyRound, Receipt, Brain, Lightbulb, FileOutput, Map, UserCheck,
-  Bot, Database, Phone, MessageSquare, Biohazard, Moon, Sun,
+  Bot, Database, Phone, MessageSquare, Biohazard, Moon, Sun, Archive,
+  Link2,
 } from 'lucide-react';
 import { canAccess, ROLES, isUnitSession } from '../data/auth';
+import { isModuleEnabled } from '../data/moduleRegistry';
 import { toggleTheme } from '../utils/theme';
 import { api } from '../utils/api';
 import HelpPanel from './HelpPanel';
@@ -22,6 +24,8 @@ import PreferencesModal from './PreferencesModal';
 import FeedbackWidget from './FeedbackWidget';
 import VoiceAssistant from './VoiceAssistant';
 import OfflineBanner from './OfflineBanner';
+import CadTroubleBanner from './CadTroubleBanner';
+import { realtimeStatus } from '../utils/supabase';
 import PersonalAssistant from './PersonalAssistant';
 import WhatsNew from './WhatsNew';
 
@@ -44,7 +48,7 @@ const NAV_GROUPS = [
       { id: 'cadets',             label: 'Cadet Program',      icon: Baby          },
       { id: 'retention',          label: 'Retention Scoring',  icon: BarChart3     },
       { id: 'personnel-actions',  label: 'Personnel Actions',  icon: UserCog       },
-      { id: 'vacancy-fill',       label: 'Auto Vacancy Fill', icon: UserCheck      },
+      { id: 'vacancy-fill',       label: 'Vacancies',         icon: UserCheck      },
     ],
   },
   // ── Training & Readiness ─────────────────────────────────────────────────
@@ -71,10 +75,11 @@ const NAV_GROUPS = [
     label: 'Apparatus & Equipment',
     items: [
       { id: 'apparatus',           label: 'Apparatus Tracker',   icon: Truck          },
-      { id: 'maintenance',         label: 'Maintenance Log',     icon: Wrench         },
+      { id: 'maintenance',         label: 'Work Orders',         icon: Wrench         },
       { id: 'checklists',          label: 'Inspection Checks',   icon: ClipboardCheck },
       { id: 'apparatus-oos',       label: 'Out of Service',      icon: CircleOff      },
-      { id: 'scba',                label: 'SCBA / Air Mgmt',     icon: Wind           },
+      { id: 'scba',                label: 'Asset Testing',       icon: Wind           },
+      { id: 'narcotics',           label: 'Controlled Substances', icon: Syringe      },
       { id: 'equipment-checkout',  label: 'Equipment Checkout',  icon: KeyRound       },
       { id: 'knox-keys',           label: 'Knox Key Mgmt',      icon: KeyRound       },
     ],
@@ -85,10 +90,16 @@ const NAV_GROUPS = [
     label: 'Incident Operations',
     items: [
       { id: 'incidents',          label: 'Incident Log',        icon: Flame        },
+      { id: 'dispatch-archive',   label: 'Dispatch Archive',    icon: Archive      },
       { id: 'incident-map',      label: 'Incident Map',        icon: MapPinned    },
       { id: 'commander-cam',     label: 'Commander Cam',       icon: MonitorPlay  },
       { id: 'radio-log',         label: 'Radio Feed',          icon: Radio        },
-      { id: 'nfirs',              label: 'NFIRS / NERIS',       icon: FileText     },
+      // Label is 'NFIRS', NOT 'NFIRS / NERIS': NERIS submission does not happen on this screen.
+      // It hangs off the incident record (routes/incidents.js -> utils/nerisSubmit), and the
+      // NERIS connection is configured in Settings. This page is the legacy NFIRS reports CRUD,
+      // and advertising NERIS on it sends a chief to the wrong place. (Module is 'planned'/hidden;
+      // its keep-or-delete disposition is TAIL-TRIAGE 2026-07-21, revisit at state-reporting.)
+      { id: 'nfirs',              label: 'NFIRS',              icon: FileText     },
       { id: 'ng911',              label: 'NG911 Console',       icon: Phone         },
       { id: 'cad',                label: 'CAD Integration',     icon: Siren        },
       { id: 'avl',                label: 'Vehicle AVL',         icon: Truck        },
@@ -97,44 +108,34 @@ const NAV_GROUPS = [
       { id: 'aid-agreements',     label: 'Aid Agreements',      icon: Handshake    },
       { id: 'after-action',       label: 'After Action',        icon: FileSearch   },
       { id: 'incident-costs',     label: 'Incident Costs',      icon: Receipt      },
-    ],
-  },
-  // ── Hazmat Operations ────────────────────────────────────────────────────
-  {
-    id: 'hazmat-ops',
-    label: 'Hazmat Operations',
-    items: [
+      // Hazmat reference folded in from the former single-item "Hazmat Operations"
+      // group (2026-07-21 nav tightening — market model shows only enabled modules,
+      // and a one-item group reads as clutter).
       { id: 'hazmat',             label: 'Hazmat Reference (ERG)', icon: Biohazard },
     ],
   },
-  // ── Inspections & Pre-Plans ───────────────────────────────────────────────
+  // ── Prevention & Pre-Plans ────────────────────────────────────────────────
+  // Merged the former "Prevention & Community" survivors (hydrants, CRR) into the
+  // inspections/pre-plans group (2026-07-21 nav tightening). community-outreach +
+  // public dashboard remain in the definition but are gated 'planned' by the module
+  // registry until their phase — one place governs hiding, never omission.
   {
     id: 'inspections-group',
-    label: 'Inspections & Pre-Plans',
+    label: 'Prevention & Pre-Plans',
     items: [
-      { id: 'inspections',           label: 'Fire Inspections',      icon: Shield         },
-      { id: 'inspection-search',     label: 'Inspection Search',     icon: FileSearch     },
-      { id: 'inspection-entry',      label: 'Inspection Entry',      icon: ClipboardCheck },
-      { id: 'inspection-checklist',  label: 'Inspection Checklist',  icon: ClipboardList  },
-      { id: 'inspector-status',      label: 'Inspector Status',      icon: UserCheck      },
-      { id: 'violations',            label: 'Violations & Codes',    icon: ShieldAlert    },
-      { id: 'permits',               label: 'Permits & Fees',        icon: Receipt        },
-      { id: 'registration-search',    label: 'Registration Search',   icon: FileSearch     },
-      { id: 'registration-entry',     label: 'Registration Entry',    icon: FileText       },
-      { id: 'complaints',            label: 'Requests & Complaints', icon: MessageSquare  },
+      // Phase 3 R6 (2026-07-26): PERMITS moved INSIDE Prevention Center (its own tab,
+      // with the department-wide register as that tab's default view). The standalone
+      // "Permits & Fees" destination is retired — one domain, one surface, per the
+      // 2026-07-21 nav tightening. "Properties & Permits" keeps its PROPERTY role and
+      // is renamed to match: it no longer offers permit create/edit.
+      { id: 'prevention-center',     label: 'Prevention Center',     icon: ShieldCheck    },
+      { id: 'inspections',           label: 'Properties',            icon: Shield         },
       { id: 'preplans',              label: 'Pre-Incident Plans',    icon: MapPinned      },
       { id: 'preplan-wizard',        label: 'Pre-Plan Setup Wizard', icon: Map            },
-    ],
-  },
-  // ── Prevention & Community ───────────────────────────────────────────────
-  {
-    id: 'prevention',
-    label: 'Prevention & Community',
-    items: [
-      { id: 'hydrants',             label: 'Hydrant Management',    icon: Droplets       },
-      { id: 'community-outreach',   label: 'Community Outreach',    icon: HeartPulse     },
-      { id: 'crr',                  label: 'Community Risk',        icon: HeartHandshake },
-      { id: 'public',               label: 'Public Dashboard',      icon: MonitorPlay    },
+      { id: 'hydrants',              label: 'Hydrant Management',    icon: Droplets       },
+      { id: 'crr',                   label: 'Community Risk',        icon: HeartHandshake },
+      { id: 'community-outreach',    label: 'Community Outreach',    icon: HeartPulse     },
+      { id: 'public',                label: 'Public Dashboard',      icon: MonitorPlay    },
     ],
   },
   // ── Finance & Compliance ─────────────────────────────────────────────────
@@ -149,7 +150,6 @@ const NAV_GROUPS = [
       { id: 'timesheets',        label: 'Timesheets',           icon: FileSpreadsheet },
       { id: 'flsa',              label: 'FLSA Overtime',        icon: Clock           },
       { id: 'ot-equalization',   label: 'OT Equalization',      icon: Scale           },
-      { id: 'iso',               label: 'ISO Grading Report',   icon: ClipboardCheck  },
     ],
   },
   // ── Activity Entry ───────────────────────────────────────────────────────
@@ -184,11 +184,12 @@ const NAV_GROUPS = [
     id: 'tools',
     label: 'Tools & Data',
     items: [
-      { id: 'analytics',   label: 'AI Response Analytics',  icon: BarChart3   },
+      { id: 'analytics',   label: 'Response Times',          icon: BarChart3   },
       { id: 'ai',          label: 'AI Scheduling',            icon: Sparkles    },
       { id: 'dataimport',  label: 'Data Import',              icon: FolderInput },
       { id: 'data-ingest', label: 'AI Data Ingestion',        icon: Brain       },
       { id: 'reports',     label: 'Reports & Export',         icon: Download    },
+      { id: 'reconciliation', label: 'Reconciliation',        icon: Link2       },
       { id: 'assets',      label: 'Asset & Inventory',        icon: Package     },
       { id: 'workflows',          label: 'AI Workflow Orchestration', icon: Brain     },
       { id: 'incident-intel',    label: 'AI Incident Intelligence', icon: Brain      },
@@ -201,8 +202,16 @@ const NAV_GROUPS = [
   },
 ];
 
+// Every page the shell can navigate to needs an entry here — this is what names
+// the page in the top bar. `calendar` and `messages` are rendered as standalone
+// NavItems rather than inside a NAV_GROUP, and both were missing, so the lookup
+// below fell through to its `?? 'Dashboard'` default: The Board was titled
+// "Dashboard" while "The Board" was the highlighted nav item, next to a separate
+// page actually called Dashboard. A silent default is why nobody caught it.
 const ALL_ITEMS = [
+  { id: 'calendar',      label: 'The Board'                },
   { id: 'dashboard',     label: 'Dashboard'                },
+  { id: 'messages',      label: 'Messages'                 },
   { id: 'command',       label: 'Incident Command Center'  },
   { id: 'recall',        label: 'Recall / All-Call'        },
   { id: 'alerts',        label: 'Notifications & Alerts'   },
@@ -250,7 +259,7 @@ function NavItem({ id, label, icon: Icon, active, onClick, badge }) {
 
 function NavGroup({ group, activePage, open, onToggle, onNavigate, setSidebarOpen, user }) {
   // Filter items the current user can access
-  const visibleItems = group.items.filter((item) => canAccess(user, item.id));
+  const visibleItems = group.items.filter((item) => canAccess(user, item.id) && isModuleEnabled(item.id));
   if (visibleItems.length === 0) return null;
 
   const hasActive = visibleItems.some((i) => i.id === activePage);
@@ -260,7 +269,7 @@ function NavGroup({ group, activePage, open, onToggle, onNavigate, setSidebarOpe
       <button
         onClick={onToggle}
         className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left transition-colors group
-          ${hasActive ? 'text-gray-200' : 'text-gray-500 hover:text-gray-300'}`}
+          ${hasActive ? 'text-gray-200' : 'text-gray-400 hover:text-gray-200'}`}
       >
         <span className="flex-1 text-xs font-bold uppercase tracking-wider">{group.label}</span>
         {open
@@ -325,9 +334,9 @@ function UserMenu({ user, roleInfo, onLogout, onCustomize }) {
         </div>
         <div className="hidden sm:block leading-none text-left">
           <p className="text-xs font-semibold text-white">{user.name}</p>
-          <p className="text-[10px] text-red-300">{roleInfo.label}</p>
+          <p className="text-[10px] text-red-50">{roleInfo.label}</p>
         </div>
-        <ChevronDown size={12} className={`text-red-300 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown size={12} className={`text-red-50 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && (
@@ -464,31 +473,41 @@ export default function Layout({ children, activePage, onNavigate, settings, ale
   const hiddenNav = userPrefs?.nav?.hidden ?? [];
   const filteredNavGroups = NAV_GROUPS.map((g) => ({
     ...g,
-    items: g.items.filter((item) => !hiddenNav.includes(item.id)),
+    // department module enablement (market model) AND per-user nav personalization
+    items: g.items.filter((item) => isModuleEnabled(item.id) && !hiddenNav.includes(item.id)),
   })).filter((g) => g.items.length > 0);
 
-  // Scroll to top whenever the active page changes.
-  // Double-RAF ensures scroll runs after child components have mounted,
-  // focused inputs, or triggered any scrollIntoView calls.
+  // Scroll to top whenever the active page changes. Runs several times because
+  // lazy-loaded pages (Suspense) mount AFTER the RAFs fire — the double-RAF alone
+  // reset while the fallback was still showing, so a heavy page (Fire Inspections)
+  // could land scrolled down. Immediate kills retained scroll; the RAFs catch
+  // post-mount focus/scrollIntoView; the timeout catches late lazy mounts.
   useEffect(() => {
-    let frame1, frame2;
+    const toTop = () => {
+      if (mainRef.current) mainRef.current.scrollTop = 0;
+      // iOS / installed PWA sometimes scrolls the window, not the flex container
+      try { window.scrollTo(0, 0); } catch { /* noop */ }
+    };
+    let frame1, frame2, timer;
+    toTop();                                     // immediate — retained scroll from the prior page
     frame1 = requestAnimationFrame(() => {
-      frame2 = requestAnimationFrame(() => {
-        if (mainRef.current) {
-          mainRef.current.scrollTop = 0;
-        }
-      });
+      frame2 = requestAnimationFrame(toTop);     // after first children mount / focus
     });
+    timer = setTimeout(toTop, 150);              // after a lazy page's chunk loads + mounts
     return () => {
       cancelAnimationFrame(frame1);
       cancelAnimationFrame(frame2);
+      clearTimeout(timer);
     };
   }, [activePage]);
 
   const stationName    = settings?.stationName    || 'Station 14';
   const departmentName = settings?.departmentName || 'Maplewood VFD';
 
-  const pageLabel = ALL_ITEMS.find((n) => n.id === activePage)?.label ?? 'Dashboard';
+  // Fall back to the page id, not to a hardcoded page NAME: an unregistered page
+  // showing its own id is obviously wrong and gets fixed, whereas one confidently
+  // mislabelled "Dashboard" looks correct and survived until a design pass.
+  const pageLabel = ALL_ITEMS.find((n) => n.id === activePage)?.label ?? activePage;
   const roleInfo  = user ? (ROLES[user.role] ?? {}) : {};
 
   function toggleGroup(id) {
@@ -510,7 +529,7 @@ export default function Layout({ children, activePage, onNavigate, settings, ale
       <header className="bg-red-700 shadow-lg z-40 flex-shrink-0 relative">
         <div className="flex h-16 items-center gap-4 px-4 sm:px-6">
 
-          <button className="sm:hidden text-red-200 hover:text-white"
+          <button className="sm:hidden text-red-100 hover:text-white"
             onClick={() => setSidebarOpen((o) => !o)} aria-label="Toggle menu">
             {sidebarOpen ? <X size={22} /> : <Menu size={22} />}
           </button>
@@ -521,7 +540,7 @@ export default function Layout({ children, activePage, onNavigate, settings, ale
             </div>
             <div>
               <div className="flex items-center gap-2 leading-none">
-                <p className="text-xs font-bold"><span className="text-white">OPEN</span><span className="text-red-300">FIREHOUSE</span></p>
+                <p className="text-xs font-bold"><span className="text-white">OPEN</span><span className="text-red-100">FIREHOUSE</span></p>
                 <button onClick={() => setWhatsNewOpen(true)} className="text-[10px] font-bold text-red-900 bg-red-200 hover:bg-white px-1.5 py-0.5 rounded-full leading-none transition-colors cursor-pointer" title="What's New — click for release notes">
                   v{__APP_VERSION__}
                 </button>
@@ -537,7 +556,7 @@ export default function Layout({ children, activePage, onNavigate, settings, ale
               className={`relative flex items-center gap-1.5 p-2 sm:px-3 sm:py-1.5 rounded-lg transition-colors text-xs font-semibold ${
                 activePage === 'messages'
                   ? 'bg-white/20 text-white'
-                  : 'text-red-200 hover:text-white hover:bg-white/10'
+                  : 'text-red-100 hover:text-white hover:bg-white/10'
               }`}
               title="Messages — inbox and direct messaging"
             >
@@ -553,7 +572,7 @@ export default function Layout({ children, activePage, onNavigate, settings, ale
             {/* My Member Portal button */}
             <button
               onClick={() => { handleNavigate('portal'); setSidebarOpen(false); }}
-              className="flex items-center gap-1.5 p-2 sm:px-3 sm:py-1.5 text-red-200 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-xs font-semibold"
+              className="flex items-center gap-1.5 p-2 sm:px-3 sm:py-1.5 text-red-100 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-xs font-semibold"
               title="My Member Portal — your profile, certs, training & hours"
             >
               <IdCard size={15} />
@@ -563,22 +582,34 @@ export default function Layout({ children, activePage, onNavigate, settings, ale
             {/* Personal Assistant button */}
             <button
               onClick={() => setAssistantOpen((o) => !o)}
-              className="relative flex items-center gap-1.5 p-2 sm:px-3 sm:py-1.5 text-red-200 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-xs font-semibold"
+              className="relative flex items-center gap-1.5 p-2 sm:px-3 sm:py-1.5 text-red-100 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-xs font-semibold"
               title="Personal Assistant"
             >
               <Bot size={15} />
               <span className="hidden sm:inline">Assistant</span>
+              {/* The count used to be `absolute top-0.5 right-0.5` — the button's own
+                  top-right corner, which is precisely where the last letter of
+                  "Assistant" sits. It covered the "t", so the primary AI entry point
+                  in the top bar read "Assistan". When the label is visible the count
+                  is INLINE after it; only in icon-only (mobile) mode does it overlay
+                  the icon, where there is no text to hide. Violet, per the AI accent
+                  vocabulary — it was purple, which is adjacent but off-token. */}
               {assistantCount > 0 && (
-                <span className="absolute top-0.5 right-0.5 min-w-[16px] h-4 bg-purple-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-0.5">
-                  {assistantCount > 99 ? '99+' : assistantCount}
-                </span>
+                <>
+                  <span className="hidden sm:inline-flex min-w-[16px] h-4 bg-violet-600 text-white text-[9px] font-bold rounded-full items-center justify-center px-1">
+                    {assistantCount > 99 ? '99+' : assistantCount}
+                  </span>
+                  <span className="sm:hidden absolute -top-1 -right-1 min-w-[16px] h-4 bg-violet-600 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-0.5">
+                    {assistantCount > 99 ? '99+' : assistantCount}
+                  </span>
+                </>
               )}
             </button>
 
             {/* Help button */}
             <button
               onClick={() => setHelpOpen(true)}
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-red-200 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-xs font-semibold"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-red-100 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-xs font-semibold"
               title="Help & Documentation"
             >
               <HelpCircle size={15} />
@@ -588,7 +619,7 @@ export default function Layout({ children, activePage, onNavigate, settings, ale
             {/* Report a Bug / Feedback */}
             <button
               onClick={() => setFeedbackOpen(true)}
-              className="flex items-center gap-1.5 p-2 sm:px-3 sm:py-1.5 text-red-200 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-xs font-semibold"
+              className="flex items-center gap-1.5 p-2 sm:px-3 sm:py-1.5 text-red-100 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-xs font-semibold"
               title="Report a bug or send feedback"
             >
               <MessageSquarePlus size={15} />
@@ -600,7 +631,7 @@ export default function Layout({ children, activePage, onNavigate, settings, ale
               onClick={() => toggleTheme()}
               title="Toggle dark mode"
               aria-label="Toggle dark mode"
-              className="p-2 rounded-lg text-red-200 hover:text-white hover:bg-white/10 transition-colors"
+              className="p-2 rounded-lg text-red-100 hover:text-white hover:bg-white/10 transition-colors"
             >
               <Moon size={16} className="dark:hidden" />
               <Sun size={16} className="hidden dark:block" />
@@ -609,13 +640,13 @@ export default function Layout({ children, activePage, onNavigate, settings, ale
             {/* Alert bell */}
             <button
               onClick={() => { handleNavigate('alerts'); setSidebarOpen(false); }}
-              className="relative p-2 text-red-200 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+              className="relative p-2 text-red-100 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
               title="Notifications & Alerts"
               aria-label="Notifications and alerts"
             >
               <Bell size={18} />
               {alertCount > 0 && (
-                <span className="absolute top-0.5 right-0.5 min-w-[16px] h-4 bg-amber-400 text-gray-900 text-[9px] font-bold rounded-full flex items-center justify-center px-0.5">
+                <span className="absolute top-0.5 right-0.5 min-w-[16px] h-4 bg-amber-400 text-amber-950 text-[9px] font-bold rounded-full flex items-center justify-center px-0.5">
                   {alertCount > 99 ? '99+' : alertCount}
                 </span>
               )}
@@ -719,7 +750,7 @@ export default function Layout({ children, activePage, onNavigate, settings, ale
               <Siren className="h-4 w-4 flex-shrink-0" />
               <span className="flex-1">Dispatch & Command</span>
               {activePage !== 'command' && (
-                <span className="text-[9px] font-black uppercase tracking-widest text-red-600">Live</span>
+                <span className="text-[9px] font-black uppercase tracking-widest text-red-400">Live</span>
               )}
             </button>
 
@@ -746,7 +777,7 @@ export default function Layout({ children, activePage, onNavigate, settings, ale
               active={activePage === 'alerts'}
               onClick={() => { handleNavigate('alerts'); setSidebarOpen(false); }}
               badge={alertCount > 0 && (
-                <span className="min-w-[20px] h-5 bg-amber-400 text-gray-900 text-[10px] font-bold rounded-full flex items-center justify-center px-1">
+                <span className="min-w-[20px] h-5 bg-amber-400 text-amber-950 text-[10px] font-bold rounded-full flex items-center justify-center px-1">
                   {alertCount > 99 ? '99+' : alertCount}
                 </span>
               )}
@@ -783,12 +814,34 @@ export default function Layout({ children, activePage, onNavigate, settings, ale
                 </button>
               </div>
             )}
-            <p className="text-[10px] font-semibold"><span className="text-gray-500">OPEN</span><span className="text-red-400">FIREHOUSE</span> <button onClick={() => setWhatsNewOpen(true)} className="text-gray-400 hover:text-red-500 font-normal transition-colors cursor-pointer" title="What's New">v{__APP_VERSION__}</button></p>
+            <p className="text-[10px] font-semibold"><span className="text-gray-400">OPEN</span><span className="text-red-400">FIREHOUSE</span> <button onClick={() => setWhatsNewOpen(true)} className="text-gray-400 hover:text-red-500 font-normal transition-colors cursor-pointer" title="What's New">v{__APP_VERSION__}</button></p>
+            {/* Live-push state, beside the build version because that is what it is:
+                a BUILD-TIME fact (Vite inlines VITE_* at build, so the server cannot
+                report it and /health can never cover it).
+
+                Renders ONLY when push is off — appearing exactly when there is
+                something to know, and staying silent when there isn't. Deliberately
+                a muted label and not a banner: with the 20s poll backstops carrying
+                every live surface, this is degraded-but-fine, and for a self-host
+                that never configures Supabase Realtime it is the correct steady
+                state. Alarming about a supported configuration trains people to
+                ignore the indicator.
+
+                It exists because a console.warn is not a signal: this exact state
+                ran unnoticed on production from 2026-06-27 to 07-31. */}
+            {!realtimeStatus.enabled && (
+              <p
+                className="text-[10px] text-gray-400 mt-0.5"
+                title={`Live push is off — ${realtimeStatus.reason}. Dispatch, unit status and the maps are refreshing on a 20s poll instead of instantly.`}
+              >
+                Live push: off · 20s poll
+              </p>
+            )}
           </div>
         </aside>
 
         {/* ── Main content ──────────────────────────────────────────────────── */}
-        <main ref={mainRef} className="flex-1 overflow-y-auto overflow-x-hidden">
+        <main ref={mainRef} data-testid="app-shell" className="flex-1 overflow-y-auto overflow-x-hidden pb-24">
           <div key={activePage} className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8 py-4 sm:py-8 pb-safe">
             {children}
           </div>
@@ -832,6 +885,13 @@ export default function Layout({ children, activePage, onNavigate, settings, ale
 
       {/* Offline / sync banner */}
       <OfflineBanner />
+
+      {/* 4C.4 — CAD interface trouble signal. Same top-fixed shape as OfflineBanner (the app's
+          established pattern for a system-level bar), one layer BELOW it on purpose: if the
+          device is offline, "you have no network" is the more actionable message and should
+          win the strip. Renders nothing at all unless the caller is officer+ and this
+          department actually has an unreviewed fault. */}
+      <CadTroubleBanner currentUser={user} onNavigate={onNavigate} />
     </div>
   );
 }

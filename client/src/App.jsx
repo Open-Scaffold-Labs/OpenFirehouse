@@ -5,7 +5,9 @@ import FirstRunSetup from './components/FirstRunSetup';
 import LicenseActivation from './components/LicenseActivation';
 import DispatchNotification from './components/DispatchNotification';
 import { canAccess, isUnitSession } from './data/auth';
+import { isModuleEnabled } from './data/moduleRegistry';
 import { ActivityProvider } from './context/ActivityContext';
+import { Siren, Truck } from 'lucide-react';
 
 // ── Eagerly loaded: pages shown on first render ──
 import Dashboard from './components/Dashboard';
@@ -15,6 +17,10 @@ const MemberRoster = lazy(() => import('./components/MemberRoster'));
 const ApparatusTracker = lazy(() => import('./components/ApparatusTracker'));
 const DutySchedule = lazy(() => import('./components/DutySchedule'));
 const IncidentLog = lazy(() => import('./components/IncidentLog'));
+// NOT lazy: this is the ENTIRE content of the report window. Code-splitting it
+// would put a Suspense spinner between the officer and the form for no benefit —
+// there is nothing else in this window to load first.
+import IncidentReportWindow from './components/IncidentReportWindow';
 const AIScheduler = lazy(() => import('./components/AIScheduler'));
 const TrainingRecords = lazy(() => import('./components/TrainingRecords'));
 const TrainingModules = lazy(() => import('./components/TrainingModules'));
@@ -23,31 +29,32 @@ const ModulePlayer = lazy(() => import('./components/ModulePlayer'));
 const MutualAidTracker = lazy(() => import('./components/MutualAidTracker'));
 const AssetInventory = lazy(() => import('./components/AssetInventory'));
 const ReportsExport = lazy(() => import('./components/ReportsExport'));
+const Reconciliation = lazy(() => import('./components/Reconciliation'));
 const NotificationsCenter = lazy(() => import('./components/NotificationsCenter'));
 const StationSettings = lazy(() => import('./components/StationSettings'));
 const VolunteerHours = lazy(() => import('./components/VolunteerHours'));
-const MemberPortal = lazy(() => import('./components/MemberPortal'));
 const MyPortal = lazy(() => import('./components/MyPortal'));
 const EventCalendar = lazy(() => import('./components/EventCalendar'));
 const PreIncidentPlans = lazy(() => import('./components/PreIncidentPlans'));
-const InspectionChecklists = lazy(() => import('./components/InspectionChecklists'));
-const MaintenanceLog = lazy(() => import('./components/MaintenanceLog'));
+const ApparatusChecks = lazy(() => import('./components/ApparatusChecks'));
+const WorkOrders = lazy(() => import('./components/WorkOrders'));
+const Narcotics = lazy(() => import('./components/Narcotics')); // 2.7 (0087, Dale-gated)
 const SOGLibrary = lazy(() => import('./components/SOGLibrary'));
 const PublicDashboard = lazy(() => import('./components/PublicDashboard'));
 const BudgetTracker = lazy(() => import('./components/BudgetTracker'));
 const WellnessTracker = lazy(() => import('./components/WellnessTracker'));
 const NFIRSReports = lazy(() => import('./components/NFIRSReports'));
 const FireInspections = lazy(() => import('./components/FireInspections'));
-const InspectionSearch = lazy(() => import('./components/InspectionSearch'));
-const InspectionEntry = lazy(() => import('./components/InspectionEntry'));
-const InspectionChecklist = lazy(() => import('./components/InspectionChecklist'));
-const InspectorStatus = lazy(() => import('./components/InspectorStatus'));
-const Violations = lazy(() => import('./components/Violations'));
-const Permits = lazy(() => import('./components/Permits'));
-const Registrations = lazy(() => import('./components/Registrations'));
-const RegistrationSearch = lazy(() => import('./components/RegistrationSearch'));
-const RegistrationEntry = lazy(() => import('./components/RegistrationEntry'));
-const Complaints = lazy(() => import('./components/Complaints'));
+const Prevention = lazy(() => import('./components/prevention/Prevention')); // Phase 3 Prevention Center
+// InspectionSearch + InspectionEntry retired P0.4 (2026-07-12): both were local-state
+// mockups that persisted nothing and showed a pre-canonical vocabulary. Their good
+// ideas (advanced search, imminent-hazard flag, print flags) return properly in the
+// Prevention Core rebuild (gameplan Phases 2-3).
+// P1-1 (2026-07-16): the legacy "coming soon" mockup pages (InspectionChecklist,
+// InspectorStatus, Violations, Registrations, RegistrationSearch, RegistrationEntry,
+// Complaints) were REMOVED — every one rendered a static shell next to the REAL,
+// shipped feature inside Prevention Center. Do not resurrect; build inside
+// Prevention Center instead.
 const PrePlanWizard = lazy(() => import('./components/PrePlanWizard'));
 const HydrantTracker = lazy(() => import('./components/HydrantTracker'));
 const DrillManager = lazy(() => import('./components/DrillManager'));
@@ -60,7 +67,7 @@ const FireInvestigation = lazy(() => import('./components/FireInvestigation'));
 const DataImport = lazy(() => import('./components/DataImport'));
 const DataIngestAI = lazy(() => import('./components/DataIngestAI'));
 const RecruitmentTracker = lazy(() => import('./components/RecruitmentTracker'));
-const SCBATracker = lazy(() => import('./components/SCBATracker'));
+const AssetTesting = lazy(() => import('./components/AssetTesting'));
 const PayrollTracker = lazy(() => import('./components/PayrollTracker'));
 const HazmatReference = lazy(() => import('./hazmat/HazmatReference'));
 const CommandBoard = lazy(() => import('./components/CommandBoard'));
@@ -73,7 +80,6 @@ const FundraisingTracker = lazy(() => import('./components/FundraisingTracker'))
 const CommunityOutreach = lazy(() => import('./components/CommunityOutreach'));
 const CadetProgram = lazy(() => import('./components/CadetProgram'));
 const ResponseAnalytics = lazy(() => import('./components/ResponseAnalytics'));
-const ISOReport = lazy(() => import('./components/ISOReport'));
 const FLSADashboard = lazy(() => import('./components/FLSADashboard'));
 const QualificationsManager = lazy(() => import('./components/QualificationsManager'));
 const ApparatusAssignmentBoard = lazy(() => import('./components/ApparatusAssignmentBoard'));
@@ -96,12 +102,12 @@ const EquipmentCheckout = lazy(() => import('./components/EquipmentCheckout'));
 const KnoxKeyManagement = lazy(() => import('./components/KnoxKeyManagement'));
 const IncidentCostTracker = lazy(() => import('./components/IncidentCostTracker'));
 const IncidentMap = lazy(() => import('./components/IncidentMap'));
+const DispatchArchive = lazy(() => import('./components/DispatchArchive'));
 const CommanderCam = lazy(() => import('./components/CommanderCam'));
 const VacancyFill = lazy(() => import('./components/VacancyFill'));
 const NG911Console = lazy(() => import('./components/NG911Console'));
 const FTOTracker = lazy(() => import('./components/FTOTracker'));
 const ActivityLogger = lazy(() => import('./components/ActivityLogger'));
-const AvailabilityWidget = lazy(() => import('./components/AvailabilityWidget'));
 const IncidentIntelligence = lazy(() => import('./components/IncidentIntelligence'));
 const TrainingRecommender = lazy(() => import('./components/TrainingRecommender'));
 const ReportWriter = lazy(() => import('./components/ReportWriter'));
@@ -113,10 +119,9 @@ const MyTraining = lazy(() => import('./components/MyTraining'));
 const TodaysCrew = lazy(() => import('./components/TodaysCrew'));
 const DatabaseAdmin = lazy(() => import('./components/DatabaseAdmin'));
 import { loadSettings } from './data/stationSettings';
-import { useAlerts } from './hooks/useAlerts';
-import { useWorkflowAlerts } from './hooks/useWorkflowAlerts';
-import { useBulletinAlerts } from './hooks/useBulletinAlerts';
+import { useAttentionCount } from './hooks/useAttentionCount';
 import { api, setToken, clearToken, onAuthFailure, getStoredUser, getToken } from './utils/api';
+import { toneDispatch } from './utils/alertTones';
 import { supabase, dispatchTopic } from './utils/supabase';
 const OnboardingFlow = lazy(() => import('./components/OnboardingFlow'));
 const DepartmentSetupWizard = lazy(() => import('./components/DepartmentSetupWizard'));
@@ -141,12 +146,111 @@ const TV_PIN     = IS_TV_MODE
 // ── Kiosk mode: ?kiosk=true renders full-screen dispatch (watch desk) ────────
 const IS_KIOSK = new URLSearchParams(window.location.search).get('kiosk') === 'true';
 
+// ── Incident report window: #/incident-report opens in its OWN browser window ──
+// Read once at module load, like the two above, so the early return in App()
+// cannot change hook order between renders.
+const IS_REPORT_WINDOW = /^#\/incident-report\b/.test(window.location.hash);
+
+/**
+ * RENDERABLE_PAGES — every page id the render chain below actually has a branch for.
+ *
+ * 🔴 WHY THIS EXISTS: an unrecognised hash used to become the ACTIVE page and render a blank
+ * screen. Both guards in the router fail OPEN for an unknown id, and correctly so:
+ *   · isModuleEnabled() treats an id absent from MODULE_STATUS as ready — that map is a sparse
+ *     HIDDEN-set by design ("a module ABSENT from this map defaults to ready"), so making it
+ *     fail closed would hide every working module. Do NOT "fix" it there.
+ *   · canAccess() falls back to `PAGE_ACCESS[id] ?? 3`, and a chief IS level 3 — so a chief
+ *     passes the check for any string at all. (A member is level 1, fails, and never saw this.)
+ * With both passing, setPage('anything') ran, no branch matched, and the user got an empty
+ * panel with the header still reading "Dashboard" — indistinguishable from a crash. Reproduced
+ * on prod 2026-08-04 with #/this-route-does-not-exist and with a stale ?page=prevention link.
+ *
+ * The list is kept honest by a TEST, not by discipline: tests/renderablePages.test.js parses
+ * this file for every `page === '...'` branch and fails if the two sets differ. Add a page
+ * without adding it here and the suite breaks — which is the point, because the last thing this
+ * guard should do is silently start rejecting a real screen.
+ */
+export const RENDERABLE_PAGES = new Set([
+  'activity-equipment', 'activity-general', 'activity-station', 'activity-training',
+  'activity-unit', 'after-action', 'ai', 'aid-agreements', 'alerts', 'analytics', 'apparatus',
+  'apparatus-oos', 'assets', 'assignboard', 'avl', 'budget', 'bulletins', 'cad', 'cadets',
+  'calendar', 'checklists', 'command', 'commander-cam', 'community-outreach', 'crr',
+  'daily-staffing', 'dashboard', 'data-ingest', 'dataimport', 'db-admin', 'dispatch-archive',
+  'doc-vault', 'drills', 'email-ingest', 'equipment-checkout', 'exposure-tracking',
+  'fireinvestigation', 'flsa', 'fto-tracker', 'fundraising', 'grants', 'grievances', 'hazmat',
+  'hours', 'hydrants', 'incident-costs', 'incident-intel', 'incident-map', 'incidents',
+  'inspections', 'knox-keys', 'live-dispatch', 'maintenance', 'meeting-minutes',
+  'messages', 'mutualaid', 'my-training', 'narcotics', 'nfirs', 'ng911', 'ot-equalization',
+  'payroll', 'personnel-actions', 'policy-acks', 'portal', 'preplan-ai', 'preplan-wizard',
+  'preplans', 'prevention-center', 'public', 'qualifications', 'radio-log', 'recall',
+  'reconciliation', 'recruitment', 'report-writer', 'reports', 'retention', 'roster', 'scba',
+  'schedule', 'settings', 'shift-trades', 'sogs', 'staffing-ai', 'stationlog', 'timesheets',
+  'todays-crew', 'training', 'training-ai', 'training-catalog', 'training-compliance',
+  'training-modules', 'training-plans', 'vacancy-fill', 'wellness', 'workflows',
+]);
+
+/**
+ * RETIRED_ROUTES — a page id that no longer exists, mapped to where its capability WENT.
+ *
+ * 🔴 WHY THIS IS A MODULE-LEVEL MAP AND NOT A BRANCH IN THE RENDER CHAIN. The R6 fold
+ * (`986b624`) retired eight page ids and wrote a redirect for them inside the render tree:
+ *   {[...retiredIds].includes(page) && (() => { setTimeout(() => setPage('prevention-center')) })()}
+ * with the correct intent — "a bookmark or a ⌘K entry pointing at the retired id must land on the
+ * real feature, not a blank pane."
+ *
+ * **It could never fire.** None of the eight ids is in RENDERABLE_PAGES, so `getInitialPage` and
+ * the hashchange handler both REJECT them before `page` is ever set — and the branch only tests
+ * `page`. The one thing that could still have reached it, an in-app `setPage('permits')`, was the
+ * nav entry that the same commit deleted. So the guard against stale links was unreachable BY a
+ * stale link, for every cold load and every `?page=` push-notification click, from the day it
+ * shipped. Same class as `9abbdd9`: a remedy that does not exist where the problem occurs.
+ *
+ * Resolution has to happen BEFORE the renderable-pages gate, which is what this map does.
+ * Every entry is a documented successor, not a guess:
+ *   · `permits` — R6 states it explicitly: folded into the Prevention Center Permits tab.
+ *   · the six prevention-family placeholders retired by the same commit — their capability lives
+ *     in Prevention Center (findings/violations are cited inside an inspection; checklists and
+ *     inspector status are its Dashboard).
+ *   · `prevention` — never a route, added as an alias because it is the obvious short form a human
+ *     types or bookmarks for `prevention-center`, and it is unambiguous.
+ * An id with NO successor does not belong here — it falls through to the portal, silently.
+ */
+export const RETIRED_ROUTES = Object.freeze({
+  permits:                'prevention-center',
+  violations:             'prevention-center',
+  complaints:             'prevention-center',
+  registrations:          'prevention-center',
+  'registration-search':  'prevention-center',
+  'registration-entry':   'prevention-center',
+  'inspection-checklist': 'prevention-center',
+  'inspector-status':     'prevention-center',
+  prevention:             'prevention-center',
+});
+
+/** A retired id resolves to its successor; anything else passes through unchanged. */
+export const resolveRoute = (id) => (id && RETIRED_ROUTES[id]) || id;
+
 // Read ?page= deep-link from URL (used by push notification clicks)
 function getInitialPage() {
   try {
+    const h = resolveRoute((window.location.hash.match(/^#\/([\w-]+)/) || [])[1]);
+    // A deep-link to a not-enabled ('planned') module falls back to the portal —
+    // market model: a module the department hasn't enabled is not reachable.
+    // RENDERABLE_PAGES is the added guard: a hash that no branch can render must not become
+    // the active page, or the user gets a blank panel instead of a screen.
+    //
+    // Falling back to the portal IS the whole remedy, and it is deliberately SILENT. A stale
+    // bookmark is not an event worth narrating: the earlier version raised a banner naming the
+    // requested route in a monospace box and guessing at the cause ("most likely an old
+    // bookmark"), which put an internal route slug and a theory about the user's browser in
+    // front of a fire chief. The blank-panel bug it was written for is fixed by landing
+    // somewhere real — not by also explaining the router.
+    if (h && RENDERABLE_PAGES.has(h) && isModuleEnabled(h)) return h;
     const params = new URLSearchParams(window.location.search);
-    const p = params.get('page');
-    if (p) return p;
+    // ?page= is how a PUSH NOTIFICATION click arrives, which is why resolving retired ids here
+    // is not hypothetical: a notification sent before a route was retired still opens that id.
+    const p = resolveRoute(params.get('page'));
+    if (p && RENDERABLE_PAGES.has(p) && isModuleEnabled(p)) return p;
   } catch (_) {}
   return 'portal';
 }
@@ -191,7 +295,7 @@ function KioskApp() {
     // Realtime keyed on department (P6.2). Skip the subscription if we somehow
     // have no department — never fall back to a default tenant; the poll backstops.
     const topic = dispatchTopic(dept);
-    const channel = topic
+    const channel = (supabase && topic)
       ? supabase
           .channel(topic)
           .on('broadcast', { event: 'dispatch' }, () => loadAlerts())
@@ -212,6 +316,17 @@ function KioskApp() {
 }
 
 export default function App() {
+  // ── Incident report window — its own browser window, no app chrome ──
+  // Spec R1 (Matt, 2026-08-07): the report opens as a SEPARATE window that can
+  // live on a second monitor while the call list stays usable on the first.
+  // Same early-return shape as kiosk/TV: the predicate is a module constant, so
+  // it is stable across renders and cannot change the hook order below.
+  // It renders no sidebar and no topbar on purpose — this window has one job,
+  // and the modal it replaces was showing 17 of 110 fields for want of width.
+  if (IS_REPORT_WINDOW) {
+    return <IncidentReportWindow />;
+  }
+
   // ── Kiosk mode shortcut — full-screen watch desk display ──
   if (IS_KIOSK) {
     return <KioskApp />;
@@ -223,6 +338,27 @@ export default function App() {
   }
   const [user,      setUser]     = useState(null);
   const [page,      setPage]     = useState(getInitialPage);
+  // Router: reflect the current page in the URL hash so screens are deep-linkable
+  // and testable (#/incidents, #/preplans, …). No react-router, no new dependency.
+  useEffect(() => {
+    const target = `#/${page}`;
+    if (window.location.hash !== target) window.history.replaceState(null, '', target);
+  }, [page]);
+  useEffect(() => {
+    const onHash = () => {
+      // Resolve retired ids here too — an in-session hash change to a retired route is the same
+      // problem as a cold load of one, and it hit the same unreachable-guard bug.
+      const id = resolveRoute((window.location.hash.match(/^#\/([\w-]+)/) || [])[1]);
+      if (!id || id === page) return;
+      // A hash no branch can render must never become the active page — that is the blank-screen
+      // bug. Leave the user on the screen they were already looking at, silently: they are still
+      // looking at something real, which is the entire requirement.
+      if (!RENDERABLE_PAGES.has(id)) return;
+      if (canAccess(user, id) && isModuleEnabled(id)) setPage(id);
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, [page, user]);
   const [settings,  setSettings] = useState(() => loadSettings());
   const [authReady, setAuthReady] = useState(false);
   const [firstRun,  setFirstRun]  = useState(null);  // null = checking, true = no users exist, false = setup done
@@ -246,19 +382,34 @@ export default function App() {
   const [latestDispatch, setLatestDispatch] = useState(null); // newest dispatch for popup
   const [matchedPrePlan, setMatchedPrePlan] = useState(null); // preplan auto-surfaced for current dispatch
   const dispatchNotifDismissedRef = useRef(null); // id of last dismissed notification
+
+  // Dispatch tone — REPEATS until acknowledged (market norm: every major
+  // responder/station-alerting product repeats the dispatch tone until a human
+  // acks). Keys on the notification being up; dismissing/viewing it (or the
+  // next feed refresh clearing it) stops the tone. Capped at 6 plays (~1 min)
+  // so an unattended kiosk doesn't tone forever. Single-shot tones for
+  // overdue/PAR stay as-is — this is primary alerting, those are cues.
+  useEffect(() => {
+    if (!latestDispatch) return;
+    toneDispatch(); // immediate
+    let plays = 1;
+    const id = setInterval(() => {
+      if (plays >= 6) { clearInterval(id); return; }
+      plays += 1;
+      toneDispatch();
+    }, 10000);
+    return () => clearInterval(id);
+  }, [latestDispatch]);
   const seenDispatchIdsRef = useRef(new Set());   // alert ids already processed (don't re-banner)
   useEffect(() => { cadAlertDismissedRef.current = cadAlertDismissed; }, [cadAlertDismissed]);
 
   // live badge count — user-filtered cert alerts + workflow alerts + unread bulletins/notices
-  const { alerts: wfAlerts } = useWorkflowAlerts();
-  const { unreadCount: unreadBulletinCount } = useBulletinAlerts();
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
-  // Live, server-scoped department alerts (rank + crew applied server-side).
-  const { alerts: liveAlerts } = useAlerts(user);
-  const alertCount = liveAlerts.filter((a) => a.severity !== 'info').length
-    + wfAlerts.filter((a) => a.severity !== 'info').length
-    + unreadBulletinCount
-    + unreadMessageCount;
+  // ONE definition of "needs attention", shared with the Notifications page, the
+  // Member Portal card and the Dashboard header — see hooks/useAttentionCount.js.
+  // The bell used to compute this inline and three other surfaces each computed
+  // something different, so the app showed 47 / 36 / 1 for the same claim.
+  const { total: alertCount } = useAttentionCount(user, unreadMessageCount);
 
   // Deep-link state — when user clicks a notification, we pass the bulletin ID
   // to the target component so it can auto-expand that specific post.
@@ -336,7 +487,8 @@ export default function App() {
     // per-member personal setup wizard was REMOVED — members never self-configure
     // their profile (the chief/BC enters all of it), and notifications are
     // rank-derived, not a personal choice. Units are never chief/admin.
-    if ((user.role === 'chief' || user.role === 'admin') && !localStorage.getItem('of_dept_setup_complete')) {
+    if ((user.role === 'chief' || user.role === 'admin') && !localStorage.getItem('of_dept_setup_complete')
+        && !sessionStorage.getItem('of_dept_setup_snooze')) { // snooze = "Finish later" this session (wizard audit 2026-07-16)
       setShowDeptSetup(true);
     }
   }, [user]);
@@ -391,7 +543,7 @@ export default function App() {
       // (via realtime ping / poll) raise the notification + auto-activate.
       if (allowBanner && fresh.length) {
         const newest = fresh[0]; // newest unprocessed alert
-        setLatestDispatch(newest); // slide-in "new dispatch" toast
+        setLatestDispatch(newest); // slide-in toast — the repeat-tone effect below keys on it
         const age = (Date.now() - new Date(newest.dispatched_at).getTime()) / 1000;
         if (age < 600 && newest.id !== cadAlertDismissedRef.current) {
           const alert = {
@@ -422,7 +574,7 @@ export default function App() {
     // Realtime ping → refetch (banner allowed). Dept-keyed (P6.2); skip the
     // subscription if no department is known — never default a tenant; poll covers.
     const topic = dispatchTopic(dept);
-    const channel = topic
+    const channel = (supabase && topic)
       ? supabase
           .channel(topic)
           .on('broadcast', { event: 'dispatch' }, () => loadDispatches({ allowBanner: true }))
@@ -555,7 +707,8 @@ export default function App() {
     // Department setup wizard for the first admin/chief (not completed). The
     // per-member personal setup wizard was removed — members don't self-configure
     // their profile, and notifications are rank-derived (not a personal choice).
-    if ((u.role === 'chief' || u.role === 'admin') && !localStorage.getItem('of_dept_setup_complete')) {
+    if ((u.role === 'chief' || u.role === 'admin') && !localStorage.getItem('of_dept_setup_complete')
+        && !sessionStorage.getItem('of_dept_setup_snooze')) { // snooze = "Finish later" this session (wizard audit 2026-07-16)
       setShowDeptSetup(true);
     }
   }} />;
@@ -575,7 +728,7 @@ export default function App() {
   // Accepts an optional second arg: { highlightId } — passed through to the
   // target component so it can auto-expand a specific bulletin post.
   function handleNavigate(id, opts = {}) {
-    if (canAccess(user, id)) setPage(id);
+    if (canAccess(user, id) && isModuleEnabled(id)) setPage(id);
     else setPage(isUnitSession(user) ? 'command' : 'calendar');
     setBulletinHighlight(opts.highlightId ?? null);
     window.scrollTo({ top: 0, behavior: 'instant' });
@@ -599,10 +752,14 @@ export default function App() {
     {/* ── Incoming CAD Call Banner ─────────────────────────────────────────── */}
     {cadAlert && cadAlert.id !== cadAlertDismissed && page !== 'command' && (
       <div className="fixed top-0 inset-x-0 z-[100] bg-red-700 text-white px-4 py-3 flex items-center gap-3 shadow-xl animate-pulse">
-        <span className="text-lg flex-shrink-0">🚨</span>
+        {/* lucide + measured green, matching the two incident banners this one
+            drops on top of. This banner renders OVER every module-2 surface, so
+            leaving it emoji while the banners beside it are icons is the exact
+            inconsistency the pass exists to remove. */}
+        <Siren size={20} className="shrink-0" aria-hidden="true" />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-black truncate">{cadAlert.description}</p>
-          <p className="text-xs text-red-200 truncate">{cadAlert.address}{cadAlert.units ? ` · ${cadAlert.units}` : ''}</p>
+          <p className="text-xs text-red-100 truncate">{cadAlert.address}{cadAlert.units ? ` · ${cadAlert.units}` : ''}</p>
         </div>
         <button
           type="button"
@@ -617,9 +774,9 @@ export default function App() {
             setCadAlertDismissed(cadAlert.id);
             setCadAlert(null);
           }}
-          className="flex-shrink-0 bg-green-500 text-white font-black text-xs px-3 py-1.5 rounded-xl hover:bg-green-400 animate-pulse"
+          className="shrink-0 inline-flex items-center gap-1.5 bg-green-700 text-white font-black text-xs px-3 py-1.5 rounded-xl hover:bg-green-800"
         >
-          I'm Responding 🚒
+          <Truck size={14} aria-hidden="true" /> I&apos;m Responding
         </button>
         <button
           type="button"
@@ -648,7 +805,7 @@ export default function App() {
             userPrefs={userPrefs} onPrefsChange={(p) => { setUserPrefs(p); saveLocalPrefs(user.username, p); }}
             stations={stations} selectedStation={selectedStation} onStationChange={setSelectedStation}>
       <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-red-600 border-t-transparent rounded-full" /></div>}>
-      {page === 'dashboard'  && <Dashboard onNavigate={setPage} settings={settings} prefs={userPrefs} onRespond={setRespondingTo} user={user} selectedStation={selectedStation} />}
+      {page === 'dashboard'  && <Dashboard onNavigate={setPage} settings={settings} prefs={userPrefs} onRespond={setRespondingTo} user={user} selectedStation={selectedStation} unreadMessageCount={unreadMessageCount} />}
       {page === 'roster'      && <MemberRoster selectedStation={selectedStation} />}
       {page === 'recruitment' && <RecruitmentTracker user={user} />}
       {page === 'apparatus'  && <ApparatusTracker selectedStation={selectedStation} />}
@@ -661,46 +818,39 @@ export default function App() {
       {page === 'mutualaid'  && <MutualAidTracker />}
       {page === 'assets'     && <AssetInventory />}
       {page === 'reports'    && <ReportsExport settings={settings} />}
-      {page === 'alerts'     && <NotificationsCenter onNavigate={handleNavigate} user={user} />}
+      {page === 'reconciliation' && <Reconciliation />}
+      {page === 'alerts'     && <NotificationsCenter onNavigate={handleNavigate} user={user} unreadMessageCount={unreadMessageCount} />}
       {page === 'messages'   && <MessagesInbox user={user} onUnreadChange={setUnreadMessageCount} />}
       {page === 'settings'   && <StationSettings onSettingsChange={setSettings} />}
       {page === 'hours'      && <VolunteerHours />}
-      {page === 'portal'     && <MyPortal user={user} onNavigate={handleNavigate} />}
-      {page === 'calendar'   && <EventCalendar highlightBulletinId={bulletinHighlight} onHighlightConsumed={() => setBulletinHighlight(null)} />}
+      {page === 'portal'     && <MyPortal user={user} onNavigate={handleNavigate} unreadMessageCount={unreadMessageCount} />}
+      {page === 'calendar'   && <EventCalendar highlightBulletinId={bulletinHighlight} onHighlightConsumed={() => setBulletinHighlight(null)} selectedStation={selectedStation} stations={stations} onStationChange={setSelectedStation} />}
       {page === 'preplans'   && <PreIncidentPlans onNavigate={handleNavigate} />}
-      {page === 'checklists'  && <InspectionChecklists />}
-      {page === 'maintenance' && <MaintenanceLog />}
+      {page === 'checklists'  && <ApparatusChecks />}
+      {page === 'maintenance' && <WorkOrders />}
+      {page === 'narcotics'   && <Narcotics currentUser={user} />}
       {page === 'sogs'        && <SOGLibrary />}
       {page === 'public'      && <PublicDashboard />}
       {page === 'budget'      && <BudgetTracker />}
       {page === 'wellness'    && <WellnessTracker />}
       {page === 'nfirs'       && <NFIRSReports />}
       {page === 'inspections' && <FireInspections />}
-      {page === 'inspection-search' && <InspectionSearch />}
-      {page === 'inspection-entry' && <InspectionEntry />}
-      {page === 'inspection-checklist' && <InspectionChecklist />}
-      {page === 'inspector-status' && <InspectorStatus />}
-      {page === 'violations' && <Violations />}
-      {page === 'permits' && <Permits />}
-      {page === 'registrations' && <Registrations />}
-      {page === 'registration-search' && <RegistrationSearch />}
-      {page === 'registration-entry' && <RegistrationEntry />}
-      {page === 'complaints' && <Complaints />}
+      {page === 'prevention-center' && <Prevention user={user} />}
       {page === 'preplan-wizard' && <PrePlanWizard />}
       {page === 'hydrants'    && <HydrantTracker />}
       {page === 'drills'      && <DrillManager />}
       {page === 'stationlog'  && <StationLog />}
       {page === 'grants'      && <GrantManager />}
       {page === 'crr'         && <CommunityRisk />}
-      {page === 'cad'         && <CADIntegration onNavigate={setPage} />}
+      {page === 'cad'         && <CADIntegration onNavigate={setPage} currentUser={user} />}
       {page === 'avl'         && <AvlSettings />}
       {page === 'fireinvestigation' && <FireInvestigation />}
-      {page === 'dataimport'        && <DataImport />}
+      {page === 'dataimport'        && <DataImport stations={stations} selectedStation={selectedStation} />}
       {page === 'data-ingest'       && <DataIngestAI />}
-      {page === 'scba'              && <SCBATracker />}
+      {page === 'scba'              && <AssetTesting />}
       {page === 'payroll'           && <PayrollTracker />}
       {page === 'hazmat'            && <HazmatReference />}
-      {page === 'command'           && <CommandBoard onNavigate={setPage} initialAlert={pendingCADAlert} onAlertConsumed={() => setPendingCADAlert(null)} autoActivate={autoActivate} onAutoActivated={() => setAutoActivate(false)} currentUser={user} settings={settings} onRespond={setRespondingTo} dispatches={dispatches} onClearBadge={() => setLatestDispatch(null)} onAddDispatch={(d) => setDispatches(prev => [d, ...prev].slice(0, 100))} selectedStation={selectedStation} />}
+      {page === 'command'           && <CommandBoard onNavigate={setPage} initialAlert={pendingCADAlert} onAlertConsumed={() => setPendingCADAlert(null)} autoActivate={autoActivate} onAutoActivated={() => setAutoActivate(false)} currentUser={user} settings={settings} onRespond={setRespondingTo} dispatches={dispatches} onClearBadge={() => setLatestDispatch(null)} onAddDispatch={(d) => setDispatches(prev => [d, ...prev].slice(0, 100))} onCallCleared={(id) => setDispatches(prev => prev.filter(d => d.id !== id))} onCallReopened={(d) => setDispatches(prev => prev.some(x => x.id === d.id) ? prev : [d, ...prev].slice(0, 100))} selectedStation={selectedStation} />}
       {page === 'recall'            && <RecallSystem user={user} />}
       {page === 'radio-log'         && <RadioLog />}
       {page === 'bulletins'           && <BulletinBoard user={user} highlightId={bulletinHighlight} onHighlightConsumed={() => setBulletinHighlight(null)} />}
@@ -708,10 +858,9 @@ export default function App() {
       {page === 'community-outreach'  && <CommunityOutreach />}
       {page === 'cadets'              && <CadetProgram user={user} />}
       {page === 'analytics'           && <ResponseAnalytics />}
-      {page === 'iso'                  && <ISOReport />}
       {page === 'flsa'                 && <FLSADashboard />}
       {page === 'qualifications'       && <QualificationsManager />}
-      {page === 'assignboard'          && <ApparatusAssignmentBoard onNavigate={setPage} />}
+      {page === 'assignboard'          && <ApparatusAssignmentBoard onNavigate={setPage} selectedStation={selectedStation} stations={stations} currentUser={user} />}
       {page === 'retention'           && <RetentionScoring />}
       {page === 'ot-equalization'      && <OTEqualizationBoard />}
       {page === 'personnel-actions'    && <PersonnelActions />}
@@ -731,6 +880,7 @@ export default function App() {
       {page === 'knox-keys'            && <KnoxKeyManagement user={user} />}
       {page === 'incident-costs'       && <IncidentCostTracker />}
       {page === 'incident-map'        && <IncidentMap onNavigate={handleNavigate} />}
+      {page === 'dispatch-archive'    && <DispatchArchive />}
       {page === 'commander-cam'      && <CommanderCam incident={null} />}
       {page === 'vacancy-fill'       && <VacancyFill user={user} />}
       {page === 'ng911'              && <NG911Console />}
@@ -752,6 +902,13 @@ export default function App() {
       {page === 'db-admin'             && <DatabaseAdmin />}
       {page === 'workflows'            && <WorkflowPanel />}
       {page === 'live-dispatch'        && (() => { setTimeout(() => setPage('command'), 0); return null; })()}
+      {/* P1-1 (2026-07-16): the removed legacy mockup pages redirect to the REAL feature
+          (Prevention Center) instead of rendering a blank content area for a stale link. */}
+      {/* The retired-id redirect that used to live here is GONE — see RETIRED_ROUTES at the top
+          of this file. It resolved `page`, but nothing could ever set `page` to a retired id, so
+          it never ran. Resolution now happens in getInitialPage and the hashchange handler,
+          BEFORE the renderable-pages gate, which is the only place it can work. Also: it called
+          setTimeout(setState) from inside render, which is a side effect during render. */}
       </Suspense>
 
       </Layout>

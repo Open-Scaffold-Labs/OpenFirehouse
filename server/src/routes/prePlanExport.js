@@ -142,12 +142,51 @@ router.get('/:id/export.pdf', async (req, res) => {
 
     // Parse JSON columns
     const contacts    = safeJson(plan.contacts,    []);
-    const hazards     = safeJson(plan.hazards,     []);
-    const access      = safeJson(plan.access,      {});
-    const waterSupply = safeJson(plan.waterSupply, []);
-    const suppression = safeJson(plan.suppression, {});
-    const utilities   = safeJson(plan.utilities,   {});
     const score       = nfpa1620Score(plan);
+
+    // ── Vocabulary adapter (2026-07-11, parity-audit W1) ────────────────────
+    // The renderers below were written against an older field vocabulary than
+    // the one the web form + iPad actually WRITE (e.g. they read
+    // `access.primaryEntrance` while the form writes `access.primary`), so
+    // real plans exported with empty tactical sections. Rather than touch
+    // every renderer, normalize here: prefer the legacy name if present
+    // (old data keeps printing), else adapt from the canonical name. Booleans
+    // become Yes/No strings for print.
+    const pick = (o, ...keys) => {
+      for (const k of keys) { const v = o?.[k]; if (v !== undefined && v !== null && v !== '') return v; }
+      return undefined;
+    };
+    const yn = (v) => (v === true ? 'Yes' : v === false ? 'No' : v);
+    const rawHazards = safeJson(plan.hazards, []);
+    const hazards = rawHazards.map((h) => ({
+      ...h, description: pick(h, 'description', 'notes'),
+    }));
+    const rawAccess = safeJson(plan.access, {});
+    const access = {
+      ...rawAccess,
+      primaryEntrance:   pick(rawAccess, 'primaryEntrance', 'primary'),
+      secondaryEntrance: pick(rawAccess, 'secondaryEntrance', 'secondary'),
+      keyBox:            pick(rawAccess, 'keyBox', 'lockbox'),
+    };
+    const rawWater = safeJson(plan.waterSupply, []);
+    const waterSupply = rawWater.map((w) => ({
+      ...w,
+      flowRate: pick(w, 'flowRate', 'flowGPM'),
+      size:     pick(w, 'size', 'distance'), // canonical records distance-to-hydrant in this slot
+      notes:    pick(w, 'notes', 'hydrantId'),
+    }));
+    const rawSupp = safeJson(plan.suppression, {});
+    const suppression = {
+      ...rawSupp,
+      sprinkler:   yn(pick(rawSupp, 'sprinkler', 'sprinklered')),
+      standpipe:   yn(rawSupp.standpipe),
+      fdcLocation: pick(rawSupp, 'fdcLocation', 'FDC', 'fdc'),
+    };
+    const rawUtil = safeJson(plan.utilities, {});
+    const utilities = {
+      ...rawUtil,
+      electricShutoff: pick(rawUtil, 'electricShutoff', 'electrical'),
+    };
 
     // Set response headers
     const safeName = (plan.occupancyName || 'preplan')
@@ -369,7 +408,7 @@ router.get('/:id/export.pdf', async (req, res) => {
       ['Sprinkler System',    suppression.sprinkler],
       ['Sprinkler Type',      suppression.sprinklerType],
       ['FDC Location',        suppression.fdcLocation],
-      ['Standpipe System',    suppression.standpipe ? 'Yes' : null],
+      ['Standpipe System',    suppression.standpipe],
       ['Standpipe Location',  suppression.standpipeLocation],
       ['Alarm Panel',         suppression.alarmPanel],
       ['Suppression Notes',   suppression.notes],
@@ -502,6 +541,58 @@ router.get('/:id/export.pdf', async (req, res) => {
              MARGIN, y + 10, { width: CONTENT_W, align: 'center' });
 
     pageFooter(doc, plan);
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // PAGE 5 — Tactical Sketch (drawn on the apparatus iPad; parity-audit D1:
+    // this vector artifact previously existed only on the tablet — the PDF and
+    // the web never showed it). Strokes are SVG path strings {d, color, width}
+    // in the iPad canvas's coordinate space; we fit their bounding box to the
+    // page. White strokes (drawn on the dark canvas) print slate so they stay
+    // visible on paper.
+    // ──────────────────────────────────────────────────────────────────────────
+    const sketch = safeJson(plan.tacticalSketch, []).filter((st) => st && typeof st.d === 'string' && st.d.length > 1);
+    if (sketch.length > 0) {
+      doc.addPage();
+      let sy = pageHeader(doc, plan, 5);
+      sy = sectionHeader(doc, 'Tactical Sketch (drawn in the field)', sy);
+      sy += 10;
+
+      // Bounding box across every numeric coordinate pair in the path data.
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const st of sketch) {
+        const nums = st.d.match(/-?\d+(?:\.\d+)?/g) || [];
+        for (let i = 0; i + 1 < nums.length; i += 2) {
+          const x = parseFloat(nums[i]), yv = parseFloat(nums[i + 1]);
+          if (Number.isFinite(x) && Number.isFinite(yv)) {
+            if (x < minX) minX = x; if (x > maxX) maxX = x;
+            if (yv < minY) minY = yv; if (yv > maxY) maxY = yv;
+          }
+        }
+      }
+      if (Number.isFinite(minX)) {
+        const pad = 12;
+        const bw = Math.max(1, maxX - minX), bh = Math.max(1, maxY - minY);
+        const boxW = CONTENT_W, boxH = PAGE_H - sy - 90;
+        const k = Math.min(boxW / (bw + pad * 2), boxH / (bh + pad * 2));
+        // Frame
+        doc.rect(MARGIN, sy, boxW, boxH).lineWidth(0.75).stroke('#d0d7de');
+        doc.save();
+        doc.translate(MARGIN + (boxW - bw * k) / 2 - (minX - 0) * k + 0, sy + (boxH - bh * k) / 2 - minY * k)
+           .scale(k);
+        for (const st of sketch) {
+          // Near-white strokes (the iPad palette's '#f9fafb' + any #fff variant) print
+          // slate — they're drawn on a dark canvas and would vanish on paper.
+          const raw = String(st.color || '').toLowerCase();
+          const nearWhite = raw === '#f9fafb' || /^#fff(?:fff)?$/.test(raw) || raw === 'white';
+          const color = nearWhite || !raw ? '#334155' : raw;
+          doc.path(st.d).lineWidth((st.width || 4)).lineCap('round').lineJoin('round').stroke(color);
+        }
+        doc.restore();
+        doc.fontSize(7.5).fillColor(C.midGray).font('Helvetica')
+           .text('Vector sketch as drawn on the apparatus tablet — re-editable in the field app.', MARGIN, sy + boxH + 8, { width: CONTENT_W });
+      }
+      pageFooter(doc, plan);
+    }
 
     doc.end();
   } catch (e) {

@@ -8,6 +8,9 @@
  * To add a new feed: require it and push to the `feeds` array.
  */
 
+const { getClient } = require('../utils/dbContext');
+const { pool } = require('../db');
+
 const feeds = [
   { name: 'events',        fn: require('./eventFeed') },
   { name: 'shifts',        fn: require('./shiftFeed') },
@@ -41,7 +44,7 @@ const feeds = [
  * @param {object} options — { stationId, tier, memberId, categories }
  * @returns {Promise<CalendarEntry[]>} — sorted by date, then time
  */
-async function aggregateFeeds(start, end, options = {}) {
+async function aggregateFeeds(start, end, options = {}, health = null) {
   const { tier, memberId, categories, stationId } = options;
 
   // Fail closed: never aggregate without a tenant scope.
@@ -49,17 +52,78 @@ async function aggregateFeeds(start, end, options = {}) {
     throw new Error('aggregateFeeds: options.stationId is required');
   }
 
-  // Run all feeds in parallel; if one fails, log and skip it
-  const results = await Promise.allSettled(
-    feeds.map(async ({ name, fn }) => {
+  // ── WHY THIS IS NOT A BARE try/catch ANY MORE (2026-08-07) ────────────────
+  // It used to be `Promise.allSettled` with a per-feed try/catch returning [].
+  // That reads like fault isolation and is the opposite of it under P5_TXN.
+  //
+  // Every feed calls db.js's pool.query, which routes to the REQUEST's pinned
+  // transaction client when one is open. So all 22 feeds share ONE transaction.
+  // The first feed to issue a bad statement aborts it, and Postgres then rejects
+  // every subsequent statement with 25P02 — so the catch fires for feeds 2..22
+  // as well, each dutifully returning [].
+  //
+  // Observed on prod: eventFeed is feed #1 and selects `start_time` from `events`
+  // (the column is `startTime`). It fails, and GET /api/calendar/feed answers
+  // HTTP 200 with {count: 0, entries: []} — an empty calendar, every time, with
+  // no error anywhere. A department would see a blank month and assume nothing
+  // was scheduled. Twelve of the 22 feeds carry their own column drift, but it
+  // never mattered: feed #1 alone zeroed the whole aggregate.
+  //
+  // Fix: the SAVEPOINT pattern already used by utils/auditLog.js. A failing feed
+  // rolls back only itself and the transaction stays usable for the rest.
+  //
+  // SEQUENTIAL when a transaction is open — this is REQUIRED, not a preference.
+  // SAVEPOINT/RELEASE pairs cannot interleave on one connection: feed A's RELEASE
+  // would discard feed B's savepoint. Parallelism buys nothing here anyway, since
+  // a single pinned client serialises the queries regardless. Without a request
+  // transaction (cron, scripts) there is nothing to poison, so keep it parallel.
+  const inTxn = !!getClient();
+  let results;
+
+  if (inTxn) {
+    results = [];
+    for (const { name, fn } of feeds) {
+      const SP = `of_feed_sp_${name.replace(/[^a-z0-9]/gi, '_')}`;
       try {
-        return await fn(start, end, options);
+        await pool.query(`SAVEPOINT ${SP}`);
+        const value = await fn(start, end, options);
+        await pool.query(`RELEASE SAVEPOINT ${SP}`);
+        results.push({ status: 'fulfilled', value });
       } catch (err) {
-        console.warn(`[calendar] feed "${name}" failed:`, err.message);
-        return [];
+        // Undo ONLY this feed. If the rollback itself fails the transaction is
+        // already unusable, so stop pretending the rest can run.
+        try {
+          await pool.query(`ROLLBACK TO SAVEPOINT ${SP}`);
+          await pool.query(`RELEASE SAVEPOINT ${SP}`);
+        } catch (rbErr) {
+          console.error(`[calendar] feed "${name}" failed AND its savepoint could not be rolled back — the request transaction is poisoned:`, rbErr.message);
+          throw err;
+        }
+        console.warn(`[calendar] feed "${name}" failed (isolated, other feeds unaffected):`, err.message);
+        results.push({ status: 'fulfilled', value: [], failedFeed: name });
       }
-    })
-  );
+    }
+  } else {
+    results = await Promise.allSettled(
+      feeds.map(async ({ name, fn }) => {
+        try {
+          return await fn(start, end, options);
+        } catch (err) {
+          console.warn(`[calendar] feed "${name}" failed:`, err.message);
+          return [];
+        }
+      })
+    );
+  }
+
+  // Surface which feeds degraded. A caller that renders an empty calendar should
+  // be able to tell "nothing is scheduled" from "we could not read it" — the
+  // distinction the old code destroyed.
+  const failedFeeds = results.filter(r => r.failedFeed).map(r => r.failedFeed);
+  if (failedFeeds.length) {
+    console.warn(`[calendar] ${failedFeeds.length}/${feeds.length} feeds degraded: ${failedFeeds.join(', ')}`);
+  }
+  if (health) health.degradedFeeds = failedFeeds;
 
   let entries = results.flatMap(r =>
     r.status === 'fulfilled' ? r.value : []
@@ -103,4 +167,18 @@ async function aggregateFeeds(start, end, options = {}) {
   return entries;
 }
 
-module.exports = { feeds, aggregateFeeds };
+/**
+ * Aggregate, and report WHICH feeds degraded.
+ *
+ * aggregateFeeds() returns entries only, so a caller cannot distinguish "nothing
+ * is scheduled" from "we could not read it". That ambiguity is what let an
+ * always-empty calendar ship unnoticed. Routes rendering to a human should
+ * prefer this and say so in the response.
+ */
+async function aggregateFeedsWithHealth(start, end, options = {}) {
+  const health = { degradedFeeds: [] };
+  const entries = await aggregateFeeds(start, end, options, health);
+  return { entries, degradedFeeds: health.degradedFeeds, totalFeeds: feeds.length };
+}
+
+module.exports = { feeds, aggregateFeeds, aggregateFeedsWithHealth };

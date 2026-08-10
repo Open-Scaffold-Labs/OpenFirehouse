@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "test": "node --test --test-force-exit \"src/tests/*.test.js\" \"src/cad/*.test.js\" \"src/utils/*.test.js\""
+    "lint:undef": "eslint -c eslint.undef.config.js --no-config-lookup --no-inline-config --max-warnings 0 .",
+    "test": "node --test --test-force-exit --test-concurrency=1 \"src/tests/*.test.js\" \"src/cad/*.test.js\" \"src/utils/*.test.js\""
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.107.0",
@@ -31,6 +32,8 @@
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
+    "eslint": "^9.39.1",
+    "globals": "^16.5.0",
     "nodemon": "^3.0.3"
   },
   "engines": {

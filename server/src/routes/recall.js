@@ -218,9 +218,18 @@ router.get('/:id', async (req, res) => {
 // ── Member responds ────────────────────────────────────────────────────────
 router.post('/:id/respond', async (req, res) => {
   try {
-    const { response, eta = '' } = req.body;
+    const { response, eta = '', destination = null } = req.body;
     if (!['responding', 'unavailable'].includes(response)) {
       return res.status(400).json({ error: 'response must be "responding" or "unavailable"' });
+    }
+    // 0037 structured destination (Station/Scene/Unable). Optional + additive:
+    // old clients omit it (NULL = responding, unspecified). Only valid with
+    // "responding"; "unavailable" IS the Unable state.
+    if (destination != null && !['station', 'scene'].includes(destination)) {
+      return res.status(400).json({ error: 'destination must be "station" or "scene"' });
+    }
+    if (destination != null && response !== 'responding') {
+      return res.status(400).json({ error: 'destination only applies to "responding"' });
     }
 
     const recall = await db.recall.findById(Number(req.params.id), req.user.department_id);
@@ -235,7 +244,8 @@ router.post('/:id/respond', async (req, res) => {
       req.user.id,
       memberName,
       response,
-      eta
+      eta,
+      destination
     );
     res.json({ data: result });
   } catch (err) {

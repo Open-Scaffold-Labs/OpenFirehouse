@@ -10,6 +10,8 @@ import {
   FIELD_MAP_REFERENCE,
 } from '../data/cad';
 import { api } from '../utils/api';
+import { isBcPlus } from '../data/auth';
+import CadIngestFaults from './CadIngestFaults';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -94,7 +96,7 @@ function ConnectionForm({ initial, onSave, onClose }) {
                   <span key={f} className="text-[10px] bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-full px-2 py-0.5 text-gray-600 dark:text-gray-300">{f}</span>
                 ))}
               </div>
-              <p className="text-[10px] text-gray-400 mt-1.5">Auth method: <span className="font-semibold text-gray-600 dark:text-gray-300">{vendor.authMethod}</span></p>
+              <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1.5">Auth method: <span className="font-semibold text-gray-600 dark:text-gray-300">{vendor.authMethod}</span></p>
             </div>
           </div>
 
@@ -168,7 +170,12 @@ function ConnectionForm({ initial, onSave, onClose }) {
 
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
-export default function CADIntegration({ onNavigate }) {
+export default function CADIntegration({ onNavigate, currentUser }) {
+  // Writes to /api/cad-connections are chief-only on the server (2026-08-05). The controls are
+  // hidden here to match, not merely disabled after the fact: a button that always 403s is
+  // anti-pattern #61's remedy-not-offered mode. isBcPlus is level >= 3 — the same ladder rung
+  // as the server's requireChief, and the two are kept in lock-step deliberately.
+  const canManage = isBcPlus(currentUser);
   const [connections,  setConnections]  = useState([]);
   const [importLog]                     = useState(initialImportLog);
   const [loading, setLoading]           = useState(true);
@@ -236,7 +243,7 @@ export default function CADIntegration({ onNavigate }) {
 
   function openEdit(conn) { setEditing(conn); setFormOpen(true); }
 
-  if (loading) return <div className="p-6 text-sm text-gray-400">Loading CAD connections…</div>;
+  if (loading) return <div className="p-6 text-sm text-gray-500 dark:text-gray-400">Loading CAD connections…</div>;
 
   return (
     <div className="p-6 space-y-6">
@@ -249,11 +256,13 @@ export default function CADIntegration({ onNavigate }) {
             Connect to county or regional CAD systems to import dispatch data automatically
           </p>
         </div>
-        <button
-          onClick={() => { setEditing(null); setFormOpen(true); }}
-          className="flex items-center gap-1.5 px-4 py-2 text-sm font-bold bg-gray-900 text-white rounded-xl hover:bg-gray-800 shadow-sm">
-          <Plus size={15} /> Add Connection
-        </button>
+        {canManage && (
+          <button
+            onClick={() => { setEditing(null); setFormOpen(true); }}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-bold bg-gray-900 text-white rounded-xl hover:bg-gray-800 shadow-sm">
+            <Plus size={15} /> Add Connection
+          </button>
+        )}
       </div>
 
       {/* One-time per-connection webhook secret (shown once on create) */}
@@ -291,7 +300,7 @@ export default function CADIntegration({ onNavigate }) {
         ].map(s => (
           <div key={s.label} className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-700 px-4 py-3 shadow-sm">
             <p className={`text-2xl font-black ${s.color}`}>{s.value}</p>
-            <p className="text-xs text-gray-400">{s.label}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{s.label}</p>
           </div>
         ))}
       </div>
@@ -321,7 +330,7 @@ export default function CADIntegration({ onNavigate }) {
         ].map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id)}
             className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-              activeTab === t.id ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+              activeTab === t.id ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
             }`}>{t.label}</button>
         ))}
       </div>
@@ -374,14 +383,19 @@ export default function CADIntegration({ onNavigate }) {
             </ol>
           </div>
 
+          {/* 4C.4 — interface faults. Placed ABOVE the alert feed on purpose: a message we
+              could not read is invisible in that feed by definition, so the panel that shows
+              it must not sit below the one that cannot. */}
+          <CadIngestFaults departmentId={currentUser?.department_id ?? null} />
+
           {/* Live Alerts */}
           <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
             <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 dark:border-gray-700">
               <h2 className="text-sm font-black text-gray-900 dark:text-gray-100">Recent Dispatch Alerts</h2>
-              <span className="text-xs text-gray-400">{liveAlerts.length} received</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">{liveAlerts.length} received</span>
             </div>
             {liveAlerts.length === 0 ? (
-              <div className="text-center py-12 text-gray-400">
+              <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                 <Radio size={28} className="mx-auto mb-3 opacity-30" />
                 <p className="text-sm">No alerts received yet.</p>
                 <p className="text-xs mt-1">Once Active911 is connected, incoming dispatches will appear here.</p>
@@ -394,10 +408,22 @@ export default function CADIntegration({ onNavigate }) {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xs font-black text-red-700 dark:text-red-300">{alert.description}</span>
                       {alert.units && <span className="text-xs text-gray-500 dark:text-gray-400">· {alert.units}</span>}
+                      {/* 4C.2 spec §5.6 — provenance. alert_id_source was recorded correctly by
+                          4C.1 and read by NOTHING for weeks, so an operator whose CAD sends no
+                          call number had no way to tell. Read the COLUMN, never the 'syn-'
+                          prefix: a vendor id that happens to start with those characters would
+                          be misreported by the string test. */}
+                      {alert.alert_id_source === 'synthesized' && (
+                        <span
+                          title="This CAD did not send a call number, so OpenFirehouse assigned one. It will not match the number your dispatcher reads on the radio."
+                          className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                          number assigned by OpenFirehouse
+                        </span>
+                      )}
                     </div>
                     <p className="text-sm font-semibold text-gray-800 dark:text-gray-100 mt-0.5 truncate">{alert.address}</p>
                     {alert.details && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">{alert.details}</p>}
-                    <p className="text-[10px] text-gray-400 mt-1">{fmtTime(alert.dispatched_at)}</p>
+                    <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">{fmtTime(alert.dispatched_at)}</p>
                   </div>
                   {onNavigate && (
                     <button
@@ -419,10 +445,16 @@ export default function CADIntegration({ onNavigate }) {
       {activeTab === 'connections' && (
         <div className="space-y-3">
           {connections.length === 0 && (
-            <div className="text-center py-16 text-gray-400">
+            <div className="text-center py-16 text-gray-500 dark:text-gray-400">
               <Plug size={32} className="mx-auto mb-3 opacity-30" />
               <p className="text-sm font-medium">No CAD connections configured.</p>
-              <p className="text-xs mt-1">Add a connection to start importing dispatch data.</p>
+              {/* The remedy named here has to be one the reader can actually take: only a chief
+                  can add a connection, so telling everyone else to add one is a dead end. */}
+              <p className="text-xs mt-1">
+                {canManage
+                  ? 'Add a connection to start importing dispatch data.'
+                  : 'A chief can add one — dispatches will start importing as soon as they do.'}
+              </p>
             </div>
           )}
 
@@ -455,7 +487,7 @@ export default function CADIntegration({ onNavigate }) {
                   </div>
                   <div className="text-right flex-shrink-0">
                     <p className="text-lg font-black text-blue-700 dark:text-blue-300">{conn.incidentsImported}</p>
-                    <p className="text-[10px] text-gray-400">incidents</p>
+                    <p className="text-[10px] text-gray-500 dark:text-gray-400">incidents</p>
                   </div>
                   {isOpen
                     ? <ChevronUp size={14} className="text-gray-400 flex-shrink-0" />
@@ -471,7 +503,7 @@ export default function CADIntegration({ onNavigate }) {
                         { l: 'Sync Interval',   v: conn.syncInterval },
                       ].map(({ l, v }) => (
                         <div key={l}>
-                          <p className="text-[10px] text-gray-400 uppercase tracking-wide">{l}</p>
+                          <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase tracking-wide">{l}</p>
                           <p className="text-xs font-semibold text-gray-800 dark:text-gray-100 font-mono">{v}</p>
                         </div>
                       ))}
@@ -479,16 +511,18 @@ export default function CADIntegration({ onNavigate }) {
                     {conn.notes && (
                       <p className="text-xs text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-xl px-3 py-2">{conn.notes}</p>
                     )}
-                    <div className="flex gap-2">
-                      <button onClick={() => openEdit(conn)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-gray-900 text-white rounded-lg hover:bg-gray-800">
-                        <Settings size={11} /> Configure
-                      </button>
-                      <button
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                        <RefreshCw size={11} /> Sync Now
-                      </button>
-                    </div>
+                    {canManage && (
+                      <div className="flex gap-2">
+                        <button onClick={() => openEdit(conn)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-gray-900 text-white rounded-lg hover:bg-gray-800">
+                          <Settings size={11} /> Configure
+                        </button>
+                        <button
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                          <RefreshCw size={11} /> Sync Now
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -509,7 +543,7 @@ export default function CADIntegration({ onNavigate }) {
               <div key={entry.id} className="grid grid-cols-[1.2fr_0.8fr_0.5fr_2fr] gap-4 px-5 py-2.5 border-b border-gray-50 last:border-b-0 items-center">
                 <span className="font-mono text-xs text-gray-600 dark:text-gray-300">{fmtTime(entry.timestamp)}</span>
                 <span className="text-xs text-gray-700 dark:text-gray-300 truncate">{conn?.name ?? '—'}</span>
-                <span className={`text-xs font-bold ${entry.records > 0 ? 'text-blue-700 dark:text-blue-300' : 'text-gray-400'}`}>
+                <span className={`text-xs font-bold ${entry.records > 0 ? 'text-blue-700 dark:text-blue-300' : 'text-gray-500 dark:text-gray-400'}`}>
                   {entry.records > 0 ? `+${entry.records}` : '—'}
                 </span>
                 <div className="flex items-center gap-2">
@@ -551,7 +585,7 @@ export default function CADIntegration({ onNavigate }) {
                 <VendorLogo logo={v.logo} size="lg" />
                 <div>
                   <p className="text-sm font-bold text-gray-900 dark:text-gray-100">{v.name}</p>
-                  <p className="text-[10px] text-gray-400">Auth: {v.authMethod}</p>
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400">Auth: {v.authMethod}</p>
                 </div>
               </div>
               <p className="text-xs text-gray-500 dark:text-gray-400">{v.description}</p>
@@ -583,7 +617,7 @@ export default function CADIntegration({ onNavigate }) {
               <div key={row.freestation} className="grid grid-cols-[1fr_1.5fr_2fr] gap-4 px-5 py-2.5 border-b border-gray-50 last:border-b-0 items-center">
                 <span className="font-mono text-xs font-bold text-blue-700 dark:text-blue-300">{row.freestation}</span>
                 <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">{row.label}</span>
-                <span className="font-mono text-[11px] text-gray-400">{row.examples}</span>
+                <span className="font-mono text-[11px] text-gray-500 dark:text-gray-400">{row.examples}</span>
               </div>
             ))}
           </div>

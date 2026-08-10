@@ -21,9 +21,11 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Navigation } from 'lucide-react';
 import { api } from '../utils/api';
 import { supabase, unitLocationsTopic } from '../utils/supabase';
+import { reportChannelStatus, reportMessageReceived, forgetChannel } from '../utils/realtimeHealth';
 import { loadMapKit, regionForPoints } from '../utils/mapkit';
 
-// Canonical 7-status colors (migration 0022) — matches UnitStatusBoard semantics.
+// Canonical 9-status colors (0022 model + EMS extension 2026-07-13) — matches
+// UnitStatusBoard semantics.
 const STATUS_COLOR = {
   in_service: '#10b981',
   on_the_air: '#14b8a6',
@@ -31,6 +33,8 @@ const STATUS_COLOR = {
   dispatched: '#f59e0b',
   enroute: '#fb923c',
   on_scene: '#ef4444',
+  transporting: '#c084fc',
+  at_hospital: '#60a5fa',
   out_of_service: '#6b7280',
 };
 
@@ -46,11 +50,23 @@ function abbrev(designation) {
 }
 
 // Read the incident's coordinates if present (CAD/geocode may not provide them).
+// Number()-coerce both sides: Postgres returns NUMERIC as a STRING, so a CAD-sourced
+// `latitude` arrives as "40.7282" and a `typeof === 'number'` test silently reports
+// "no location" on an incident that has one.
 function incidentCoord(incident) {
-  const lat = incident?.latitude ?? incident?.lat;
-  const lng = incident?.longitude ?? incident?.lng ?? incident?.lon;
-  return (typeof lat === 'number' && typeof lng === 'number') ? { lat, lng } : null;
+  const lat = Number(incident?.latitude ?? incident?.lat);
+  const lng = Number(incident?.longitude ?? incident?.lng ?? incident?.lon);
+  return (Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0))
+    ? { lat, lng }
+    : null;
 }
+
+// The department's district — the fallback framing when nothing else is known yet.
+// Same env source + span LiveDispatch's DistrictMap uses, so the two maps open on
+// the same ground. A response map must NEVER open on the continent.
+const DISTRICT_LAT  = parseFloat(import.meta.env.VITE_STATION_LAT || import.meta.env.VITE_DISTRICT_LAT || '40.7282');
+const DISTRICT_LNG  = parseFloat(import.meta.env.VITE_STATION_LNG || import.meta.env.VITE_DISTRICT_LNG || '-74.2090');
+const DISTRICT_SPAN = 0.12;
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -61,6 +77,9 @@ export default function ResponseMap({ incident, compact = false, departmentId = 
   const annRef = useRef({});           // apparatusId -> MarkerAnnotation
   const incidentAnnRef = useRef(null);
   const fitRef = useRef(false);
+  // Latest incident, readable from the mount-once map init without re-running it.
+  const incidentRef = useRef(incident);
+  incidentRef.current = incident;
   const [locations, setLocations] = useState([]);
   const [mapReady, setMapReady] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -76,12 +95,12 @@ export default function ResponseMap({ incident, compact = false, departmentId = 
   // "refetch now" signal. Skip when no department is known (the poll backstops).
   useEffect(() => {
     const topic = unitLocationsTopic(departmentId);
-    if (!topic) return undefined;
+    if (!topic || !supabase) return undefined; // no dept or no realtime client → poll backstops
     const channel = supabase
       .channel(topic)
-      .on('broadcast', { event: 'update' }, () => load())
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+      .on('broadcast', { event: 'update' }, () => { reportMessageReceived(); load(); })
+      .subscribe((status) => reportChannelStatus(topic, status));
+    return () => { forgetChannel(topic); supabase.removeChannel(channel); };
   }, [departmentId, load]);
 
   // Initial load + slow visibility-aware backstop poll.
@@ -106,11 +125,18 @@ export default function ResponseMap({ incident, compact = false, departmentId = 
           isRotationEnabled: false,
         });
         try { map.colorScheme = mk.Map.ColorSchemes.Dark; } catch (_) { /* noop */ }
-        // Continental US default until the first real positions arrive and frame it.
-        map.region = new mk.CoordinateRegion(
-          new mk.Coordinate(39.5, -98.35),
-          new mk.CoordinateSpan(40, 40),
-        );
+        // Open framed on the call if we already know where it is, otherwise on the
+        // district — NEVER on the continent. A department with no GPS hardware used to
+        // stare at all of North America for the entire incident, because framing only
+        // happened once live unit positions arrived. The fit effect below still refines
+        // this the moment real positions (or coords) land.
+        const c0 = incidentCoord(incidentRef.current);
+        map.region = c0
+          ? new mk.CoordinateRegion(new mk.Coordinate(c0.lat, c0.lng), new mk.CoordinateSpan(0.05, 0.05))
+          : new mk.CoordinateRegion(
+            new mk.Coordinate(DISTRICT_LAT, DISTRICT_LNG),
+            new mk.CoordinateSpan(DISTRICT_SPAN, DISTRICT_SPAN),
+          );
         mapRef.current = map;
         mkRef.current = mk;
         setMapReady(true);

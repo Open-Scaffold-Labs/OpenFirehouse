@@ -10,8 +10,9 @@ const FREE_THRESHOLDS = { members: 30, stations: 2, budget_usd: 750_000 };
 const TIER1_MAX       = { members: 80,  stations: 4, budget_usd: 3_000_000 };
 const TIER2_MAX       = { members: 200, stations: 9, budget_usd: 10_000_000 };
 
-// Per-tier included storage (GB) + overage. ADVISORY only (OF never hard-blocks):
-// overage is billed $0.05/GB/mo with an 80% warning. Metro = 1 TB.
+// Per-tier included storage (GB) + overage — authoritative from EULA §5 /
+// PRICING-CHANGES-FAQ. ADVISORY only (OF never hard-blocks): overage is billed
+// $0.05/GB/mo with an 80% warning. Metro = 1 TB.
 const STORAGE_QUOTA_GB = { independent: 5, career_small: 50, career_mid: 200, metro: 1024 };
 const STORAGE_OVERAGE_USD_PER_GB = 0.05;
 const STORAGE_WARN_FRACTION = 0.80;

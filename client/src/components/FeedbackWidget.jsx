@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { MessageSquarePlus, X, ChevronDown, Send, CheckCircle, AlertCircle, Wand2 } from 'lucide-react';
 import { api } from '../utils/api';
+import { fabSlotCls } from '../utils/fabRail';
 
 // ─── Module list for dropdown ─────────────────────────────────────────────────
 
@@ -181,7 +182,7 @@ export default function FeedbackWidget({
       {!isControlled && (
         <button
           onClick={() => setOpen(true)}
-          className="fixed bottom-24 right-6 z-30 flex items-center gap-2 bg-red-700 hover:bg-red-600 text-white text-sm font-semibold px-4 py-2.5 rounded-full shadow-lg transition-all hover:shadow-xl hover:scale-105 active:scale-95"
+          className={`${fabSlotCls('feedback')} z-30 flex items-center gap-2 bg-red-700 hover:bg-red-600 text-white text-sm font-semibold px-4 py-2.5 rounded-full shadow-lg transition-all hover:shadow-xl hover:scale-105 active:scale-95`}
           title="Send feedback or request a feature"
         >
           <MessageSquarePlus size={16} />
@@ -209,7 +210,7 @@ export default function FeedbackWidget({
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-700">
           <div>
             <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">Send Feedback</h2>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Help us improve <span className="font-semibold text-gray-600 dark:text-gray-300">OPEN</span><span className="font-semibold text-red-400">FIREHOUSE</span> for your department</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Help us improve <span className="font-semibold text-gray-600 dark:text-gray-300">OPEN</span><span className="font-semibold text-red-600 dark:text-red-400">FIREHOUSE</span> for your department</p>
           </div>
           <button
             onClick={handleClose}
@@ -272,7 +273,7 @@ export default function FeedbackWidget({
                       }`}
                     >
                       <span className="block font-semibold">{t.label}</span>
-                      <span className="block text-[10px] text-gray-400 mt-0.5 leading-tight">{t.description}</span>
+                      <span className="block text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 leading-tight">{t.description}</span>
                     </button>
                   ))}
                 </div>
@@ -301,15 +302,15 @@ export default function FeedbackWidget({
                   aria-label="Summary"
                   placeholder="One-line description of your feedback"
                   maxLength={120}
-                  className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent dark:bg-gray-900"
+                  className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-800 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent dark:bg-gray-900"
                 />
-                <p className="text-right text-[10px] text-gray-400 mt-0.5">{summary.length}/120</p>
+                <p className="text-right text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">{summary.length}/120</p>
               </div>
 
               {/* Detail */}
               <div>
                 <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
-                  Details <span className="text-gray-400 font-normal">(optional)</span>
+                  Details <span className="text-gray-500 dark:text-gray-400 font-normal">(optional)</span>
                 </label>
                 <textarea
                   value={detail}
@@ -317,7 +318,7 @@ export default function FeedbackWidget({
                   aria-label="Details"
                   placeholder="Steps to reproduce, expected behavior, use case, etc."
                   rows={3}
-                  className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none dark:bg-gray-900"
+                  className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-800 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none dark:bg-gray-900"
                 />
               </div>
 
@@ -359,7 +360,7 @@ export default function FeedbackWidget({
                     onChange={e => setDept(e.target.value)}
                     aria-label="Department"
                     placeholder="Your dept name"
-                    className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent dark:bg-gray-900"
+                    className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-800 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent dark:bg-gray-900"
                   />
                 </div>
                 <div>
@@ -370,7 +371,7 @@ export default function FeedbackWidget({
                     onChange={e => setEmail(e.target.value)}
                     aria-label="Email"
                     placeholder="For follow-up"
-                    className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent dark:bg-gray-900"
+                    className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-800 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent dark:bg-gray-900"
                   />
                 </div>
               </div>
@@ -385,13 +386,13 @@ export default function FeedbackWidget({
 
               {/* Submit */}
               <div className="flex items-center justify-between pt-1">
-                <p className="text-[10px] text-gray-400">
+                <p className="text-[10px] text-gray-500 dark:text-gray-400">
                   Free &amp; open source · Your feedback shapes development
                 </p>
                 <button
                   type="submit"
                   disabled={!canSubmit}
-                  className="flex items-center gap-2 px-4 py-2 bg-red-700 hover:bg-red-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition-colors"
+                  className="flex items-center gap-2 px-4 py-2 bg-red-700 hover:bg-red-600 disabled:bg-gray-200 disabled:text-gray-600 dark:disabled:bg-gray-700 dark:disabled:text-gray-300 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition-colors"
                 >
                   {status === 'submitting' ? (
                     <span className="flex items-center gap-1.5">

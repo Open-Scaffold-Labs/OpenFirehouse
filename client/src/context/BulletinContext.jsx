@@ -13,6 +13,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { api, getStoredUser } from '../utils/api';
 import { getReadIds, markRead as persistMarkRead } from '../utils/bulletinReads';
+import { localToday, toLocalDay } from '../utils/localDay';
 
 // ─── Context ──────────────────────────────────────────────────────────────────
 
@@ -20,12 +21,13 @@ const BulletinContext = createContext(null);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function todayStr() {
-  return new Date().toISOString().split('T')[0];
-}
-
+// Local day, not UTC — see the note in hooks/useBulletinAlerts.js. Deriving both
+// sides from toISOString() emptied the "Today's Shift" notices card every evening
+// once the UTC date rolled over ahead of the local one.
 function isToday(isoStr) {
-  return isoStr ? isoStr.split('T')[0] === todayStr() : false;
+  if (!isoStr) return false;
+  const d = new Date(isoStr);
+  return Number.isNaN(d.getTime()) ? false : toLocalDay(d) === localToday();
 }
 
 // ─── Provider ─────────────────────────────────────────────────────────────────

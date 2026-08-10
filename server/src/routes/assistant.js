@@ -438,7 +438,7 @@ router.post('/generate', async (req, res) => {
       SELECT id, member_id, cert_name, expiry_date
       FROM member_qualifications
       WHERE department_id = $1 AND expiry_date IS NOT NULL
-        AND expiry_date <= $2 AND expiry_date > NOW()
+        AND expiry_date <= $2 AND expiry_date > to_char(NOW(), 'YYYY-MM-DD')
     `;
     let certParams = [stationId, fmtDate(thirtyDaysFromNow)];
 
@@ -478,7 +478,7 @@ router.post('/generate', async (req, res) => {
     // ── 2. Mutual aid agreement renewals ──────────────────────────────────────
     if (memberRole === 'chief' || memberRole === 'captain') {
       const agreementsRes = await pool.query(
-        `SELECT id, agreement_name, expiration_date
+        `SELECT id, partner_agency AS agreement_name, expiration_date
          FROM mutual_aid_agreements
          WHERE department_id = $1
            AND expiration_date IS NOT NULL
@@ -513,11 +513,14 @@ router.post('/generate', async (req, res) => {
 
     // ── 3. Maintenance overdue ───────────────────────────────────────────────
     if (memberRole === 'chief' || memberRole === 'captain') {
+      // 2.2 (0083): read the work-order model (the old maintenance query selected
+      // nonexistent snake_case columns and silently 42703'd for its whole life).
       const maintenanceRes = await pool.query(
-        `SELECT id, apparatus_id, description, next_service_date
-         FROM maintenance
-         WHERE department_id = $1
-           AND (status = 'overdue' OR next_service_date < NOW())`,
+        `SELECT id, apparatus_id, title AS description, created_at AS next_service_date
+         FROM work_orders
+         WHERE department_id = $1 AND deleted_at IS NULL
+           AND status IN ('open','in_progress','awaiting_parts')
+           AND priority IN ('urgent','emergency')`,
         [stationId]
       );
       for (const maint of maintenanceRes.rows) {
@@ -546,7 +549,7 @@ router.post('/generate', async (req, res) => {
 
     // ── 4. Equipment overdue ─────────────────────────────────────────────────
     const equipmentRes = await pool.query(
-      `SELECT id, member_id, equipment_name, expected_return
+      `SELECT id, checked_out_by AS member_id, item_name AS equipment_name, expected_return
        FROM equipment_checkout
        WHERE department_id = $1 AND status = 'Checked Out' AND expected_return < NOW()`,
       [stationId]
@@ -577,7 +580,7 @@ router.post('/generate', async (req, res) => {
     // ── 5. Open grievances ───────────────────────────────────────────────────
     if (memberRole === 'chief' || memberRole === 'captain') {
       const grievancesRes = await pool.query(
-        `SELECT id, filer_id, subject
+        `SELECT id, filed_by AS filer_id, subject
          FROM grievances
          WHERE department_id = $1 AND status = 'open' AND deleted_at IS NULL`,
         [stationId]
@@ -609,7 +612,7 @@ router.post('/generate', async (req, res) => {
     // ── 6. Meeting drafts ────────────────────────────────────────────────────
     if (memberRole === 'chief' || memberRole === 'captain') {
       const meetingsRes = await pool.query(
-        `SELECT id, meeting_date, subject
+        `SELECT id, meeting_date, title AS subject
          FROM meeting_minutes
          WHERE department_id = $1 AND status = 'draft'`,
         [stationId]

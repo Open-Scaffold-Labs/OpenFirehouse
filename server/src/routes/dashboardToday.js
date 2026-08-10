@@ -62,8 +62,15 @@ router.get('/', async (req, res) => {
         [todayStr, stationId]
       ),
       safeQuery('maintenance',
-        `SELECT id, description, date, "apparatusName" as apparatus, type, priority
-         FROM maintenance WHERE department_id = $2 AND date = $1 AND (status = 'scheduled' OR status = 'Pending')`,
+        // 2.2 (0083): today's open work-order activity from the real model
+        `SELECT w.id, w.title AS description, w.created_at::date::text AS date,
+                COALESCE(a.designation, w.asset_label) AS apparatus,
+                w.status AS type, w.priority
+           FROM work_orders w
+           LEFT JOIN apparatus a ON a.id = w.apparatus_id
+          WHERE w.department_id = $2 AND w.deleted_at IS NULL
+            AND w.status IN ('open','in_progress','awaiting_parts')
+            AND w.created_at::date = $1::date`,
         [todayStr, stationId]
       ),
       safeQuery('meetings',

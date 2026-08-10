@@ -1,29 +1,96 @@
 'use strict';
 const db = require('./db');
+
+// Rewritten 2026-07-16. `correspondence` is a PER-RECORD document log
+// (module + record_id + entry_type + from_name/subject/body), consumed by
+// CorrespondenceLog, which today renders on only two surfaces: Grievances
+// (module 'grievances') and Personnel Actions (module 'personnel-actions').
+// The old seed wrote an imaginary inbox (type/direction/from_email/category/
+// status) with no host record and no renderer — it never inserted a row.
+// This attaches document-trail entries to the seeded grievance and
+// personnel-action records that actually exist at seed time.
 module.exports = async function seedCorrespondence() {
   const { rows } = await db.query('SELECT COUNT(*) as c FROM correspondence WHERE station_id = 1');
   if (parseInt(rows[0].c) > 0) { console.log('Correspondence seed: already seeded.'); return; }
   console.log('Correspondence seed: inserting demo data...');
-  const ITEMS = [
-    { type: 'email', direction: 'inbound', subject: 'Annual Hydrant Flow Test Schedule', from_name: 'Maplewood Water Authority', from_email: 'ops@maplewoodwater.gov', body: 'Please confirm your department is available for the annual hydrant flow testing program beginning April 15. We will need a crew of 2-3 members for approximately 4 hours per district.', category: 'operations', status: 'read', date: '2026-02-28' },
-    { type: 'email', direction: 'inbound', subject: 'SAFER Grant Application Status Update', from_name: 'FEMA Grants Portal', from_email: 'grants@fema.gov', body: 'Your SAFER grant application (EMW-2026-FH-00421) has been received and is under review. Expected notification date: May 2026.', category: 'grants', status: 'read', date: '2026-03-01' },
-    { type: 'email', direction: 'inbound', subject: 'Knox Box Key Update Request — Valley View Apartments', from_name: 'Dan Volk, Valley View Maintenance', from_email: 'dvolk@valleyviewapts.com', body: 'We recently re-keyed all units in Building C. Please schedule a time to update the Knox Box master key. Current key will not work for units 301-320.', category: 'operations', status: 'unread', date: '2026-03-10' },
-    { type: 'email', direction: 'outbound', subject: 'RE: Mutual Aid Agreement Renewal — Springfield FD', from_name: 'Chief Sarah Chen', from_email: 'chief@maplewoodvfd.org', body: 'Thanks for sending the updated agreement. I have reviewed it and our legal counsel has signed off. Returning the executed copy attached. Agreement effective April 1, 2026.', category: 'mutual_aid', status: 'sent', date: '2026-03-05' },
-    { type: 'letter', direction: 'inbound', subject: 'ISO Rating Review Notification', from_name: 'Insurance Services Office', from_email: '', body: 'Maplewood VFD is scheduled for an ISO Public Protection Classification review in Q3 2026. Please begin assembling documentation per the attached checklist.', category: 'compliance', status: 'read', date: '2026-02-15' },
-    { type: 'email', direction: 'inbound', subject: 'Hannigan Fuel — Updated Emergency Contact List', from_name: 'Pat Hannigan', from_email: 'pat@hanniganfuel.com', body: 'Attached is our updated emergency contact list for after-hours incidents. The new night manager is Tom Reeves, reachable at 570-555-0335.', category: 'operations', status: 'read', date: '2026-03-12' },
-    { type: 'email', direction: 'inbound', subject: 'Training Opportunity: Mayday Operations', from_name: 'NJ Fire Academy', from_email: 'registration@njfireacademy.org', body: 'We have 4 open seats in the Mayday Operations & Survival course, April 22-23. Priority given to volunteer departments. Registration link attached.', category: 'training', status: 'unread', date: '2026-03-14' },
-    { type: 'email', direction: 'outbound', subject: 'Monthly Report — February 2026', from_name: 'Chief Sarah Chen', from_email: 'chief@maplewoodvfd.org', body: 'Attached is the February 2026 monthly activity report. 47 incidents, 312 training hours, 98% apparatus availability. Full report in the attached PDF.', category: 'reports', status: 'sent', date: '2026-03-08' },
-    { type: 'email', direction: 'inbound', subject: 'Community Thank You — Structure Fire Response', from_name: 'Robert Robert Robert & Carol Huang Carol Chen Carol Chen', from_email: 'rchen@email.com', body: 'We want to express our sincere gratitude to the Maplewood Fire Department for the rapid response and professional firefighting that saved our home on March 5th. Your teams actions meant everything to our family. Thank you.', category: 'community', status: 'read', date: '2026-03-07' },
-    { type: 'email', direction: 'inbound', subject: 'State Fire Marshal — Incident Investigation Request', from_name: 'State Fire Marshal Office', from_email: 'investigations@sfmo.nj.gov', body: 'Regarding the structure fire at 2200 Industrial Parkway (FI-2026-001): We are requesting additional scene documentation and chain-of-custody records for debris samples. Please send within 5 business days.', category: 'regulatory', status: 'unread', date: '2026-03-18' },
-    { type: 'letter', direction: 'inbound', subject: 'Residential Fire Safety Grant Opportunity', from_name: 'National Fire Protection Association', from_email: '', body: 'NFPA is soliciting applications for residential fire safety education grants. Grant up to $50,000 for community outreach programs. Application deadline: April 30, 2026. More information at www.nfpa.org/grants.', category: 'grants', status: 'read', date: '2026-03-11' },
-    { type: 'email', direction: 'outbound', subject: 'Mutual Aid Request — Brush Fire Support', from_name: 'Chief Sarah Chen', from_email: 'chief@maplewoodvfd.org', body: 'Requesting mutual aid from Maplewood County Fire Departments for brush fire at County Park (3-acre incident). One brush truck and 4 personnel requested for suppression and mop-up operations. Contact dispatch at 911 or direct line 555-0100.', category: 'mutual_aid', status: 'sent', date: '2026-03-20' },
-  ];
-  for (const item of ITEMS) {
-    await db.query(
-      `INSERT INTO correspondence (station_id, type, direction, subject, from_name, from_email, body, category, status, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [1, item.type, item.direction, item.subject, item.from_name, item.from_email, item.body, item.category, item.status, item.date + 'T12:00:00Z']
+
+  const griev = (await db.query(
+    'SELECT id, grievance_number FROM grievances WHERE station_id = 1 ORDER BY id'
+  )).rows;
+  const pas = (await db.query(
+    'SELECT id, action_type FROM personnel_actions WHERE station_id = 1 ORDER BY id'
+  )).rows;
+
+  if (!griev.length && !pas.length) {
+    console.log('Correspondence seed: no grievance/personnel-action host records found — skipping.');
+    return;
+  }
+
+  const entries = [];
+
+  // ── Grievance document trail (union ↔ management) ─────────────────────────
+  if (griev[0]) {
+    const g = griev[0];
+    entries.push(
+      { module: 'grievances', record_id: g.id, entry_type: 'email', date: '2026-02-19',
+        from_name: 'IAFF Local 2087, Grievance Committee <grievance@iafflocal2087.org>',
+        subject: `Step 2 grievance filing — ${g.grievance_number}`,
+        body: 'Formal Step 2 submission per Article 14 of the CBA. The Union requests a hearing within the ten-day contractual window and reserves the right to advance to arbitration if the matter is not resolved.',
+        entered_by: 'Diane Tolliver' },
+      { module: 'grievances', record_id: g.id, entry_type: 'email', date: '2026-02-21',
+        from_name: 'Chief Sarah Chen <chief@maplewoodvfd.org>',
+        subject: `RE: Step 2 grievance — ${g.grievance_number}`,
+        body: 'Acknowledging receipt. Management will schedule the Step 2 hearing for next Tuesday at 10:00. Please confirm which Union representatives will attend so we can reserve the appropriate room.',
+        entered_by: 'Sarah Chen' },
     );
   }
-  console.log(`Correspondence seed: inserted ${ITEMS.length} items.`);
+  if (griev[1]) {
+    const g = griev[1];
+    entries.push(
+      { module: 'grievances', record_id: g.id, entry_type: 'note', date: '2026-02-24',
+        from_name: 'Maria Delgado',
+        subject: 'Step 1 meeting summary',
+        body: 'Met with the grievant and shop steward regarding the overtime bypass. Management to pull the callback log and respond in writing by end of week. Grievant amenable to resolution at Step 1 if the missed OT is credited.',
+        entered_by: 'Maria Delgado' },
+    );
+  }
+
+  // ── Personnel-action document trail (letters, acknowledgments) ────────────
+  if (pas[0]) {
+    const a = pas[0];
+    entries.push(
+      { module: 'personnel-actions', record_id: a.id, entry_type: 'email', date: '2026-01-16',
+        from_name: 'Office of the Fire Chief',
+        subject: 'Notice of personnel action — for your record',
+        body: 'This confirms the personnel action recorded in your file. A copy has been placed in your permanent record per department policy. Please reply to acknowledge receipt, or contact the Chief with any questions.',
+        entered_by: 'Sarah Chen' },
+      { module: 'personnel-actions', record_id: a.id, entry_type: 'note', date: '2026-01-17',
+        from_name: 'Maria Delgado',
+        subject: 'Acknowledgment received',
+        body: 'Member acknowledged the action in person and had no objections. Signed acknowledgment filed with HR.',
+        entered_by: 'Maria Delgado' },
+    );
+  }
+  if (pas[1]) {
+    const a = pas[1];
+    entries.push(
+      { module: 'personnel-actions', record_id: a.id, entry_type: 'email', date: '2026-02-02',
+        from_name: 'MN Board of Firefighter Training & Education <records@mbfte.state.mn.us>',
+        subject: 'Certification on file — confirmation',
+        body: 'This confirms the certification referenced in this personnel action has been verified against the state registry and is current. No further documentation is required at this time.',
+        entered_by: 'Sarah Chen' },
+    );
+  }
+
+  let count = 0;
+  for (const e of entries) {
+    await db.query(
+      `INSERT INTO correspondence
+         (station_id, module, record_id, entry_type, from_name, subject, body, entered_by, created_at)
+       VALUES (1,$1,$2,$3,$4,$5,$6,$7,$8)`,
+      [e.module, e.record_id, e.entry_type, e.from_name, e.subject, e.body, e.entered_by, e.date + 'T12:00:00Z']
+    );
+    count++;
+  }
+  console.log(`Correspondence seed: inserted ${count} entries across grievances and personnel actions.`);
 };

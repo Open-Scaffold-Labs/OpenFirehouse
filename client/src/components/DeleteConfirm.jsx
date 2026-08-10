@@ -1,15 +1,19 @@
 import { AlertTriangle } from 'lucide-react';
+import useDialog from '../hooks/useDialog';
 
 export default function DeleteConfirm({ member, onConfirm, onCancel }) {
+  // Dialog semantics + focus management (see hooks/useDialog.js). NO Escape-to-close.
+  const dlg = useDialog();
+
   if (!member) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="w-full max-w-sm bg-white dark:bg-gray-900 rounded-2xl shadow-2xl overflow-hidden">
+      <div {...dlg.dialogProps} className="w-full max-w-sm bg-white dark:bg-gray-900 rounded-2xl shadow-2xl overflow-hidden">
         <div className="px-6 py-6 text-center">
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-100 dark:bg-red-950/50">
             <AlertTriangle className="h-7 w-7 text-red-600 dark:text-red-400" />
           </div>
-          <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-1">Remove Member</h3>
+          <h3 id={dlg.titleId} className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-1">Remove Member</h3>
           <p className="text-sm text-gray-500 dark:text-gray-400">
             Are you sure you want to remove{' '}
             <span className="font-medium text-gray-800 dark:text-gray-100">{member.name}</span>? This action cannot be

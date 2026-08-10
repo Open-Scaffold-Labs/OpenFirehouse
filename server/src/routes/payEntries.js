@@ -1,6 +1,7 @@
 'use strict';
 const express = require('express');
 const router  = express.Router();
+const { requireChief } = require('../middleware/requireRole');
 const { payEntries: db } = require('../db');
 
 router.get('/', async (req, res) => {
@@ -16,7 +17,7 @@ router.get('/:id', async (req, res) => {
   } catch (e) { res.status(500).json({ error: 'Failed to fetch pay entry' }); }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', requireChief, async (req, res) => {
   try {
     if (!req.body.memberName) return res.status(400).json({ error: 'memberName is required' });
     const { id: _ignore, ...body } = req.body;
@@ -24,7 +25,7 @@ router.post('/', async (req, res) => {
   } catch (e) { res.status(500).json({ error: 'Failed to create pay entry' }); }
 });
 
-router.patch('/:id', async (req, res) => {
+router.patch('/:id', requireChief, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!await db.findById(id, req.user.department_id)) return res.status(404).json({ error: 'Pay entry not found' });
@@ -32,7 +33,7 @@ router.patch('/:id', async (req, res) => {
   } catch (e) { res.status(500).json({ error: 'Failed to update pay entry' }); }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireChief, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!await db.findById(id, req.user.department_id)) return res.status(404).json({ error: 'Pay entry not found' });

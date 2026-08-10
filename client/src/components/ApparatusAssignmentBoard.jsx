@@ -4,6 +4,7 @@ import {
   Calendar, ChevronLeft, ChevronRight, Settings, CheckCircle, Save,
 } from 'lucide-react';
 import { api } from '../utils/api';
+import { isOfficerPlus } from '../data/auth';
 
 // ── Rank relevance scoring ─────────────────────────────────────────────────
 // Returns a lower number for ranks that are a better fit for the position.
@@ -74,7 +75,7 @@ function QualBadge({ seat }) {
     qualified:  { label: 'Qualified',  cls: 'bg-green-100 text-green-800 dark:bg-green-950/60 dark:text-green-300' },
     partial:    { label: 'Partial',    cls: 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300' },
     unverified: { label: 'Unverified', cls: 'bg-gray-200 text-gray-600 dark:bg-gray-800 dark:text-gray-400' },
-    open:       { label: 'Open',       cls: 'bg-gray-100 text-gray-400 dark:bg-gray-900 dark:text-gray-500' },
+    open:       { label: 'Open',       cls: 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-900 dark:text-gray-500' },
   };
   const m = map[seat.qualification] || map.open;
   return <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${m.cls}`}>{m.label}</span>;
@@ -85,7 +86,11 @@ function QualBadge({ seat }) {
 // shiftCrewIds     — Set of member IDs scheduled on today's shift (may be empty)
 // seat             — server qualification result for this position (may be undefined)
 
-function PositionSlot({ position, assignment, seat, availableMembers, shiftCrewIds, onAssign, onRemove }) {
+// `canEdit` mirrors the server's `requireOfficer` on every apparatus-assignments write
+// (added 2026-07-27 with the gate). The SERVER is the control — this only decides what we
+// OFFER, so a firefighter is never shown a seat picker whose every use is refused. The
+// board stays fully READABLE to the crew: they have to be able to see what they are riding.
+function PositionSlot({ position, assignment, seat, availableMembers, shiftCrewIds, onAssign, onRemove, canEdit }) {
   // Split into two tiers sorted by rank relevance within each tier
   const sorter = (a, b) => rankScore(a.rank, position.position_name) - rankScore(b.rank, position.position_name);
   const onShift  = availableMembers.filter(m =>  shiftCrewIds.has(m.id)).sort(sorter);
@@ -115,44 +120,51 @@ function PositionSlot({ position, assignment, seat, availableMembers, shiftCrewI
         <div className="flex items-center gap-1.5">
           {assignment && <QualBadge seat={seat} />}
           {position.min_rank && (
-            <span className="text-[9px] text-gray-400">Min: {position.min_rank}</span>
+            <span className="text-[9px] text-gray-600 dark:text-gray-400">Min: {position.min_rank}</span>
           )}
         </div>
       </div>
       {seat?.requiredCertLabels?.length > 0 && (
-        <p className="text-[9px] text-gray-400 mb-1 leading-tight">Certs: {seat.requiredCertLabels.join(', ')}</p>
+        <p className="text-[9px] text-gray-600 dark:text-gray-400 mb-1 leading-tight">Certs: {seat.requiredCertLabels.join(', ')}</p>
       )}
 
       {assignment ? (
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold text-gray-800 dark:text-gray-100">{assignment.member_name}</p>
-            <p className="text-[10px] text-gray-400">
+            <p className="text-[10px] text-gray-600 dark:text-gray-400">
               {seat?.filledBy?.displayRank || assignment.member_rank}
-              {seat?.filledBy?.acting && <span className="ml-1 text-amber-600 dark:text-amber-400 font-semibold">· Acting</span>}
+              {seat?.filledBy?.acting && <span className="ml-1 text-amber-700 dark:text-amber-400 font-semibold">· Acting</span>}
             </p>
             {seat?.qualification === 'partial' && seat.missingCertLabels?.length > 0 && (
-              <p className="text-[9px] text-amber-600 dark:text-amber-400 leading-tight">Missing: {seat.missingCertLabels.join(', ')}</p>
+              <p className="text-[9px] text-amber-700 dark:text-amber-400 leading-tight">Missing: {seat.missingCertLabels.join(', ')}</p>
             )}
             {seat?.qualification === 'partial' && (!seat.missingCertLabels || seat.missingCertLabels.length === 0) && seat.rankMet === false && (
-              <p className="text-[9px] text-amber-600 dark:text-amber-400 leading-tight">Under minimum rank</p>
+              <p className="text-[9px] text-amber-700 dark:text-amber-400 leading-tight">Under minimum rank</p>
             )}
             {seat?.qualification === 'unverified' && !seat?.filledBy?.unlinked && (
-              <p className="text-[9px] text-gray-400 leading-tight">No cert records on file</p>
+              <p className="text-[9px] text-gray-600 dark:text-gray-400 leading-tight">No cert records on file</p>
             )}
             {seat?.filledBy?.unlinked && (
               <p className="text-[9px] text-rose-600 dark:text-rose-400 leading-tight">Not linked — confirm in Roster setup</p>
             )}
             {seat?.filledBy?.plannedCrewName && (
-              <p className="text-[9px] text-gray-400 leading-tight">Planned: {seat.filledBy.plannedCrewName}</p>
+              <p className="text-[9px] text-gray-600 dark:text-gray-400 leading-tight">Planned: {seat.filledBy.plannedCrewName}</p>
             )}
           </div>
-          <button onClick={() => onRemove(assignment.id)}
-            aria-label={`Remove ${assignment.member_name} from ${position.position_name}`}
-            className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50">
-            <Trash2 size={11} />
-          </button>
+          {canEdit && (
+            <button onClick={() => onRemove(assignment.id)}
+              aria-label={`Remove ${assignment.member_name} from ${position.position_name}`}
+              title={`Remove ${assignment.member_name} from ${position.position_name}`}
+              className="p-1 rounded text-gray-600 dark:text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50">
+              <Trash2 size={11} />
+            </button>
+          )}
         </div>
+      ) : !canEdit ? (
+        // An open seat, read-only. Still shown — an empty seat is information the crew
+        // needs — but without a picker that the server would refuse.
+        <p className="text-xs text-gray-600 dark:text-gray-400 dark:text-gray-500 italic px-2 py-1">Open seat</p>
       ) : (
         // Always render the select directly — no toggle state.
         // The old "click to show select" pattern caused onBlur to fire
@@ -205,7 +217,7 @@ function PositionSlot({ position, assignment, seat, availableMembers, shiftCrewI
 
 // ── Apparatus card ────────────────────────────────────────────────────────────
 
-function ApparatusCard({ apparatus, positions, assignments, staffing, availableMembers, shiftCrewIds, onAssign, onRemove }) {
+function ApparatusCard({ apparatus, positions, assignments, staffing, availableMembers, shiftCrewIds, onAssign, onRemove, canEdit }) {
   const filledCount = assignments.length;
   const totalSlots = positions.length;
   const isFull = totalSlots > 0 && filledCount >= totalSlots;
@@ -223,8 +235,8 @@ function ApparatusCard({ apparatus, positions, assignments, staffing, availableM
           </div>
         </div>
         <div className="flex items-center gap-1.5">
-          <Users size={12} className="text-gray-400" />
-          <span className={`text-xs font-bold ${isFull ? 'text-green-700 dark:text-green-300' : filledCount > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-gray-400'}`}>
+          <Users size={12} className="text-gray-600 dark:text-gray-400" />
+          <span className={`text-xs font-bold ${isFull ? 'text-green-700 dark:text-green-300' : filledCount > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-gray-600 dark:text-gray-400'}`}>
             {filledCount}/{totalSlots}
           </span>
           {isFull && <CheckCircle size={12} className="text-green-500" />}
@@ -233,7 +245,7 @@ function ApparatusCard({ apparatus, positions, assignments, staffing, availableM
 
       <div className="p-3 space-y-2">
         {positions.length === 0 ? (
-          <p className="text-xs text-gray-400 italic py-2 text-center">
+          <p className="text-xs text-gray-600 dark:text-gray-400 italic py-2 text-center">
             No positions defined. Set up positions in Apparatus Tracker.
           </p>
         ) : (
@@ -242,7 +254,7 @@ function ApparatusCard({ apparatus, positions, assignments, staffing, availableM
             const alreadyAssigned = assignments.map(a => a.member_id);
             const available = availableMembers.filter(m => !alreadyAssigned.includes(m.id));
             return (
-              <PositionSlot
+              <PositionSlot canEdit={canEdit}
                 key={pos.id}
                 position={pos}
                 assignment={assignment}
@@ -262,7 +274,13 @@ function ApparatusCard({ apparatus, positions, assignments, staffing, availableM
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-export default function ApparatusAssignmentBoard({ onNavigate }) {
+export default function ApparatusAssignmentBoard({ onNavigate, selectedStation = null, stations = [], currentUser = null }) {
+  // Mirrors the server's requireOfficer on every write here. Server is the control.
+  const canEdit = isOfficerPlus(currentUser);
+  // Per-station grain: a multi-house dept must publish to ONE house. With "All
+  // Houses" selected the server would 400 STATION_REQUIRED — guard proactively.
+  const isMultiHouse = Array.isArray(stations) && stations.length > 1;
+  const needsStation = isMultiHouse && !selectedStation;
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [shifts, setShifts] = useState([]);
   const [selectedShift, setSelectedShift] = useState(null);
@@ -412,6 +430,7 @@ export default function ApparatusAssignmentBoard({ onNavigate }) {
 
   async function saveToBoard() {
     if (!selectedShift || assignments.length === 0) return;
+    if (needsStation) { setSaveState('needs-station'); return; }
     setSaveState('saving');
     try {
       // Enrich each assignment with apparatus_name so the TV display can group by rig
@@ -423,7 +442,14 @@ export default function ApparatusAssignmentBoard({ onNavigate }) {
         return { ...a, apparatus_name: rig?.designation ?? a.apparatus_name ?? '', min_rank: posDef?.min_rank ?? a.min_rank ?? '' };
       });
       const submittedAt = new Date().toISOString();
-      await api.post('/api/run-list', { date, crew });
+      // 1.1b consolidation: run_lists is DERIVED server-side from THIS shift's
+      // apparatus_assignments — we no longer post a client-authored crew[]. The
+      // local `crew` (built from the same assignments) is used only for the
+      // zero-lag broadcast below; it matches what the server derives.
+      // Per-station grain (0072): scope the publish to the picked house when the
+      // department runs more than one (multi-house depts require station_id; a
+      // single-house dept omits it and the server resolves its one station).
+      await api.post('/api/run-list', { date, shift_id: selectedShift.id, ...(selectedStation ? { station_id: selectedStation } : {}) });
       // Push the saved crew directly in the broadcast so The Board can update
       // its state immediately — no API round-trip, zero lag.
       try {
@@ -460,7 +486,7 @@ export default function ApparatusAssignmentBoard({ onNavigate }) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-24 text-gray-400">
+      <div className="flex items-center justify-center py-24 text-gray-600 dark:text-gray-400">
         <Loader2 className="h-8 w-8 animate-spin mr-3" />
         <span className="text-sm">Loading assignment board…</span>
       </div>
@@ -491,28 +517,37 @@ export default function ApparatusAssignmentBoard({ onNavigate }) {
         </div>
 
         {/* Save to Board button */}
-        {selectedShift && assignments.length > 0 && (
-          <button
-            onClick={saveToBoard}
-            disabled={saveState === 'saving'}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm shadow transition-all ${
-              saveState === 'saved'
-                ? 'bg-green-600 text-white'
-                : saveState === 'error'
-                ? 'bg-red-600 text-white'
-                : 'bg-red-700 hover:bg-red-800 text-white'
-            }`}
-          >
-            {saveState === 'saving' ? (
-              <><Loader2 size={15} className="animate-spin" /> Saving…</>
-            ) : saveState === 'saved' ? (
-              <><CheckCircle size={15} /> Saved to Board</>
-            ) : saveState === 'error' ? (
-              <>Error — try again</>
-            ) : (
-              <><Save size={15} /> Save to Board</>
+        {canEdit && selectedShift && assignments.length > 0 && (
+          <div className="flex flex-col items-end gap-1">
+            <button
+              onClick={saveToBoard}
+              disabled={saveState === 'saving'}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm shadow transition-all ${
+                saveState === 'saved'
+                  ? 'bg-green-600 text-white'
+                  : (saveState === 'error' || saveState === 'needs-station')
+                  ? 'bg-red-600 text-white'
+                  : 'bg-red-700 hover:bg-red-800 text-white'
+              }`}
+            >
+              {saveState === 'saving' ? (
+                <><Loader2 size={15} className="animate-spin" /> Saving…</>
+              ) : saveState === 'saved' ? (
+                <><CheckCircle size={15} /> Saved to Board</>
+              ) : saveState === 'needs-station' ? (
+                <>Pick a station first</>
+              ) : saveState === 'error' ? (
+                <>Error — try again</>
+              ) : (
+                <><Save size={15} /> Save to Board</>
+              )}
+            </button>
+            {(needsStation || saveState === 'needs-station') && (
+              <p className="text-[11px] text-red-600 dark:text-red-400 font-semibold">
+                Choose a station in the top bar — a roster belongs to one house.
+              </p>
             )}
-          </button>
+          </div>
         )}
       </div>
 
@@ -555,7 +590,7 @@ export default function ApparatusAssignmentBoard({ onNavigate }) {
         </div>
       ) : (
         <div className="bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-900 rounded-xl px-4 py-3 flex items-center gap-2">
-          <AlertTriangle size={14} className="text-amber-600 dark:text-amber-400" />
+          <AlertTriangle size={14} className="text-amber-700 dark:text-amber-400" />
           <p className="text-sm text-amber-700 dark:text-amber-300">No shifts scheduled for this date. Create a shift first.</p>
         </div>
       )}
@@ -589,6 +624,7 @@ export default function ApparatusAssignmentBoard({ onNavigate }) {
                   shiftCrewIds={shiftCrewIds}
                   onAssign={(pos, mid) => handleAssign({ ...pos, apparatus_id: a.id }, mid)}
                   onRemove={handleRemove}
+                  canEdit={canEdit}
                 />
               );
             })}
@@ -597,8 +633,8 @@ export default function ApparatusAssignmentBoard({ onNavigate }) {
           {apparatus.length === 0 && (
             <div className="bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-700 rounded-xl px-5 py-8 text-center">
               <Truck className="mx-auto h-8 w-8 text-gray-200 mb-2" />
-              <p className="text-sm text-gray-400">No apparatus in service</p>
-              <p className="text-xs text-gray-400 mt-1">Add apparatus in the Apparatus Tracker module</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">No apparatus in service</p>
+              <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">Add apparatus in the Apparatus Tracker module</p>
             </div>
           )}
         </>

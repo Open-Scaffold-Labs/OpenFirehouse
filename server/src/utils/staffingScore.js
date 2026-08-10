@@ -10,6 +10,13 @@
  * Cert matching is CODE-TO-CODE: required_certs (canonical codes) vs the
  * member's set of VALID held cert codes (status active AND not expired).
  *
+ * ⚠️ That sentence was ASPIRATIONAL until 2026-07-14 — and this docstring saying
+ * it was true is part of why the bug survived. buildMemberCertIndex was indexing
+ * the member's certs by their RAW column value, not by code, so the "code-to-code"
+ * comparison was really code-vs-whatever-string-was-stored. It is now actually
+ * code-to-code: this module canonicalizes the held certs itself. See the long
+ * note in buildMemberCertIndex.
+ *
  * Seat verdicts:
  *   qualified  — seat filled, holds all required certs, meets min_rank
  *   partial    — seat filled, but missing a required cert and/or under min_rank
@@ -17,6 +24,10 @@
  *                assess — never downgrade to "short" purely from missing data)
  *   open       — seat not filled
  */
+
+// The canonical taxonomy. This is the ONLY dependency this module has — it stays
+// pure (no DB, no I/O) so it remains trivially unit-testable.
+const { canonicalizeCert } = require('../constants/certs');
 
 // ── Rank ladder ─────────────────────────────────────────────────────────────
 // Higher = more senior. Order of checks matters (Battalion Chief contains
@@ -64,13 +75,44 @@ function buildMemberCertIndex(qualRows, now = new Date()) {
   const index = new Map();
   for (const row of qualRows || []) {
     const id = row.member_id;
-    if (!index.has(id)) index.set(id, { valid: new Set(), all: new Set(), hasAny: false });
-    const entry = index.get(id);
-    entry.hasAny = true;
-    if (row.cert_type) {
-      entry.all.add(row.cert_type);
-      if (isValidQual(row, now)) entry.valid.add(row.cert_type);
+    if (!index.has(id)) {
+      index.set(id, { valid: new Set(), all: new Set(), unrecognized: new Set(), hasAny: false });
     }
+    const entry = index.get(id);
+    entry.hasAny = true;                       // they have a RECORD, even if we can't read it
+    if (!row.cert_type) continue;
+
+    // 🔴 THE BUG THIS FIXES (found 2026-07-14, live in prod):
+    // We used to add row.cert_type RAW here, while the CALLERS canonicalize the
+    // seat's required_certs (respond.js -> canonicalCerts, apparatusAssignments.js
+    // -> canonicalCerts). So we were comparing whatever string is in the column
+    // against canonical CODES.
+    //
+    // And the column does not hold codes. The web UI's cert dropdown is fed by
+    // GET /api/qualifications/cert-types, which serves DISPLAY NAMES
+    // (CERT_TYPES = CERTS.map(c => c.name)), and the POST stored that string
+    // verbatim. So a cert added through the product stores "Firefighter I" while
+    // the seat requires "firefighter_1" — and they can NEVER compare equal.
+    //
+    // Net effect: every certification entered through OpenFirehouse scored as
+    // MISSING, forever. A qualified firefighter read as unqualified. On a
+    // life-safety advisory that is the worst possible direction of error.
+    // (Only seed-qualifications.js, which writes codes, ever matched — which is
+    // why the seeded prod data partly worked and real data would not have.)
+    //
+    // Fix: canonicalize BOTH sides. The write path (routes/qualifications.js) now
+    // stores codes, and this read path canonicalizes defensively so historical
+    // rows, CSV imports, and any future caller are all handled.
+    const code = canonicalizeCert(row.cert_type);
+    if (!code) {
+      // Never silently drop a life-safety value. If we cannot read a cert, say so
+      // — the surface can then render "2 certs not recognized" instead of quietly
+      // scoring the member short for a cert they may well hold.
+      entry.unrecognized.add(String(row.cert_type));
+      continue;
+    }
+    entry.all.add(code);
+    if (isValidQual(row, now)) entry.valid.add(code);
   }
   return index;
 }

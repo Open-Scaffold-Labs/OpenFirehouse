@@ -1,15 +1,21 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Siren, Radio, MapPin, Clock, Truck, Bell, BellOff, ArrowRight, Zap, Settings, ChevronDown, ChevronUp, Satellite, Maximize2, Moon, Sun } from 'lucide-react';
+import { Siren, Radio, MapPin, Clock, Truck, Bell, BellOff, ArrowRight, Zap, Settings, ChevronDown, ChevronUp, Satellite, Maximize2, Moon, Sun, X, CheckCircle2, Loader2, Volume2, VolumeX, AlertTriangle } from 'lucide-react';
 import { api } from '../utils/api';
+import { canClearCalls } from '../data/auth';
+import { tonesEnabled, setTonesEnabled, toneDispatch } from '../utils/alertTones';
 import { toggleTheme } from '../utils/theme';
-import { loadMapKit, resolveCoordinate, routeBetween, regionForPoints, getDevicePosition } from '../utils/mapkit';
+import { loadMapKit, resolveCoordinate, routeBetween, regionForPoints, getDevicePosition,
+         resolveRouteOrigin, MAX_GPS_ORIGIN_MI } from '../utils/mapkit';
 import { supabase, unitLocationsTopic } from '../utils/supabase';
+import { reportChannelStatus, reportMessageReceived, forgetChannel } from '../utils/realtimeHealth';
+import FeedStatus from './FeedStatus';
 import ScreenErrorBoundary from './ScreenErrorBoundary';
 
 // Canonical 7-status colors (migration 0022) for live apparatus dots on the map.
 const UNIT_STATUS_HEX = {
   in_service: '#10b981', on_the_air: '#14b8a6', returning: '#34d399',
   dispatched: '#f59e0b', enroute: '#fb923c', on_scene: '#ef4444', out_of_service: '#6b7280',
+  transporting: '#c084fc', at_hospital: '#60a5fa', // EMS extension 2026-07-13
 };
 const unitStatusHex = (s) => UNIT_STATUS_HEX[s] || '#6b7280';
 // "Tower Ladder 1" -> "TL1", "Engine 1" -> "E1".
@@ -37,7 +43,7 @@ const STATUS_STYLES = {
   en_route:   { label: 'En Route',   color: 'bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300'   },
   on_scene:   { label: 'On Scene',   color: 'bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300' },
   available:  { label: 'Available',  color: 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'     },
-  closed:     { label: 'Closed',     color: 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'     },
+  closed:     { label: 'Closed',     color: 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'     },
 };
 
 // ─── Demo Scenarios ──────────────────────────────────────────────────────────
@@ -154,7 +160,201 @@ function MiniMap({ address, height = 240, label = 'Apple Maps' }) {
   );
 }
 
-function DispatchCard({ d, onActivate }) {
+// ─── Clear-time release prompt (2026-07-12) ──────────────────────────────────
+// The documented mature CAD pattern: closing a call with units still committed
+// WARNS the dispatcher, LISTS the blocking units, and takes a human-confirmed
+// release. Nothing is automatic — "Release & Clear" is the dispatcher's own
+// action (each release lands in unit_status_history under their id, and the
+// units go to Returning, the radio ladder's "back in service" state). "Clear
+// call only" leaves them committed — the orphan amber on the status board
+// still covers that path.
+// Clear-time disposition = the NERIS `type_noaction` reason (verified vs USFA NERIS
+// Release 1.0.1). Only set when the call did NOT become a working incident; when it
+// did, leave it blank — the actions/type are captured on the incident record (the
+// NERIS way, and how the market's command boards handle it). Mirrors routes/cad.js.
+const DISPOSITION_OPTIONS = [
+  ['', 'No disposition (call became an incident)'],
+  ['CANCELLED',         'Cancelled'],
+  ['STAGED_STANDBY',    'Staged / standby'],
+  ['NO_INCIDENT_FOUND', 'No incident found'],
+];
+
+function ClearCallModal({ d, onClose, onCleared }) {
+  const [units, setUnits]     = useState(null); // null = loading
+  const [checked, setChecked] = useState(new Set());
+  const [busy, setBusy]       = useState(false);
+  const [error, setError]     = useState(null);
+  const [disposition, setDisposition] = useState('');
+  const [loadFailed, setLoadFailed] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await api.get(`/api/cad/alerts/${d.id}/committed-units`);
+        if (!alive) return;
+        const list = res?.data || [];
+        setUnits(list);
+        setChecked(new Set(list.map((u) => u.apparatusId))); // default: release all
+      } catch {
+        // loadFailed — NOT the same as "no units committed": never claim a
+        // status we couldn't read (accuracy doctrine). The dispatcher can
+        // still clear; any committed units stay covered by the orphan flag.
+        if (alive) { setUnits([]); setLoadFailed(true); setError('Could not check unit statuses — clearing is still available; committed units will show on the status board.'); }
+      }
+    })();
+    return () => { alive = false; };
+  }, [d.id]);
+
+  const toggle = (id) => setChecked((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  async function doClear(releaseUnits) {
+    setBusy(true);
+    setError(null);
+    try {
+      const body = {};
+      if (releaseUnits) body.releaseUnits = releaseUnits;
+      if (disposition)  body.disposition  = disposition;
+      const res = await api.post(`/api/cad/alerts/${d.id}/clear`, body);
+      onCleared(d.id, res?.data?.released || []);
+    } catch {
+      setError('Failed to clear the call. Try again.');
+      setBusy(false);
+    }
+  }
+
+  const statusLabel = { dispatched: 'Dispatched', enroute: 'En Route', on_scene: 'On Scene' };
+
+  return (
+    <div className="fixed inset-0 z-[10000] bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="w-full max-w-md bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 mb-1">
+          <h3 className="text-base font-black text-gray-900 dark:text-gray-100">Clear this call?</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" aria-label="Cancel">
+            <X size={18} />
+          </button>
+        </div>
+        <p className="text-xs text-gray-500 dark:text-gray-400 truncate mb-3">
+          {d.description || d.type || 'Call'}{d.address ? ` — ${d.address}` : ''}
+        </p>
+
+        {units === null ? (
+          <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 py-3">
+            <Loader2 size={16} className="animate-spin" /> Checking unit statuses…
+          </div>
+        ) : units.length === 0 ? (
+          !loadFailed && (
+            <div className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 rounded-lg px-3 py-2 mb-3">
+              <CheckCircle2 size={15} /> No units are still committed to this call.
+            </div>
+          )
+        ) : (
+          <div className="mb-3">
+            <p className="text-xs font-bold text-amber-700 dark:text-amber-300 mb-2">
+              {units.length} unit{units.length === 1 ? ' is' : 's are'} still committed. Release to Returning?
+            </p>
+            <div className="space-y-1.5">
+              {units.map((u) => (
+                <label key={u.apparatusId} className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    data-testid="unit-release"
+                    data-unit={u.apparatusId}
+                    checked={checked.has(u.apparatusId)}
+                    onChange={() => toggle(u.apparatusId)}
+                    className="h-4 w-4 accent-red-600"
+                  />
+                  <Truck size={14} className="text-gray-400" />
+                  <span className="text-sm font-semibold text-gray-800 dark:text-gray-100 flex-1">{u.designation}</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300">
+                    {statusLabel[u.status] || u.status}
+                  </span>
+                </label>
+              ))}
+            </div>
+            <p className="text-[11px] text-gray-400 mt-2">
+              Release is your action as dispatch — confirm status over the radio as usual. Unreleased units stay flagged on the status board.
+            </p>
+          </div>
+        )}
+
+        {/* Disposition — how the call resolved (optional, never blocks the clear) */}
+        <div className="mb-3">
+          <label className="block text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">
+            Disposition
+          </label>
+          <select
+            data-testid="call-disposition"
+            value={disposition}
+            onChange={(e) => setDisposition(e.target.value)}
+            className="w-full text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 px-2.5 py-2"
+          >
+            {DISPOSITION_OPTIONS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+          </select>
+        </div>
+
+        {error && <p className="text-xs text-red-500 mb-2">{error}</p>}
+
+        <div className="flex flex-col gap-2">
+          {units && units.length > 0 && (
+            <button
+              disabled={busy || checked.size === 0}
+              onClick={() => doClear([...checked])}
+              className="w-full py-2.5 text-sm font-bold rounded-xl bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 transition-colors"
+            >
+              {busy ? 'Clearing…' : `Release ${checked.size} to Returning & Clear Call`}
+            </button>
+          )}
+          <button
+            data-testid="call-clear"
+            disabled={busy || units === null}
+            onClick={() => doClear(null)}
+            className="w-full py-2.5 text-sm font-bold rounded-xl border-2 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600 disabled:opacity-50 transition-colors"
+          >
+            {units && units.length > 0 ? 'Clear call only (leave statuses)' : busy ? 'Clearing…' : 'Clear Call'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Per-WORKSTATION alert-tone toggle. Tones are ON by default (market norm —
+// every major responder/station product ships audible alerting on); this is
+// the OPT-OUT for a workstation that shouldn't sound (chief's laptop in a
+// meeting). Re-enabling plays the dispatch tone once — audible confirmation
+// AND the user gesture that unlocks the browser's audio context in one tap.
+function ToneToggle() {
+  const [on, setOn] = useState(tonesEnabled());
+  return (
+    <button
+      onClick={() => {
+        const next = !on;
+        setTonesEnabled(next);
+        setOn(next);
+        if (next) toneDispatch(); // confirm + unlock in the same gesture
+      }}
+      title={on ? 'Alert tones ON (this workstation)' : 'Alert tones OFF (this workstation)'}
+      aria-label={on ? 'Disable alert tones' : 'Enable alert tones'}
+      className={`p-2 rounded-lg border transition-colors ${
+        on
+          ? 'border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40'
+          : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+      }`}
+    >
+      {on ? <Volume2 size={14} /> : <VolumeX size={14} />}
+    </button>
+  );
+}
+
+function DispatchCard({ d, onActivate, onClear }) {
   const priority = d.priority || 'high';
   const colors = PRIORITY_COLORS[priority] || PRIORITY_COLORS.high;
   const status = STATUS_STYLES[d.status] || STATUS_STYLES.dispatched;
@@ -165,7 +365,7 @@ function DispatchCard({ d, onActivate }) {
   const fullAddress = [address, d.city, d.state].filter(Boolean).join(', ');
 
   return (
-    <div className={`rounded-xl border-2 ${colors.border} ${colors.bg} transition-all hover:shadow-md overflow-hidden`}>
+    <div data-testid="dispatch-card" data-status={d.status} data-dispatched-at={d.dispatched_at || d.timestamp} className={`rounded-xl border-2 ${colors.border} ${colors.bg} transition-all hover:shadow-md overflow-hidden`}>
       {/* Clickable summary row — a real disclosure control (W4.3 follow-up:
           this was a bare clickable div, invisible to keyboards and screen
           readers; now Enter/Space toggle it and AT announces the state) */}
@@ -192,7 +392,7 @@ function DispatchCard({ d, onActivate }) {
                 {d.description || d.type || 'Unknown Call'}
               </p>
               {d.id && (
-                <p className="text-[10px] text-gray-400 font-mono">{d.id}</p>
+                <p className="text-[10px] text-gray-600 dark:text-gray-400 font-mono">{d.id}</p>
               )}
             </div>
           </div>
@@ -215,7 +415,7 @@ function DispatchCard({ d, onActivate }) {
               <span className="truncate">{address}</span>
             </div>
           )}
-          <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+          <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
             <Clock size={13} className="flex-shrink-0 text-gray-400" />
             <span>{formatTime(d.dispatched_at || d.timestamp)} · {timeAgo(d.dispatched_at || d.timestamp)}</span>
           </div>
@@ -225,7 +425,7 @@ function DispatchCard({ d, onActivate }) {
         {units.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-1.5">
             {units.map((unit, i) => (
-              <span key={i} className="inline-flex items-center gap-1 text-[11px] font-semibold bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-2 py-0.5">
+              <span key={i} className="inline-flex items-center gap-1 text-[11px] font-semibold text-gray-800 dark:text-gray-100 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-2 py-0.5">
                 <Truck size={11} className="text-gray-400" />
                 {unit}
               </span>
@@ -247,20 +447,30 @@ function DispatchCard({ d, onActivate }) {
 
           {/* Incident details if present */}
           {d.details && (
-            <div className="mx-4 mb-3 mt-2 text-xs text-gray-600 dark:text-gray-300 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-900 rounded-lg px-3 py-2">
+            <div className="mx-4 mb-3 mt-2 text-xs text-amber-700 dark:text-amber-100 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-900 rounded-lg px-3 py-2">
               <span className="font-semibold text-amber-700 dark:text-amber-300">Details: </span>{d.details}
             </div>
           )}
 
-          {/* Action button */}
-          {onActivate && d.status !== 'closed' && (
-            <div className="px-4 pb-4">
-              <button
-                onClick={(e) => { e.stopPropagation(); onActivate(d); }}
-                className={`w-full flex items-center justify-center gap-1.5 py-2 text-xs font-bold rounded-lg ${colors.text} bg-white dark:bg-gray-900 border-2 ${colors.border} hover:shadow-sm transition-all`}
-              >
-                Open on Command Board <ArrowRight size={12} />
-              </button>
+          {/* Action buttons */}
+          {(onActivate || onClear) && d.status !== 'closed' && (
+            <div className="px-4 pb-4 space-y-2">
+              {onActivate && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onActivate(d); }}
+                  className={`w-full flex items-center justify-center gap-1.5 py-2 text-xs font-bold rounded-lg ${colors.text} bg-white dark:bg-gray-900 border-2 ${colors.border} hover:shadow-sm transition-all`}
+                >
+                  Open on Command Board <ArrowRight size={12} />
+                </button>
+              )}
+              {onClear && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onClear(d); }}
+                  className="w-full flex items-center justify-center gap-1.5 py-2 text-xs font-bold rounded-lg text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:shadow-sm transition-all"
+                >
+                  <CheckCircle2 size={12} /> Clear Call
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -428,12 +638,12 @@ function DistrictMap({ departmentId = null }) {
 
   useEffect(() => {
     const topic = unitLocationsTopic(departmentId);
-    if (!topic) return undefined;
+    if (!topic || !supabase) return undefined; // no dept or no realtime client → poll backstops
     const channel = supabase
       .channel(topic)
-      .on('broadcast', { event: 'update' }, () => loadLocations())
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+      .on('broadcast', { event: 'update' }, () => { reportMessageReceived(); loadLocations(); })
+      .subscribe((status) => reportChannelStatus(topic, status));
+    return () => { forgetChannel(topic); supabase.removeChannel(channel); };
   }, [departmentId, loadLocations]);
 
   useEffect(() => {
@@ -473,14 +683,61 @@ function DistrictMap({ departmentId = null }) {
     });
   }, [locations, mapReady]);
 
+  // A DEAD MAP IS NEVER BLANK, AND IT NEVER PRETENDS.
+  //
+  // Two things were wrong here. (1) The fallback was a grey box reading "Map
+  // unavailable" — a dead end on a life-safety surface. (2) The status badge —
+  // green, pulsing, "Coverage Area · N units live" — rendered ON TOP of it
+  // regardless, claiming a live status over a map that was showing nothing. That is
+  // the board asserting something it is not reading.
+  //
+  // Now: if the tiles cannot load, we fall back to the data we ALREADY HAVE — the
+  // live unit positions from GET /api/units/locations. The IC loses the picture but
+  // keeps the facts, and the UI says plainly that the map is down.
+  if (failed) {
+    return (
+      <div className="relative rounded-xl overflow-hidden border-2 border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-950/40 shadow-sm" style={{ minHeight: 600 }}>
+        <div className="px-4 py-3 border-b border-amber-200 dark:border-amber-800 flex items-center gap-2">
+          <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400 shrink-0" />
+          <div className="min-w-0">
+            <p className="text-sm font-black text-amber-900 dark:text-amber-200">MAP UNAVAILABLE</p>
+            <p className="text-[11px] text-amber-800 dark:text-amber-300">
+              Apple Maps could not load. Unit positions below are still live.
+            </p>
+          </div>
+        </div>
+        <div className="p-3">
+          <p className="text-[11px] font-black uppercase tracking-wide text-amber-800 dark:text-amber-300 mb-2">
+            {locations.length
+              ? `${locations.length} unit${locations.length === 1 ? '' : 's'} reporting`
+              : 'No unit positions reporting'}
+          </p>
+          <div className="space-y-1.5">
+            {locations.map((u) => (
+              <div key={u.apparatusId ?? u.designation}
+                className="flex items-center justify-between gap-3 bg-white dark:bg-gray-900 rounded-lg px-3 py-2 border border-amber-200 dark:border-amber-900">
+                <span className="text-sm font-bold text-gray-900 dark:text-gray-100">{u.designation}</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400 font-semibold">{u.status || '—'}</span>
+                {/* `lat` / `lng` — NOT latitude/longitude. Ground truth is the
+                    annotation code above, which gates on `typeof u.lat === 'number'`.
+                    Getting this wrong would render "no fix" for every unit, which on
+                    a dead map is the second lie in a row. */}
+                <span className="text-[11px] text-gray-400 font-mono shrink-0">
+                  {typeof u.lat === 'number' && typeof u.lng === 'number'
+                    ? `${u.lat.toFixed(4)}, ${u.lng.toFixed(4)}`
+                    : 'no fix'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="relative rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700 shadow-sm">
       <div ref={elRef} style={{ height: '600px', width: '100%', display: 'block' }} />
-      {failed && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-50 dark:bg-gray-950 text-xs text-gray-500 dark:text-gray-400">
-          Map unavailable
-        </div>
-      )}
       <div className="absolute top-2 left-2 flex items-center gap-1.5 bg-black/60 text-white text-[10px] font-semibold px-2.5 py-1 rounded-lg backdrop-blur-sm">
         <div className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
         {locations.length ? `Coverage Area · ${locations.length} unit${locations.length === 1 ? '' : 's'} live` : 'Coverage Area — Standby'}
@@ -541,14 +798,33 @@ function ActiveCallMap({ dispatch, onDismiss }) {
         // Origin = THIS unit's own live GPS. Each responder sees only THEIR OWN
         // route to the scene — we never clutter the screen with every rig's route.
         // The other dispatched units appear as live location dots for context.
+        //
+        // But only if the fix is plausible. A rig is never hundreds of miles from
+        // its own station; a VPN or Wi-Fi geolocation miss will happily claim it is,
+        // and we'd draw a 2,900-mile route to a structure fire. resolveRouteOrigin
+        // falls back to the station in that case.
         const dev = await getDevicePosition();
         if (cancelled || !mapRef.current) return;
-        const fromGps = !!dev;
-        const origin = new mk.Coordinate(fromGps ? dev.lat : stationLat, fromGps ? dev.lng : stationLng);
+        const o = resolveRouteOrigin(dev, stationLat, stationLng);
+        const fromGps = o.source === 'gps';
+        const origin = new mk.Coordinate(o.lat, o.lng);
         if (fromGps) {
           map.showsUserLocation = true; // live dot that tracks this apparatus
         } else {
-          map.addAnnotation(new mk.MarkerAnnotation(origin, { color: '#1d4ed8', glyphText: 'S', title: 'Station' }));
+          const rejected = o.deviceMiles != null; // had a fix, but it was implausible
+          if (rejected) {
+            console.warn(
+              `[dispatch] device GPS is ${Math.round(o.deviceMiles)} mi from the station `
+              + `(limit ${MAX_GPS_ORIGIN_MI} mi) — routing from the station instead. `
+              + 'Check for a VPN, or raise VITE_MAX_GPS_ORIGIN_MI.',
+            );
+          }
+          map.addAnnotation(new mk.MarkerAnnotation(origin, {
+            color: '#1d4ed8',
+            glyphText: 'S',
+            title: 'Station',
+            subtitle: rejected ? 'Device GPS looked wrong — routing from station' : undefined,
+          }));
         }
         const pts = [origin, coordinate];
 
@@ -628,9 +904,11 @@ function ActiveCallMap({ dispatch, onDismiss }) {
 
   const tab = (id, label) => (
     <button
+      data-testid={`map-view-${id}`}
+      data-active={view === id}
       onClick={() => setView(id)}
       className={`px-3 py-1.5 text-[11px] font-bold rounded-md transition-colors ${
-        view === id ? 'bg-white dark:bg-gray-900 text-red-700 dark:text-red-300 shadow' : 'text-white/75 hover:text-white'
+        view === id ? 'bg-white dark:bg-gray-900 text-red-700 dark:text-red-300 shadow' : 'text-red-100 hover:text-white'
       }`}
     >{label}</button>
   );
@@ -646,7 +924,7 @@ function ActiveCallMap({ dispatch, onDismiss }) {
           : 'Apple Maps · Route (approx)';
 
   return (
-    <div className="rounded-xl overflow-hidden border-2 border-red-400 shadow-lg animate-pulse-once">
+    <div data-testid="active-call-map" className="rounded-xl overflow-hidden border-2 border-red-400 shadow-lg animate-pulse-once">
       {/* Banner + view toggle */}
       <div className="bg-red-700 text-white">
         <div className="flex items-center justify-between gap-3 px-4 py-2.5">
@@ -654,13 +932,13 @@ function ActiveCallMap({ dispatch, onDismiss }) {
             <Siren size={15} className="flex-shrink-0 animate-pulse" />
             <div className="min-w-0">
               <p className="text-xs font-black truncate">{dispatch.description || dispatch.type || 'Incoming Call'}</p>
-              <p className="text-[10px] text-red-200 truncate">{fullAddress || address}</p>
+              <p className="text-[10px] text-red-100 truncate">{fullAddress || address}</p>
             </div>
           </div>
           <button
             onClick={onDismiss}
             aria-label="Close"
-            className="text-red-200 hover:text-white transition-colors flex-shrink-0 text-lg leading-none"
+            className="text-red-100 hover:text-white transition-colors flex-shrink-0 text-lg leading-none"
           >×</button>
         </div>
         <div className="flex items-center gap-1 px-3 pb-2">
@@ -720,8 +998,32 @@ function ActiveCallMap({ dispatch, onDismiss }) {
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
-export default function LiveDispatch({ dispatches = [], onClearBadge, onNavigate, onAddDispatch, onSetupCAD, departmentId = null }) {
+export default function LiveDispatch({ dispatches = [], onClearBadge, onNavigate, onAddDispatch, onSetupCAD, departmentId = null, currentUser = null, onCallCleared = null, onCallReopened = null }) {
   const [filter, setFilter] = useState('all'); // all | active | closed
+  const [clearingCall, setClearingCall] = useState(null); // dispatch object → ClearCallModal
+  const canClear = canClearCalls(currentUser); // UI affordance only — the server enforces regardless
+
+  // Undo toast (mis-close recovery — the mature platforms ship reopen beside
+  // manual close). 10s window; Undo reopens the CALL only — released unit
+  // statuses stay as set (they were a separate, deliberate dispatcher action).
+  const [undo, setUndo] = useState(null); // { d, released }
+  const undoTimerRef = useRef(null);
+  useEffect(() => () => clearTimeout(undoTimerRef.current), []);
+  const showUndo = (d, released) => {
+    clearTimeout(undoTimerRef.current);
+    setUndo({ d, released });
+    undoTimerRef.current = setTimeout(() => setUndo(null), 10000);
+  };
+  const doUndo = async () => {
+    const u = undo;
+    setUndo(null);
+    clearTimeout(undoTimerRef.current);
+    if (!u) return;
+    try {
+      await api.post(`/api/cad/alerts/${u.d.id}/reopen`, {});
+      if (onCallReopened) onCallReopened(u.d);
+    } catch { /* the next poll reconciles either way */ }
+  };
 
   // Auto-pop map: show incoming call location automatically
   const [activeCallMap, setActiveCallMap] = useState(null);
@@ -760,7 +1062,10 @@ export default function LiveDispatch({ dispatches = [], onClearBadge, onNavigate
             <Radio size={20} className="text-red-700 dark:text-red-300" />
           </div>
           <div>
-            <h2 className="text-lg font-black text-gray-900 dark:text-gray-100">Live Dispatch</h2>
+            <h2 className="text-lg font-black text-gray-900 dark:text-gray-100">
+              Live Dispatch
+              <FeedStatus className="ml-2 align-middle" />
+            </h2>
             <p className="text-xs text-gray-500 dark:text-gray-400">
               {dispatches.length === 0
                 ? 'Waiting for dispatch feed…'
@@ -769,6 +1074,7 @@ export default function LiveDispatch({ dispatches = [], onClearBadge, onNavigate
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <ToneToggle />
           <button onClick={() => toggleTheme()} title="Toggle dark mode" aria-label="Toggle dark mode" className="p-2 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"><Moon size={14} className="dark:hidden" /><Sun size={14} className="hidden dark:block" /></button>
           <button
             onClick={() => window.open('?kiosk=true', '_blank')}
@@ -781,7 +1087,7 @@ export default function LiveDispatch({ dispatches = [], onClearBadge, onNavigate
           {onClearBadge && dispatches.length > 0 && (
             <button
               onClick={onClearBadge}
-              className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 font-medium transition-colors"
+              className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 font-medium transition-colors"
               title="Clear notification badge"
             >
               <BellOff size={14} /> Clear badge
@@ -839,7 +1145,7 @@ export default function LiveDispatch({ dispatches = [], onClearBadge, onNavigate
                   key={tab.key}
                   onClick={() => setFilter(tab.key)}
                   className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-                    filter === tab.key ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                    filter === tab.key ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                   }`}
                 >
                   {tab.label}
@@ -856,6 +1162,7 @@ export default function LiveDispatch({ dispatches = [], onClearBadge, onNavigate
                   <DispatchCard
                     d={d}
                     onActivate={onNavigate ? () => onNavigate(d) : null}
+                    onClear={canClear && d.id ? () => setClearingCall(d) : null}
                   />
                 </div>
               ))
@@ -905,6 +1212,37 @@ export default function LiveDispatch({ dispatches = [], onClearBadge, onNavigate
         </div>
 
       </div>
+
+      {/* Clear-time release prompt (dispatch/command only) */}
+      {clearingCall && (
+        <ClearCallModal
+          d={clearingCall}
+          onClose={() => setClearingCall(null)}
+          onCleared={(id, released) => {
+            const cleared = clearingCall;
+            setClearingCall(null);
+            if (activeCallMap?.id === id) setActiveCallMap(null);
+            if (onCallCleared) onCallCleared(id);
+            showUndo(cleared, released);
+          }}
+        />
+      )}
+
+      {/* Post-clear undo toast */}
+      {undo && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[10001] flex items-center gap-3 bg-gray-900 text-white rounded-xl shadow-2xl px-4 py-3 border border-gray-700">
+          <CheckCircle2 size={16} className="text-emerald-400" />
+          <span className="text-sm font-semibold">
+            Call cleared{undo.released?.length ? ` · ${undo.released.length} unit${undo.released.length === 1 ? '' : 's'} to Returning` : ''}
+          </span>
+          <button
+            onClick={doUndo}
+            className="text-sm font-bold text-blue-300 hover:text-blue-200 underline underline-offset-2"
+          >
+            Undo
+          </button>
+        </div>
+      )}
     </div>
   );
 }

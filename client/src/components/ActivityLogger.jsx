@@ -78,7 +78,10 @@ const CATEGORIES = [
     ],
   },
   {
-    id: 'training', label: 'Training Entry', icon: GraduationCap, color: 'bg-purple-600',
+    // Indigo, not purple: at tile size purple reads as the AI violet, and standing
+    // ruling #2 reserves that hue for AI surfaces — nothing else wears it. This is
+    // the tile that actually renders on the Member Portal's Log Activity card.
+    id: 'training', label: 'Training Entry', icon: GraduationCap, color: 'bg-indigo-600',
     types: [
       { id: 'training-drill', label: 'Drill / Training', fields: ['course', 'hours', 'instructor', 'notes'] },
       { id: 'training-class', label: 'Class / Certification', fields: ['course', 'hours', 'instructor', 'result', 'notes'] },
@@ -344,7 +347,7 @@ function NerisPanel({ onBack, initialTab = 'reports-due', user }) {
             className={`flex items-center gap-1.5 px-3 py-2.5 text-[11px] font-bold whitespace-nowrap border-b-2 transition-colors ${
               activeTab === tab.id
                 ? 'border-orange-500 text-orange-600 dark:text-orange-400'
-                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
             }`}>
             <tab.icon size={11} />
             {tab.label}
@@ -548,10 +551,16 @@ export default function ActivityLogger({ user, onNavigate, compact = false, defa
   }
 
   // ── Compact mode: just the button ──
+  // Blue, not red: this is the ordinary primary action on a member's landing page.
+  // Red is the emergency vocabulary (active incident, dispatch nav, alert pill), and
+  // a full-width red bar for "log a hydrant inspection" was the loudest thing on the
+  // portal. THIS is the button that renders — MyPortal.jsx carries a dead local copy
+  // of this component; editing that one changed nothing, which the served bundle
+  // proved. Second instance of that same trap in one session.
   if (!expanded && compact) {
     return (
       <button onClick={() => setExpanded(true)}
-        className="w-full flex items-center gap-3 px-4 py-3 bg-red-700 hover:bg-red-800 text-white rounded-xl shadow-lg transition-all">
+        className="w-full flex items-center gap-3 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-lg transition-all">
         <Plus size={18} />
         <span className="text-sm font-bold flex-1 text-left">Log Activity</span>
         {(todayCount > 0 || savedCount > 0) && (
@@ -601,28 +610,37 @@ export default function ActivityLogger({ user, onNavigate, compact = false, defa
         <span className="text-xs font-black text-gray-700 dark:text-gray-300">LOG ACTIVITY</span>
         <div className="flex items-center gap-2">
           {(todayCount > 0 || savedCount > 0) && (
-            <span className="text-[10px] font-bold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/50 px-2 py-0.5 rounded-full flex items-center gap-1">
+            <span className="text-[10px] font-bold text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/50 px-2 py-0.5 rounded-full flex items-center gap-1">
               <CheckCircle size={10} /> {todayCount + savedCount} logged today
             </span>
           )}
-          {compact && <button onClick={() => setExpanded(false)} className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 font-bold">Close</button>}
+          {compact && <button onClick={() => setExpanded(false)} className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 font-bold">Close</button>}
         </div>
       </div>
 
-      {/* AI Suggestions */}
+      {/* AI Suggestions.
+          `bg-amber-50/50` was a LIGHT-ONLY TRANSLUCENT tint with no dark twin, so in
+          dark mode it composited over the page to a mid-grey (#888a8a as measured)
+          and dragged the amber text on it to 2.03:1 against a 4.5 floor. Third
+          instance of this exact class — the unread-bulletin tint and the calendar's
+          out-of-month cells were the first two. A light value at partial alpha is not
+          "neutral"; it lands on whatever is behind it.
+          It also evaded the ratchet for a different reason worth noting: this block
+          only renders when suggestions EXIST, so a sweep can pass on the same page
+          twice and never see it. */}
       {suggestions.length > 0 && (
-        <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700 bg-amber-50/50">
-          <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase mb-1 flex items-center gap-1"><Zap size={10} /> AI Suggestions</p>
+        <div className="px-3 py-2 border-b border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/60">
+          <p className="text-[10px] font-bold text-amber-700 dark:text-amber-300 uppercase mb-1 flex items-center gap-1"><Zap size={10} aria-hidden="true" /> AI Suggestions</p>
           {suggestions.map((s, i) => (
             <button key={i} onClick={() => {
               const allTypes = CATEGORIES.flatMap(c => c.types);
               const type = allTypes.find(t => t.id === s.type);
               if (type) setSelectedType(type);
             }}
-              className="w-full flex items-center gap-2 px-2 py-1 text-xs text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900 rounded-lg transition-colors">
-              <AlertTriangle size={10} className="text-amber-500 flex-shrink-0" />
+              className="w-full flex items-center gap-2 px-2 py-1 text-xs text-amber-900 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900 rounded-lg transition-colors">
+              <AlertTriangle size={10} className="text-amber-600 dark:text-amber-400 shrink-0" aria-hidden="true" />
               <span className="flex-1 text-left">{s.text}</span>
-              <ChevronRight size={10} className="text-amber-400" />
+              <ChevronRight size={10} className="text-amber-600 dark:text-amber-400" aria-hidden="true" />
             </button>
           ))}
         </div>
@@ -638,7 +656,7 @@ export default function ActivityLogger({ user, onNavigate, compact = false, defa
             </div>
             <div className="text-left">
               <p className="text-xs font-bold text-gray-700 dark:text-gray-300">{cat.label}</p>
-              <p className="text-[10px] text-gray-400">{cat.types.length} {cat.id === 'neris' ? 'sections' : 'types'}</p>
+              <p className="text-[10px] text-gray-500 dark:text-gray-400">{cat.types.length} {cat.id === 'neris' ? 'sections' : 'types'}</p>
             </div>
           </button>
         ))}

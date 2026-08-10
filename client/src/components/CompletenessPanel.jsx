@@ -54,11 +54,11 @@ function CheckItem({ check, incidentData, onRefresh }) {
             {check.label}
           </span>
           {check.required && !check.complete && (
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-red-500 bg-red-50 dark:bg-red-950/50 px-1.5 py-0.5 rounded">Required</span>
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/50 px-1.5 py-0.5 rounded">Required</span>
           )}
         </div>
         {check.value && (
-          <p className="text-[11px] text-gray-400 mt-0.5 truncate">{check.value}</p>
+          <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 truncate">{check.value}</p>
         )}
         {check.detail && !check.complete && (
           <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">{check.detail}</p>
@@ -90,12 +90,12 @@ function CategorySection({ category, incidentData, onRefresh }) {
         onClick={() => setOpen(!open)}
         className="flex items-center gap-2 w-full py-2 px-1 text-left hover:bg-gray-50/50 transition-colors"
       >
-        {open ? <ChevronDown className="h-3 w-3 text-gray-400" /> : <ChevronRight className="h-3 w-3 text-gray-400" />}
+        {open ? <ChevronDown className="h-3 w-3 text-gray-500 dark:text-gray-400" /> : <ChevronRight className="h-3 w-3 text-gray-500 dark:text-gray-400" />}
         <span className="text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider flex-1">
           {CATEGORY_LABELS[category.label] || category.label}
         </span>
-        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-          allComplete ? 'bg-green-50 dark:bg-green-950/50 text-green-600 dark:text-green-400' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'
+        <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${
+          allComplete ? 'bg-green-50 dark:bg-green-950/50 text-green-700 dark:text-green-400' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
         }`}>
           {category.complete}/{category.total}
         </span>
@@ -135,8 +135,8 @@ export default function CompletenessPanel({ incidentId, incidentData, onRefresh 
   if (loading) {
     return (
       <div className="flex items-center gap-2 py-3 px-4 bg-gray-50 dark:bg-gray-950 rounded-lg">
-        <Loader2 className="h-4 w-4 text-gray-400 animate-spin" />
-        <span className="text-xs text-gray-400">Checking completeness...</span>
+        <Loader2 className="h-4 w-4 text-gray-500 dark:text-gray-400 animate-spin" />
+        <span className="text-xs text-gray-500 dark:text-gray-400">Checking completeness...</span>
       </div>
     );
   }
@@ -145,7 +145,7 @@ export default function CompletenessPanel({ incidentId, incidentData, onRefresh 
     return (
       <div className="flex items-center gap-2 py-3 px-4 bg-red-50 dark:bg-red-950/50 rounded-lg">
         <XCircle className="h-4 w-4 text-red-400" />
-        <span className="text-xs text-red-500">{error}</span>
+        <span className="text-xs text-red-700 dark:text-red-400">{error}</span>
         <button onClick={fetchCompleteness} className="ml-auto text-xs text-red-600 dark:text-red-400 underline">Retry</button>
       </div>
     );
@@ -170,17 +170,21 @@ export default function CompletenessPanel({ incidentId, incidentData, onRefresh 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">{data.label}</span>
+            {/* 700, not 600, on both pills: on its own -50 tint green-600 measures
+                3.08:1 and red-600 4.36:1 — both under 4.5. A tinted pill is not the
+                white card it sits on, and the backdrop is half the measurement.
+                The red branch had never been rendered by any sweep. */}
             {data.readyForSubmission ? (
-              <span className="text-[10px] font-bold uppercase tracking-wider text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/50 px-2 py-0.5 rounded-full">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/50 px-2 py-0.5 rounded-full">
                 Ready
               </span>
             ) : (
-              <span className="text-[10px] font-bold uppercase tracking-wider text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/50 px-2 py-0.5 rounded-full">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/50 px-2 py-0.5 rounded-full">
                 {data.required.total - data.required.complete} required missing
               </span>
             )}
           </div>
-          <p className="text-[11px] text-gray-400 mt-0.5">
+          <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
             {data.complete} of {data.total} fields complete
             {data.checks.filter(c => c.aiAction).length > 0 && (
               <> · <Sparkles className="h-3 w-3 inline text-amber-400" /> AI can help with {data.checks.filter(c => c.aiAction && !c.complete).length} field(s)</>
@@ -191,7 +195,7 @@ export default function CompletenessPanel({ incidentId, incidentData, onRefresh 
           className="h-3.5 w-3.5 text-gray-300 dark:text-gray-600 hover:text-gray-500 transition-colors"
           onClick={(e) => { e.stopPropagation(); fetchCompleteness(); }}
         />
-        {collapsed ? <ChevronRight className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
+        {collapsed ? <ChevronRight className="h-4 w-4 text-gray-500 dark:text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-500 dark:text-gray-400" />}
       </button>
 
       {/* Body */}

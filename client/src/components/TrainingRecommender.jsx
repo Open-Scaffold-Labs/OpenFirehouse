@@ -249,7 +249,7 @@ export default function TrainingRecommender() {
                       <div className="bg-blue-500" style={{
                         height: '100%',
                         width: `${gap.adoptionPercentage}%`,
-                        transition: 'width 0.3s'
+                        transition: 'width 0.3s' // impeccable-disable-line layout-transition: one-shot fill on data load, no continuous animation
                       }} />
                     </div>
                   </div>
@@ -616,7 +616,7 @@ export default function TrainingRecommender() {
                     height: '100%',
                     width: `${Math.min(percent, 100)}%`,
                     background: percent >= 80 ? '#10b981' : percent >= 60 ? '#f59e0b' : '#ef4444',
-                    transition: 'width 0.3s'
+                    transition: 'width 0.3s' // impeccable-disable-line layout-transition: one-shot fill on data load, no continuous animation
                   }} />
                 </div>
               </div>
@@ -651,7 +651,7 @@ export default function TrainingRecommender() {
                 height: '100%',
                 width: `${Math.min(oshaCompliance?.percentage || 0, 100)}%`,
                 background: (oshaCompliance?.percentage || 0) >= 80 ? '#10b981' : (oshaCompliance?.percentage || 0) >= 60 ? '#f59e0b' : '#ef4444',
-                transition: 'width 0.3s'
+                transition: 'width 0.3s' // impeccable-disable-line layout-transition: one-shot fill on data load, no continuous animation
               }} />
             </div>
           </div>

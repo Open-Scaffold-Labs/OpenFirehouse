@@ -1,30 +1,41 @@
 const express = require('express');
 const router = express.Router();
+const { requireOfficer } = require('../middleware/requireRole');
 const { pool } = require('../db');
 
+// Daily staffing = the date-keyed RIDING BOARD (1.1c-b / migration 0070).
+// daily_staffing was folded into apparatus_assignments: the on-duty assignment IS the
+// timecard line, and a seatless-but-paid assignment (apparatus_id NULL — duty command /
+// floater / admin / coverage) is first-class. Member name/rank + apparatus designation are
+// resolved by JOIN (never stored on the board). The response keeps the legacy shape:
+// `position` aliases position_name; `apparatus_name` from apparatus.designation.
+
 // GET / — daily staffing for a given date
-// If no manual daily_staffing entries exist, auto-populate from the Duty Schedule (shifts table)
+// If no board entries exist for the date, auto-populate from the Duty Schedule (shifts table)
 router.get('/', async (req, res) => {
   try {
     const stationId = req.user.department_id;
     const date = req.query.date || new Date().toISOString().slice(0, 10);
 
-    // 1) Check for manual daily_staffing entries first
+    // 1) Board entries first (the folded riding board)
     const { rows } = await pool.query(`
-      SELECT ds.*, m.name AS member_name, m.rank AS member_rank,
+      SELECT aa.id, aa.department_id, aa.station_id, aa.date, aa.member_id,
+             aa.position_name AS position, aa.apparatus_id, aa.position_id,
+             aa.status, aa.start_time, aa.end_time, aa.hours, aa.notes,
+             m.name AS member_name, m.rank AS member_rank,
              a.designation AS apparatus_name
-      FROM daily_staffing ds
-      LEFT JOIN members m ON m.id = ds.member_id
-      LEFT JOIN apparatus a ON a.id = ds.apparatus_id
-      WHERE ds.department_id = $2 AND ds.date = $1
-      ORDER BY ds.apparatus_id, ds.position
+      FROM apparatus_assignments aa
+      LEFT JOIN members m ON m.id = aa.member_id
+      LEFT JOIN apparatus a ON a.id = aa.apparatus_id
+      WHERE aa.department_id = $2 AND aa.date = $1
+      ORDER BY aa.apparatus_id NULLS LAST, aa.position_name
     `, [date, stationId]);
 
     if (rows.length > 0) {
       return res.json({ data: rows, date, source: 'manual' });
     }
 
-    // 2) No manual entries — pull from Duty Schedule (shifts table)
+    // 2) No board entries — pull from Duty Schedule (shifts table)
     //    Include Day shift crew + Duty Officer for a complete on-duty picture.
     const { rows: shifts } = await pool.query(
       `SELECT id, date, "shiftType", crew, "memberIds", notes FROM shifts WHERE department_id = $2 AND date = $1`,
@@ -145,21 +156,84 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET /summary — staffing summary for date range
+// GET /mine?days=N — the CALLER's upcoming tours (1.7 companion member surface).
+// JWT-derived member (members.user_id — the 1.2e pattern; never a client-sent id), union
+// of riding-board rows and roster shifts (id-first, name fallback — rename-proof), deduped
+// per date+source, ascending. Read-only; any authed client (the phone's My Schedule).
+router.get('/mine', async (req, res) => {
+  try {
+    const deptId = req.user.department_id;
+    const days = Math.min(Math.max(parseInt(req.query.days, 10) || 30, 1), 90);
+    const m = await pool.query(
+      'SELECT id, name FROM members WHERE user_id = $1 AND department_id = $2 LIMIT 1',
+      [req.user.id, deptId]);
+    if (!m.rows.length) {
+      return res.status(403).json({ error: 'Your login is not linked to a roster member.', code: 'NO_MEMBER_LINK' });
+    }
+    const me = m.rows[0];
+    const today = new Date().toISOString().slice(0, 10);
+    const end = new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
+
+    const board = await pool.query(
+      `SELECT aa.date, aa.position_name, aa.start_time, aa.end_time, aa.hours, aa.status,
+              a.designation AS apparatus_name
+         FROM apparatus_assignments aa
+         LEFT JOIN apparatus a ON a.id = aa.apparatus_id
+        WHERE aa.department_id = $1 AND aa.member_id = $2 AND aa.date >= $3 AND aa.date <= $4
+        ORDER BY aa.date`, [deptId, me.id, today, end]);
+
+    const shifts = await pool.query(
+      `SELECT id, date, "shiftType", crew, "memberIds" FROM shifts
+        WHERE department_id = $1 AND date >= $2 AND date <= $3 ORDER BY date`,
+      [deptId, today, end]);
+    const { memberOnShift } = require('../utils/leaveSchedule');
+    // pg returns DATE columns as JS Dates at LOCAL midnight — format with local components
+    // (never toISOString, which can shift the day across the UTC boundary: local-day doctrine).
+    const isoDay = (v) => {
+      if (typeof v === 'string') return v.slice(0, 10);
+      const dt = new Date(v);
+      return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    };
+    const boardDates = new Set(board.rows.map((r) => isoDay(r.date)));
+    const rosterTours = shifts.rows
+      .map((s) => ({
+        ...s,
+        crew: typeof s.crew === 'string' ? JSON.parse(s.crew || '[]') : (s.crew || []),
+        memberIds: typeof s.memberIds === 'string' ? JSON.parse(s.memberIds || '[]') : (s.memberIds || []),
+      }))
+      .filter((s) => memberOnShift(s, me.id, me.name) && !boardDates.has(isoDay(s.date)))
+      .map((s) => ({
+        date: isoDay(s.date), source: 'roster', shift_type: s.shiftType,
+        position_name: '', apparatus_name: null, start_time: null, end_time: null, hours: null,
+      }));
+
+    const tours = [
+      ...board.rows.map((r) => ({ ...r, date: isoDay(r.date), source: 'board', shift_type: null })),
+      ...rosterTours,
+    ].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
+    res.json({ data: { member_id: me.id, member_name: me.name, days, tours } });
+  } catch (err) {
+    console.error('GET /api/daily-staffing/mine error:', err);
+    res.status(500).json({ error: 'Failed to load your schedule' });
+  }
+});
+
+// GET /summary — staffing summary for date range (hours now live on the board)
 router.get('/summary', async (req, res) => {
   try {
     const stationId = req.user.department_id;
     const start = req.query.start || new Date().toISOString().slice(0, 10);
     const end = req.query.end || start;
     const { rows } = await pool.query(`
-      SELECT ds.date,
-             COUNT(DISTINCT ds.member_id) AS total_on_duty,
-             COUNT(DISTINCT ds.apparatus_id) AS apparatus_staffed,
-             SUM(ds.hours) AS total_hours
-      FROM daily_staffing ds
-      WHERE ds.department_id = $3 AND ds.date BETWEEN $1 AND $2
-      GROUP BY ds.date
-      ORDER BY ds.date
+      SELECT aa.date,
+             COUNT(DISTINCT aa.member_id) AS total_on_duty,
+             COUNT(DISTINCT aa.apparatus_id) AS apparatus_staffed,
+             SUM(aa.hours) AS total_hours
+      FROM apparatus_assignments aa
+      WHERE aa.department_id = $3 AND aa.date BETWEEN $1 AND $2
+      GROUP BY aa.date
+      ORDER BY aa.date
     `, [start, end, stationId]);
     res.json({ data: rows });
   } catch (err) {
@@ -167,20 +241,20 @@ router.get('/summary', async (req, res) => {
   }
 });
 
-// GET /roster — available members not yet assigned for a date
-// Excludes members from both manual daily_staffing AND from the Duty Schedule
+// GET /roster — available members not yet on the board for a date
+// Excludes members already on the board AND from the Duty Schedule
 router.get('/roster', async (req, res) => {
   try {
     const stationId = req.user.department_id;
     const date = req.query.date || new Date().toISOString().slice(0, 10);
 
-    // Collect member IDs already on duty from manual entries
+    // Collect member IDs already on duty from board entries
     const { rows: manualRows } = await pool.query(
-      `SELECT member_id FROM daily_staffing WHERE department_id = $2 AND date = $1`, [date, stationId]
+      `SELECT member_id FROM apparatus_assignments WHERE department_id = $2 AND date = $1`, [date, stationId]
     );
     const assignedIds = new Set(manualRows.map(r => r.member_id));
 
-    // Also collect member IDs from Duty Schedule if no manual entries
+    // Also collect member IDs from Duty Schedule if no board entries
     if (assignedIds.size === 0) {
       const { rows: shifts } = await pool.query(
         `SELECT crew, "memberIds" FROM shifts WHERE department_id = $2 AND date = $1`, [date, stationId]
@@ -214,20 +288,31 @@ router.get('/roster', async (req, res) => {
   }
 });
 
-// POST / — assign member to daily staffing
-router.post('/', async (req, res) => {
+// POST / — assign member to the riding board for a date
+router.post('/', requireOfficer, async (req, res) => {
   try {
     const stationId = req.user.department_id;
+    if (!stationId) return res.status(401).json({ error: 'NO_DEPARTMENT', code: 'NO_DEPARTMENT' });
     const { member_id, date, position, apparatus_id, status, start_time, end_time, hours, notes } = req.body;
+    if (!member_id) return res.status(400).json({ error: 'member_id required', code: 'MEMBER_REQUIRED' });
+
+    // One person per seat per rig per day (uq_apparatus_assignments_seat). A real seat
+    // that is re-assigned overwrites (last-write-wins on the seat); seatless rows
+    // (apparatus_id NULL) never collide and always insert. Race-proof via ON CONFLICT.
     const { rows } = await pool.query(`
-      INSERT INTO daily_staffing (station_id, date, member_id, position, apparatus_id, status, start_time, end_time, hours, notes)
+      INSERT INTO apparatus_assignments
+        (department_id, date, member_id, position_name, apparatus_id, status, start_time, end_time, hours, notes)
       VALUES ($10, $1, $2, $3, $4, $5, $6, $7, $8, $9)
+      ON CONFLICT (department_id, date, apparatus_id, position_name)
+      DO UPDATE SET member_id = EXCLUDED.member_id, status = EXCLUDED.status,
+                    start_time = EXCLUDED.start_time, end_time = EXCLUDED.end_time,
+                    hours = EXCLUDED.hours, notes = EXCLUDED.notes
       RETURNING *
     `, [
       date || new Date().toISOString().slice(0, 10),
       member_id, position || '', apparatus_id || null,
       status || 'on_duty', start_time || '08:00', end_time || '08:00',
-      hours || 24, notes || '',
+      hours != null ? hours : 24, notes || '',
       stationId,
     ]);
     res.status(201).json(rows[0]);
@@ -237,17 +322,19 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PATCH /:id — update staffing entry
-router.patch('/:id', async (req, res) => {
+// PATCH /:id — update a board entry
+router.patch('/:id', requireOfficer, async (req, res) => {
   try {
     const stationId = req.user.department_id;
-    const allowed = ['position', 'apparatus_id', 'status', 'start_time', 'end_time', 'hours', 'notes'];
+    // Map the legacy `position` field to the board column `position_name`.
+    const colMap = { position: 'position_name', apparatus_id: 'apparatus_id', status: 'status',
+                     start_time: 'start_time', end_time: 'end_time', hours: 'hours', notes: 'notes' };
     const sets = [];
     const vals = [];
     let idx = 1;
-    for (const key of allowed) {
+    for (const key of Object.keys(colMap)) {
       if (req.body[key] !== undefined) {
-        sets.push(`"${key}" = $${idx++}`);
+        sets.push(`"${colMap[key]}" = $${idx++}`);
         vals.push(req.body[key]);
       }
     }
@@ -255,7 +342,7 @@ router.patch('/:id', async (req, res) => {
     vals.push(parseInt(req.params.id));
     vals.push(stationId);
     const { rows } = await pool.query(
-      `UPDATE daily_staffing SET ${sets.join(', ')} WHERE id = $${idx} AND department_id = $${idx + 1} RETURNING *`, vals
+      `UPDATE apparatus_assignments SET ${sets.join(', ')} WHERE id = $${idx} AND department_id = $${idx + 1} RETURNING *`, vals
     );
     res.json(rows[0] || {});
   } catch (err) {
@@ -264,10 +351,10 @@ router.patch('/:id', async (req, res) => {
 });
 
 // DELETE /:id
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireOfficer, async (req, res) => {
   try {
     const stationId = req.user.department_id;
-    await pool.query('DELETE FROM daily_staffing WHERE id = $1 AND department_id = $2', [req.params.id, stationId]);
+    await pool.query('DELETE FROM apparatus_assignments WHERE id = $1 AND department_id = $2', [req.params.id, stationId]);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

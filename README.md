@@ -3,16 +3,17 @@
 **The open-source operating system for the fire service.** Incident command, NFIRS/NERIS records, roster and staffing, apparatus, training and compliance, hydrants, pre-plans, and an AI assistant — one application that replaces legacy $800–$3,000/year RMS platforms. React 19 + Express + PostgreSQL, deployed on Vercel + Supabase.
 
 [**Live demo**](https://openfirehouse.openscaffoldlabs.com) ·
+[**Sign up your department**](https://openfirehouse.openscaffoldlabs.com/signup) ·
 [**Install guide**](docs/INSTALL.md) ·
 [**User manual**](docs/user-guide.md) ·
 [**Architecture**](docs/ARCHITECTURE.md) ·
 [**Contributing**](CONTRIBUTING.md)
 
-- 🆓 **Free and open source, at any size** — it's [AGPL v3](LICENSE); clone it and run it on your own Vercel + Supabase for $0, forever.
-- 🚒 **Built for the firehouse** — incident command, NFIRS/NERIS, roster, apparatus, training, hydrants, pre-plans, and an AI assistant in one application.
-- 🔓 **Can't be locked in** — the platform is open source, your data exports in one click any time, and the code keeps running no matter what.
+- 🆓 **Free to self-host, at any size** — it's [AGPL v3](LICENSE); clone it and run it on your own Vercel + Supabase for $0.
+- 🏠 **Free managed hosting** for volunteer / small departments (≤30 members AND ≤2 stations AND ≤$750K budget). Larger departments pay a fair, size-based hosting fee — see [Pricing](#pricing).
+- 🔓 **Can't be locked in** — the platform is open source, your data exports in one click any time, and the code keeps running no matter what happens to us.
 
-> **Status:** single-department deployments are production-ready. Multi-department (multi-tenant) support is in progress — see [ROADMAP.md](docs/ROADMAP.md).
+> **Status:** single-department deployments are production-ready. Multi-department (multi-tenant) hosting is in progress — see [ROADMAP.md](docs/ROADMAP.md).
 
 ---
 
@@ -46,15 +47,38 @@ npm install
 # 2. Configure the server
 cp server/.env.example server/.env
 #    Set DATABASE_URL (Supabase or local Postgres) and JWT_SECRET.
-#    Optional: ANTHROPIC_API_KEY (AI), SUPABASE_URL + SUPABASE_ANON_KEY (realtime).
+#    Optional: ANTHROPIC_API_KEY (AI); SUPABASE_URL + SUPABASE_ANON_KEY to PUBLISH
+#    realtime broadcasts.
 
-# 3. Run client + server together
+# 3. Configure the client (optional — only needed for live push)
+cp client/.env.example client/.env
+#    Set VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY so the browser SUBSCRIBES to
+#    those broadcasts. Live push needs BOTH halves: the server pair publishes, this
+#    pair subscribes. Skip this and everything still works — dispatch, unit status
+#    and the maps fall back to a 20s poll instead of instant push.
+
+# 4. Run client + server together
 npm run dev
 ```
 
 Open <http://localhost:5173> (the API runs on `:3005` and is proxied in dev). On first run with an empty database, the **First-Run Setup** screen creates your chief account and walks you through stations, apparatus, shifts, and ranks.
 
 **Clean install vs. demo data.** By default OpenFirehouse seeds only reference data (the ERG 2024 hazmat library and the NFPA course catalog) — no fictional records. Set `SEED_DEMO=true` to load the fictional "Maplewood Fire Department" dataset used by the public demo. Full details and production deployment (Vercel + Supabase) are in the [**Install guide**](docs/INSTALL.md) and [**Configuration reference**](docs/CONFIGURATION.md).
+
+## Pricing
+
+OpenFirehouse is **open source under [AGPL v3](LICENSE)** — any department, any size, can self-host it free, forever. What's priced is our **optional managed hosting** (we run, back up, update, and support it for you), governed by the [Hosted Service Agreement](HOSTED-SERVICE-AGREEMENT.md). Tier is set by objective size ("Rule C"); fill in your numbers at signup and the tier is shown instantly.
+
+| Tier | Members | Stations | Budget | Managed-hosting price |
+|---|---|---|---|---|
+| **Independent** | ≤ 30 | ≤ 2 | ≤ $750K | **Free** |
+| **Career Small** | ≤ 80 | ≤ 4 | ≤ $3M | **$3,000 / year** |
+| **Career Mid** | ≤ 200 | ≤ 9 | ≤ $10M | **$12,000 / year** |
+| **Metro** | unlimited | unlimited | unlimited | **Custom (enterprise quote)** |
+
+Every tier includes every module — nothing is paywalled by feature. **Self-hosting any tier is always $0.** The binding [OpenFirehouse Pledge](HOSTED-SERVICE-AGREEMENT.md) guarantees one-click data export at any time (even after cancellation), a capped annual price increase (CPI or 5%, whichever is greater), and a permanently free Independent tier. Plain-English details: [Pricing FAQ](docs/PRICING-CHANGES-FAQ.md).
+
+Need terms outside the AGPL — e.g. shipping a closed fork or embedding OpenFirehouse in a proprietary product? See the [Commercial / OEM License](COMMERCIAL-LICENSE.md).
 
 ## Architecture
 
@@ -81,21 +105,23 @@ Deeper detail: [Architecture](docs/ARCHITECTURE.md) · [Data dictionary](docs/DA
 
 - [Architecture](docs/ARCHITECTURE.md) · [Data dictionary](docs/DATABASE.md) · [Development workflow](docs/Development-Workflow.md)
 - [Roadmap](docs/ROADMAP.md) · [Why AGPL](docs/WHY_AGPL.md)
-- [Contributing](CONTRIBUTING.md) · [Contributing with Claude](CONTRIBUTING-WITH-CLAUDE.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [Security policy](SECURITY.md) · [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [Security policy](SECURITY.md) · [Changelog](CHANGELOG.md)
 
 ## Contributing
 
-Pull requests, issues, and field feedback from working fire departments are all welcome. Contributions are accepted under a **[Contributor License Agreement](CLA.md)** — sign it once before your first merge. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and conventions, and [SECURITY.md](SECURITY.md) to report a vulnerability. A per-PR audit gate runs in CI (`.github/workflows/audit.yml`).
+Pull requests, issues, and field feedback from working fire departments are all welcome. Because OpenFirehouse is open-core (AGPL plus a commercial/OEM license), contributions are accepted under a **[Contributor License Agreement](CLA.md)** — sign it once before your first merge. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and conventions, and [SECURITY.md](SECURITY.md) to report a vulnerability. A per-PR audit gate runs in CI (`.github/workflows/audit.yml`).
 
 ## License & trademarks
 
 **AGPL v3** ([LICENSE](LICENSE)) — copyleft open source. Self-host it, modify it, and run it for your department with no obligation to share anything back. If you offer a *modified* OpenFirehouse to other organizations as a network service, you must publish your modifications under the same AGPL terms. Why AGPL: [docs/WHY_AGPL.md](docs/WHY_AGPL.md).
 
-**Trademarks** — the AGPL covers the *code*, not the *brand*. "Open Firehouse" and "FireHazmat" are trademarks of Open Scaffold Labs, LLC (used in stylized form as "OpenFirehouse"; U.S. trademark registration applications pending). Fork and self-host freely, but please give your fork its own name — see [TRADEMARK-POLICY.md](TRADEMARK-POLICY.md).
+- **Commercial / OEM license** for use outside the AGPL: [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+- **Managed hosting** (the paid offering): [HOSTED-SERVICE-AGREEMENT.md](HOSTED-SERVICE-AGREEMENT.md).
+- **Trademarks** — the AGPL covers the *code*, not the *brand*. "OpenFirehouse" and "Fire Hazmat" are trademarks of Open Scaffold Labs, LLC (registrations in progress). Fork and self-host freely, but please give your fork its own name — see [TRADEMARK-POLICY.md](TRADEMARK-POLICY.md).
 
 ## Open Scaffold Labs
 
-OpenFirehouse is the flagship product of [Open Scaffold Labs](https://openscaffoldlabs.com). Companion app: **FireHazmat** — an offline hazmat reference and incident-command tool for responders, on the App Store.
+OpenFirehouse is the flagship product of [Open Scaffold Labs](https://openscaffoldlabs.com). Companion app: **Fire Hazmat** — an offline hazmat reference and incident-command tool for responders, on the App Store.
 
 ---
 
