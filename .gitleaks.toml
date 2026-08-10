@@ -11,3 +11,9 @@ description = "Fake API-key fixtures used only to test the redaction unit (sanit
 paths = [
   '''server/src/tests/aiModel\.test\.js''',
 ]
+
+[[allowlists]]
+description = "MFA auth test fixtures — an xkcd sample password and a deliberately-wrong signing secret used to prove a bad token is rejected. No real secrets."
+paths = [
+  '''server/src/tests/mfaAuth\.test\.js''',
+]
