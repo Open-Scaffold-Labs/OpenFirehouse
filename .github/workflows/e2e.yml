@@ -80,8 +80,8 @@ jobs:
 
       # ⚠️ The baseline is NOT a pg_dump of prod, despite what this step was named.
       # See the provenance correction in ci.yml's "Load schema baseline" step.
-      # NOTE: unlike ci.yml, e2e.yml has NO self-heal step, so it runs against an
-      # 0071-era schema — currently 57 migrations stale. Flagged, not fixed here.
+      # NOTE: kept in lockstep with ci.yml — the self-heal step below applies every
+      # migration newer than the baseline so e2e runs against the CURRENT schema.
       - name: Load schema baseline
         run: |
           if [ -f db/baseline.sql ]; then
@@ -89,6 +89,25 @@ jobs:
           else
             echo "::warning::db/baseline.sql absent — server initDb bootstrap will build the schema on first request."
           fi
+
+      # Self-healing schema — mirrors ci.yml's step of the same name. Apply every
+      # migration NEWER than db/baseline.head so data-backed journeys (e.g. the
+      # permits register) run against the current schema instead of the 0071-era
+      # baseline. Without it those specs fail on columns the stale baseline lacks
+      # (fi_permits.issued_by_user_id, etc.). Verified 2026-08-10: 0072→0128 apply
+      # clean onto the baseline (150→210 tables). This clears the schema-stale
+      # failures; the light-mode contrast specs (09) are separate design work.
+      - name: Apply migrations newer than the baseline (self-healing)
+        run: |
+          head="$(cat db/baseline.head 2>/dev/null || echo 0000)"
+          echo "baseline head: $head"
+          for f in $(ls docs/migrations/*.sql | sort); do
+            num="$(basename "$f" | cut -d- -f1)"
+            if [[ "$num" > "$head" ]]; then
+              echo "::notice::self-heal: applying migration newer than baseline ($head): $(basename "$f")"
+              psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
+            fi
+          done
 
       - name: Build client
         run: npm run build --workspace=client
