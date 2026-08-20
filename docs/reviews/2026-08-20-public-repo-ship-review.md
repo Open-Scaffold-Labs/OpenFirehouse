@@ -67,18 +67,27 @@ is department-keyed and RLS is actually on.
    sees it.** `docs/Development-Workflow.md` and
    `.github/workflows/README-deploy.md` say contributors push `main` and
    Vercel auto-deploys. `audit.yml` runs only on `pull_request` to `main`.
-   GitHub Actions has **no recorded `audit.yml` runs**. The gate CONTRIBUTING
-   advertises does not run on the path that actually ships.
+   Until this review PR, GitHub Actions had **no recorded `audit.yml` runs**.
+   Opening a PR does fire the gate (this PR’s audit passed). Push-to-`main`
+   still skips it, so the path CONTRIBUTING and the workflow docs describe
+   as the ship path never sees the audit.
 
 ### High
 
-4. **E2E on `main` is failing; the journeys that matter are still
-   scaffolding.** Last completed E2E runs on `main` (2026-08-10 and
-   2026-08-11) failed at “Run E2E (desktop project)”. The incident lifecycle,
-   NFIRS 5.0 schema export, and two-department isolation specs are
-   `test.fixme` (`e2e/journeys/01-incident-lifecycle.spec.js:22`,
-   `05-nfirs-neris-export.spec.js:19`, `06-tenancy-isolation.spec.js:37`).
-   What passes is login/shell, contrast, and permits layout.
+4. **E2E is red on `main` and on this docs-only PR — contrast, not
+   journeys.** Run `32424946739` (this branch, 2026-08-20): 45 passed,
+   14 skipped, 3 failed, 2 flaky. Failures are all
+   `e2e/journeys/09-contrast-sweep.spec.js` light-mode ratchets
+   (cap 0):
+   - dispatch/command: muted empty-state copy at 2.49:1
+     (`#99a1af` on `#f9fafb` — “Waiting for calls” / “Monitoring…”).
+   - dashboard (full + `@768px`): “128” at 3.65:1 (`#009966`) and
+     “0d” at 3.2:1 (`#e17100`).
+   Incident-form contrast is flaky (auditor counted 389 nodes, needs >400).
+   The operational journeys remain `test.fixme`:
+   `01-incident-lifecycle.spec.js:22`, `05-nfirs-neris-export.spec.js:19`,
+   `06-tenancy-isolation.spec.js:37`. Same class of red as `main`
+   (2026-08-10 / 2026-08-11). This markdown file did not introduce it.
 
 5. **SQL-vs-schema gate is reporting-only** after a production-class miss
    (calendar feed returned empty months with HTTP 200).
@@ -239,8 +248,8 @@ are the only topology the current tests actually prove.
 | Client/server `lint:undef` | Yes | Only `no-undef`; full lint excluded |
 | Client build | Yes | |
 | SQL prepare gate | Report only | |
-| E2E Playwright | Intended on `main` / PRs | Last completed `main` runs **failed**; 11 core tests are `fixme` |
-| 14-point audit | PR-only; needs `OSL_ECOSYSTEM_TOKEN` to clone private `openscaffold-core` | **No runs on record.** Push-to-main skips it. |
+| E2E Playwright | Intended on `main` / PRs | **Red.** Contrast ratchet on dashboard + dispatch/command light mode; 11 core journeys `fixme` |
+| 14-point audit | PR-only; needs `OSL_ECOSYSTEM_TOKEN` to clone private `openscaffold-core` | This PR’s audit **passed**. Push-to-`main` still never runs it. |
 | Nightly db-backup | Scheduled | **Failing** |
 
 Frameworks: server and client use Node’s built-in test runner. E2E is
