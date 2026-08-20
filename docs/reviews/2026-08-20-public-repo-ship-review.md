@@ -167,7 +167,7 @@ Enforced, not just prompted:
 - `server/src/tests/aiNarrativeGuard.test.js` fails if the declaration is
   deleted.
 - NERIS payload copies officer `incidents.notes` verbatim
-  (`server/src/utils/nerisPayload.js`).
+  (`server/src/utils/nerisPayload.js:272`).
 
 No active path was found that generates and persists AI prose into
 `incidents.notes` / NFIRS / NERIS. The remaining holes are unused
