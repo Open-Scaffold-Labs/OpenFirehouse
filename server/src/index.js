@@ -585,6 +585,7 @@ app.use('/api/recall',               require('./routes/recall'));
 app.use('/api/assistant',            require('./routes/assistant'));
 app.use('/api/workflows',            require('./routes/workflows'));
 app.use('/api/ai/action',           require('./routes/aiAction'));
+app.use('/api/agent',               require('./routes/agent'));
 app.use('/api/ai/enhance',          require('./routes/aiEnhance'));
 app.use('/api/modules',              require('./routes/modules'));
 app.use('/api/scenarios',            require('./routes/scenarios'));

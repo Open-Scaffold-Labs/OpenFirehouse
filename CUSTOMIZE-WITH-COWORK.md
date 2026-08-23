@@ -27,13 +27,19 @@ sees what's there, and you can ask it to do things in plain English:
 - "Look at the seed data — replace the demo apparatus list with our actual rigs and ranks."
 
 Cowork can also connect to your existing tools — Gmail, Google Calendar,
-Slack, Stripe, Box, Notion, and others — through what Anthropic calls
-**MCP servers** (Model Context Protocol). Once connected, Claude can read
-your inbox, draft replies, pull a roster from a Google Sheet, etc. — all
+Slack, Box, Notion, and others — through **MCP servers** (Model Context
+Protocol). Once connected, Claude can read your inbox or a spreadsheet
 with your explicit approval on each action.
 
-Cowork is the lowest-friction way for a department to customize OpenFirehouse
-without writing code.
+**Running the firehouse is not Claude editing `Layout.jsx`.** Day-to-day
+incident, roster, training, NERIS, and apparatus verbs live on the
+**department-local OpenFirehouse MCP** (`docs/AGENT-MCP.md`) — an agent
+process on your self-hosted install, using the same JWT and roles as the
+app. Legal-record writes wait for a chief or officer on the Dashboard.
+Cowork stays the path for branding, seed data, and SOPs.
+
+Cowork is the lowest-friction way for a department to customize those
+non-operational pieces without writing code.
 
 ---
 
@@ -159,24 +165,15 @@ it runs in the background.
 
 ## Set up OpenFirehouse for your department
 
-### Option A — Cloud install (recommended for most departments)
+### Option A — Self-host one department (the supported path)
 
-The simplest path is to use the hosted version we run at
-**<https://openfirehouse.openscaffoldlabs.com>**. Sign your department up,
-get your API key, and run from the browser or our iPad app. No install. No
-servers. We handle backups + updates.
-
-You can still use Cowork to customize the parts that are yours —
-SOPs, training, branding emails — without touching our infrastructure.
-
-### Option B — Self-host (departments with IT staff or strict data residency rules)
-
-OpenFirehouse is open source under AGPL v3. To run your own copy:
+OpenFirehouse is open source under AGPL v3. This slice is a **single
+department install** you run yourself — not a hosted Independent signup.
 
 1. **Sign up for a free Supabase account** at <https://supabase.com>. This is
    your database + auth backend.
-2. **Sign up for a free Vercel account** at <https://vercel.com>. This is
-   where the app runs.
+2. **Sign up for a free Vercel account** at <https://vercel.com> (or run
+   locally). This is where the app runs.
 3. **Clone the OpenFirehouse repo:**
    ```bash
    git clone https://github.com/Open-Scaffold-Labs/OpenFirehouse.git
@@ -189,11 +186,20 @@ OpenFirehouse is open source under AGPL v3. To run your own copy:
    Claude will read the repo's `INSTALL.md`, `CONFIGURATION.md`, and `CLAUDE.md`,
    and walk you through the steps one at a time. Approve each before it runs.
 
-5. **Test the install at `localhost:3000`** before deploying.
-6. **Deploy to Vercel** when you're satisfied — Cowork can do this for you.
+5. **Test the install at `localhost:5173`** before deploying (API on `:3005`).
+6. **Point an agent at the department MCP** when you want it to run fire
+   verbs — see [`docs/AGENT-MCP.md`](docs/AGENT-MCP.md). That process lives
+   on the install and uses a department JWT.
 
 Full self-host docs: [`docs/INSTALL.md`](docs/INSTALL.md) and
 [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md).
+
+### Option B — Cowork for branding, seed data, and SOPs
+
+Use Cowork to customize the parts that are yours — logo, apparatus seed,
+ranks, SOPs, training emails — without treating the source tree as the
+place an agent runs incidents. Connecting Slack or Gmail via Cowork MCP
+is optional and separate from the OpenFirehouse fire-verb MCP.
 
 ---
 
@@ -201,38 +207,32 @@ Full self-host docs: [`docs/INSTALL.md`](docs/INSTALL.md) and
 
 ### Show only the modules your department uses
 
-OpenFirehouse ships with a lot of modules — personnel, apparatus, training,
-incident log, NFIRS / NERIS, hydrant management, fire investigation,
-community risk, CAD integration, and more. Most departments don't use all of
-them, and a crowded sidebar is noise that makes the app slower to work with.
+OpenFirehouse ships with a lot of modules. Most departments don't use all
+of them. Hiding unused nav entries is a **customization** (Cowork), not how
+you operate the firehouse. Day-to-day reads and gated writes go through the
+department MCP (`docs/AGENT-MCP.md`), not through Claude rewriting
+`Layout.jsx`.
 
-Two ways to scope what shows up:
+If you still want a quieter sidebar:
 
 **Globally — hide a module for everyone.** Tell Claude:
 
 > "Open `client/src/components/Layout.jsx`. Find the module groups in the
 > nav. Comment out the entries for [list the modules you don't use — e.g.,
 > 'Cadet Program' and 'Fire Investigation']. Don't delete them — comment them
-> out so we can turn them back on later."
+> out so we can turn them back on later. Show me the diff before saving."
 
 The hidden modules stay in the codebase (and their database tables stay
 intact) — they just don't appear in the sidebar.
 
-**Per-role — show or hide modules by who's signed in.** OpenFirehouse uses a
-`canAccess(user, moduleId)` filter on the sidebar plus role definitions
-(see `Layout.jsx`'s `ROLES` map) and an `access` column on the underlying
-tables. Tell Claude:
+**Per-role — show or hide modules by who's signed in.** Role gates live in
+`client/src/data/auth.js` (`PAGE_ACCESS` / `canAccess`) and the matching
+server `requireRole` levels. Tell Claude:
 
-> "I want the [e.g., 'Maintenance Log' and 'Inspection Checks'] modules to
-> only show for users with the role 'Maintenance Chief' or higher. Find
-> where `canAccess` is defined, update the role mapping, and show me the
-> diff before saving."
+> "I want the [e.g., 'Maintenance Log'] module to only show for officers+.
+> Find `PAGE_ACCESS`, update the level, and show me the diff before saving."
 
-Same pattern works for hiding admin-only modules from line firefighters,
-gating training authoring to training officers, or hiding fire investigation
-until you have a qualified investigator on payroll. The access mapping is
-the single hub — change it there and the sidebar, dashboards, and module
-pages all respect the new rule.
+Authorization changes need a human reading the diff (see below).
 
 ### Update the apparatus list
 

@@ -1,0 +1,122 @@
+'use strict';
+/**
+ * agentInvoke.http.test.js — live proof that a tool call is authz-checked
+ * and a gated verb creates an approval item instead of writing the record.
+ *
+ * OPT-IN via TENANCY_TEST_DB (same as the other route suites). Skips clean
+ * without it. Local how-to without the test DB: docs/AGENT-MCP.md.
+ */
+const { test } = require('node:test');
+const assert = require('node:assert');
+const { mkAlignedDeptStation } = require('./helpers/alignedTenant');
+
+const TENANCY_TEST_DB = process.env.TENANCY_TEST_DB;
+if (!TENANCY_TEST_DB) {
+  test('agent invoke HTTP (live DB)', { skip: 'TENANCY_TEST_DB not set' }, () => {});
+} else {
+  process.env.DATABASE_URL = TENANCY_TEST_DB;
+  delete process.env.PORT;
+
+  test('agent invoke: authz + gated NERIS submit queues instead of writing', async () => {
+    const realSetInterval = global.setInterval;
+    global.setInterval = (...args) => {
+      const tmr = realSetInterval(...args);
+      if (tmr && typeof tmr.unref === 'function') tmr.unref();
+      return tmr;
+    };
+    let app;
+    try { app = require('../index'); } finally { global.setInterval = realSetInterval; }
+    const { pool } = require('../db');
+    const jwt = require('jsonwebtoken');
+    const { ACCESS_SECRET } = require('../config/jwtSecret');
+
+    const server = await new Promise((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+
+    async function api(method, path, token, body) {
+      const res = await fetch(baseUrl + path, {
+        method,
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(body ? { 'Content-Type': 'application/json' } : {}) },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      let json = null; try { json = await res.json(); } catch { /* non-JSON */ }
+      return { status: res.status, json };
+    }
+
+    const MARK = 'AG-MCP';
+    let deptA;
+    async function cleanup() {
+      if (deptA) {
+        await pool.query('DELETE FROM agent_approvals WHERE department_id = $1', [deptA]);
+        await pool.query('DELETE FROM incidents WHERE department_id = $1 AND "incidentNumber" LIKE $2', [deptA, `${MARK}%`]);
+      }
+      await pool.query(`DELETE FROM of_user_departments WHERE user_id IN (SELECT id FROM users WHERE username LIKE 'ag_mcp_%')`);
+      await pool.query(`DELETE FROM users WHERE username LIKE 'ag_mcp_%'`);
+      await pool.query(`DELETE FROM stations WHERE name LIKE '${MARK}%'`);
+      await pool.query(`DELETE FROM departments WHERE name LIKE '${MARK}%'`);
+    }
+
+    try {
+      let ready = false;
+      for (let i = 0; i < 30; i++) {
+        try { const r = await fetch(`${baseUrl}/api/setup-status`); if (r.status === 200) { ready = true; break; } } catch { /* not yet */ }
+        await new Promise((r2) => setTimeout(r2, 1000));
+      }
+      assert.ok(ready, 'DB never became ready');
+      await cleanup();
+
+      deptA = await mkAlignedDeptStation(pool, `${MARK} Dept`);
+      const chiefId = (await pool.query(
+        `INSERT INTO users (username, name, initials, role, "passwordHash", station_id)
+         VALUES ('ag_mcp_chief', 'Chief A', 'CA', 'chief', 'x', $1) RETURNING id`, [deptA])).rows[0].id;
+      const memberId = (await pool.query(
+        `INSERT INTO users (username, name, initials, role, "passwordHash", station_id)
+         VALUES ('ag_mcp_member', 'Member A', 'MA', 'member', 'x', $1) RETURNING id`, [deptA])).rows[0].id;
+      await pool.query(`INSERT INTO of_user_departments (user_id, department_id, role) VALUES ($1,$2,'chief') ON CONFLICT DO NOTHING`, [chiefId, deptA]);
+      await pool.query(`INSERT INTO of_user_departments (user_id, department_id, role) VALUES ($1,$2,'member') ON CONFLICT DO NOTHING`, [memberId, deptA]);
+
+      const chief = jwt.sign({ sub: chiefId, username: 'ag_mcp_chief', role: 'chief' }, ACCESS_SECRET, { expiresIn: '15m' });
+      const member = jwt.sign({ sub: memberId, username: 'ag_mcp_member', role: 'member' }, ACCESS_SECRET, { expiresIn: '15m' });
+
+      const unauth = await api('POST', '/api/agent/invoke', null, { verb: 'incident_read', args: {} });
+      assert.equal(unauth.status, 401, 'tool call without JWT is refused');
+
+      const created = await api('POST', '/api/incidents', chief, {
+        incidentNumber: `${MARK}-1`, date: '2026-08-23', type: 'Public Assist', address: '1 Main',
+        notes: 'Officer-written narrative — must stay.',
+      });
+      assert.equal(created.status, 201, 'seed incident');
+      const incId = created.json.data.id;
+      const notesBefore = created.json.data.notes;
+
+      const stripped = await api('POST', '/api/agent/invoke', member, {
+        verb: 'incident_update',
+        args: { id: incId, type: 'Vehicle Accident', notes: 'agent must not write this' },
+      });
+      assert.ok(stripped.status < 400, `fact update should execute: ${stripped.status} ${JSON.stringify(stripped.json)}`);
+      assert.ok((stripped.json.droppedKeys || []).includes('notes'), 'notes must be reported stripped');
+      const afterUpdate = await api('GET', `/api/incidents/${incId}`, chief);
+      assert.equal(afterUpdate.json.data.notes, notesBefore, 'narrative must be unchanged');
+      assert.equal(afterUpdate.json.data.type, 'Vehicle Accident');
+
+      const queued = await api('POST', '/api/agent/invoke', member, {
+        verb: 'neris_submit', args: { id: incId },
+      });
+      assert.equal(queued.status, 202, 'gated verb returns 202');
+      assert.equal(queued.json.queued, true);
+      assert.ok(queued.json.approval && queued.json.approval.id, 'approval row created');
+      const afterQueue = await api('GET', `/api/incidents/${incId}`, chief);
+      assert.equal(afterQueue.json.data.neris_status, 'draft', 'NERIS status must not change until a human accepts');
+
+      const memberAccept = await api('POST', `/api/agent/approvals/${queued.json.approval.id}/accept`, member, {});
+      assert.equal(memberAccept.status, 403, 'member cannot accept the queue');
+
+      const list = await api('GET', '/api/agent/approvals?status=pending', chief);
+      assert.equal(list.status, 200);
+      assert.ok(list.json.count >= 1);
+    } finally {
+      try { await cleanup(); } catch { /* ignore */ }
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+}
