@@ -189,7 +189,8 @@ department install** you run yourself — not a hosted Independent signup.
 5. **Test the install at `localhost:5173`** before deploying (API on `:3005`).
 6. **Point an agent at the department MCP** when you want it to run fire
    verbs — see [`docs/AGENT-MCP.md`](docs/AGENT-MCP.md). That process lives
-   on the install and uses a department JWT.
+   on the install and uses a **member or service-account** JWT. Do not put
+   a chief token in Claude Desktop. A human officer Accepts on the Dashboard.
 
 Full self-host docs: [`docs/INSTALL.md`](docs/INSTALL.md) and
 [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md).

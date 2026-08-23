@@ -6,12 +6,14 @@
  *   1. Tool calls are authz-checked (no user / low role → refuse).
  *   2. Gated verbs are classified as approval (not an immediate write).
  *   3. incident_update strips notes/narrative and never forwards them.
+ *   4. The requester cannot accept their own queued gated verb (403).
  */
 const { test } = require('node:test');
 const assert = require('node:assert');
 const {
   prepareInvocation, catalog, mcpTools, LEGAL_RECORD_KEYS, VERBS,
 } = require('../utils/agentVerbRegistry');
+const { authorizeResolve } = require('../utils/agentApprovalAuth');
 
 const member = { id: 9, role: 'member', roleLevel: 1, department_id: 4, name: 'Line FF' };
 const officer = { id: 3, role: 'officer', roleLevel: 2, department_id: 4, name: 'Capt' };
@@ -113,4 +115,30 @@ test('legal-record key list stays locked to the AI-narrative guard set plus desc
   }
   assert.ok(LEGAL_RECORD_KEYS.includes('description'));
   assert.equal(VERBS.incident_update.gate, 'strip_legal_record');
+});
+
+test('same user cannot accept their own queued gated verb; a different officer can', () => {
+  const queued = prepareInvocation('neris_submit', { id: 44 }, officer);
+  assert.equal(queued.ok, true);
+  assert.equal(queued.gate, 'approval');
+
+  const row = {
+    id: 1,
+    verb: 'neris_submit',
+    status: 'pending',
+    requested_by: officer.id,
+  };
+  const self = authorizeResolve(officer, row);
+  assert.equal(self.ok, false);
+  assert.equal(self.status, 403);
+  assert.equal(self.code, 'SELF_ACCEPT_FORBIDDEN');
+
+  const other = authorizeResolve(chief, row);
+  assert.equal(other.ok, true, 'a different officer is the human gate and may execute');
+
+  const clear = prepareInvocation('apparatus_status_update', { apparatusId: 7, status: 'in_service' }, officer);
+  assert.equal(clear.gate, 'approval');
+  const clearRow = { id: 2, verb: 'apparatus_status_update', status: 'pending', requested_by: officer.id };
+  assert.equal(authorizeResolve(officer, clearRow).code, 'SELF_ACCEPT_FORBIDDEN');
+  assert.equal(authorizeResolve(chief, clearRow).ok, true);
 });

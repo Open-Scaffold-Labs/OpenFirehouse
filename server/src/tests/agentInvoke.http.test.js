@@ -72,11 +72,16 @@ if (!TENANCY_TEST_DB) {
       const memberId = (await pool.query(
         `INSERT INTO users (username, name, initials, role, "passwordHash", station_id)
          VALUES ('ag_mcp_member', 'Member A', 'MA', 'member', 'x', $1) RETURNING id`, [deptA])).rows[0].id;
+      const officerId = (await pool.query(
+        `INSERT INTO users (username, name, initials, role, "passwordHash", station_id)
+         VALUES ('ag_mcp_officer', 'Capt A', 'OA', 'officer', 'x', $1) RETURNING id`, [deptA])).rows[0].id;
       await pool.query(`INSERT INTO of_user_departments (user_id, department_id, role) VALUES ($1,$2,'chief') ON CONFLICT DO NOTHING`, [chiefId, deptA]);
       await pool.query(`INSERT INTO of_user_departments (user_id, department_id, role) VALUES ($1,$2,'member') ON CONFLICT DO NOTHING`, [memberId, deptA]);
+      await pool.query(`INSERT INTO of_user_departments (user_id, department_id, role) VALUES ($1,$2,'officer') ON CONFLICT DO NOTHING`, [officerId, deptA]);
 
       const chief = jwt.sign({ sub: chiefId, username: 'ag_mcp_chief', role: 'chief' }, ACCESS_SECRET, { expiresIn: '15m' });
       const member = jwt.sign({ sub: memberId, username: 'ag_mcp_member', role: 'member' }, ACCESS_SECRET, { expiresIn: '15m' });
+      const officer = jwt.sign({ sub: officerId, username: 'ag_mcp_officer', role: 'officer' }, ACCESS_SECRET, { expiresIn: '15m' });
 
       const unauth = await api('POST', '/api/agent/invoke', null, { verb: 'incident_read', args: {} });
       assert.equal(unauth.status, 401, 'tool call without JWT is refused');
@@ -111,9 +116,22 @@ if (!TENANCY_TEST_DB) {
       const memberAccept = await api('POST', `/api/agent/approvals/${queued.json.approval.id}/accept`, member, {});
       assert.equal(memberAccept.status, 403, 'member cannot accept the queue');
 
+      const officerQueued = await api('POST', '/api/agent/invoke', officer, {
+        verb: 'neris_submit', args: { id: incId },
+      });
+      assert.equal(officerQueued.status, 202);
+      const selfAccept = await api('POST', `/api/agent/approvals/${officerQueued.json.approval.id}/accept`, officer, {});
+      assert.equal(selfAccept.status, 403, 'requester cannot accept their own item');
+      assert.equal(selfAccept.json.code, 'SELF_ACCEPT_FORBIDDEN');
+      const stillDraft = await api('GET', `/api/incidents/${incId}`, chief);
+      assert.equal(stillDraft.json.data.neris_status, 'draft', 'self-accept must not execute');
+
+      const otherAccept = await api('POST', `/api/agent/approvals/${officerQueued.json.approval.id}/accept`, chief, {});
+      assert.notEqual(otherAccept.json && otherAccept.json.code, 'SELF_ACCEPT_FORBIDDEN');
+      assert.notEqual(otherAccept.status, 403, 'a different officer may execute');
+
       const list = await api('GET', '/api/agent/approvals?status=pending', chief);
       assert.equal(list.status, 200);
-      assert.ok(list.json.count >= 1);
     } finally {
       try { await cleanup(); } catch { /* ignore */ }
       await new Promise((resolve) => server.close(resolve));

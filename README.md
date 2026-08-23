@@ -85,7 +85,7 @@ Need terms outside the AGPL — e.g. shipping a closed fork or embedding OpenFir
 - **Client** — React 19, Vite 7, Tailwind 4, Recharts, Apple MapKit (maps), ~178 lazy-loaded views.
 - **Server** — Express + PostgreSQL via `pg` (no ORM; parameterized SQL), ~90 tables, ~574 endpoints, lazy DB init for serverless cold starts.
 - **Real-time** — Supabase Realtime (live dispatch), web-push notifications, Twilio SMS.
-- **AI** — Anthropic SDK; 26 AI actions in `server/src/utils/aiActionRegistry.js` (prompt templates, not fire verbs). A department-local MCP (`docs/AGENT-MCP.md`) wraps existing JWT-gated routes; legal-record writes stay human-approved.
+- **AI** — Anthropic SDK; 26 AI actions in `server/src/utils/aiActionRegistry.js` (prompt templates, not fire verbs). A department-local MCP (`docs/AGENT-MCP.md`) wraps existing JWT-gated routes with a member or service-account token (not a chief token in Claude Desktop); legal-record writes stay human-approved on the Dashboard.
 - **Auth** — JWT + bcrypt, role-based access, per-department data scoping.
 - **Offline** — PWA service-worker caching for station use without connectivity.
 

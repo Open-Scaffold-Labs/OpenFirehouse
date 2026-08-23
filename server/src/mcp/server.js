@@ -6,8 +6,10 @@
  * Run next to the existing app/Postgres — not a hosted Independent.
  *
  *   OPENFIREHOUSE_API_URL=http://127.0.0.1:3005 \
- *   OPENFIREHOUSE_TOKEN=<department JWT> \
+ *   OPENFIREHOUSE_TOKEN=<member or service-account JWT> \
  *   node server/src/mcp/server.js
+ *
+ * Do not put a chief token here. Accept is a human officer on the Dashboard.
  *
  * The JWT is the same authz the app already uses. Tools call POST /api/agent/invoke.
  * See docs/AGENT-MCP.md.
@@ -32,7 +34,7 @@ function fail(id, code, message) {
 
 async function invokeVerb(name, args) {
   if (!TOKEN) {
-    const err = new Error('OPENFIREHOUSE_TOKEN is not set. Sign in to the department install and pass that JWT.');
+    const err = new Error('OPENFIREHOUSE_TOKEN is not set. Use a member or service-account JWT, not a chief token.');
     err.code = 'NO_TOKEN';
     throw err;
   }
@@ -110,10 +112,11 @@ if (process.argv.includes('--help') || process.argv.includes('-h')) {
   process.stdout.write(`OpenFirehouse department MCP (stdio)
 
 Self-host one department. The agent process runs on the install and
-authenticates with a department JWT — the same roles the app uses.
+authenticates with a member or service-account JWT. Do not put a
+chief token in Claude Desktop. A human officer Accepts on the Dashboard.
 
   OPENFIREHOUSE_API_URL=http://127.0.0.1:3005
-  OPENFIREHOUSE_TOKEN=<jwt from a department login>
+  OPENFIREHOUSE_TOKEN=<member or service-account JWT>
 
   npm run mcp --workspace=server
 

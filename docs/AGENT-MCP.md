@@ -29,15 +29,20 @@ Incident narrative is officer-written only — the agent cannot write it.
 ## Run the MCP server
 
 1. Run the department install (`npm run dev` — API on `:3005`).
-2. Sign in as a department user and copy the access JWT (browser
-   `localStorage.fs_token`, or a token you mint for an agent-named officer).
+2. Sign in as a **member or dedicated service account** (not a chief or
+   officer who will Accept on the Dashboard) and copy that access JWT
+   (`localStorage.fs_token` after that login).
 3. Point an MCP client (Claude Desktop / Cowork / another agent) at:
 
 ```bash
 OPENFIREHOUSE_API_URL=http://127.0.0.1:3005 \
-OPENFIREHOUSE_TOKEN=<that JWT> \
+OPENFIREHOUSE_TOKEN=<member or service-account JWT> \
 npm run mcp
 ```
+
+Do **not** put a chief token in Claude Desktop. The MCP token only
+invokes verbs. Accept is a human officer on the Dashboard — the
+requester cannot accept their own item (403).
 
 The process speaks MCP over stdio (`initialize`, `tools/list`, `tools/call`).
 Every tool call is `POST /api/agent/invoke` with the same `Authorization`
@@ -55,7 +60,7 @@ Claude Desktop example (`claude_desktop_config.json`):
       "cwd": "/path/to/OpenFirehouse",
       "env": {
         "OPENFIREHOUSE_API_URL": "http://127.0.0.1:3005",
-        "OPENFIREHOUSE_TOKEN": "<department JWT>"
+        "OPENFIREHOUSE_TOKEN": "<member or service-account JWT>"
       }
     }
   }
@@ -64,9 +69,10 @@ Claude Desktop example (`claude_desktop_config.json`):
 
 ## Approve or reject
 
-Officers and chiefs see **Agent approvals** on the existing Dashboard.
-Accept runs the underlying route as the approver. Reject dismisses it.
-There is no new admin console.
+Officers and chiefs see **Agent approvals** on the existing Dashboard
+while signed in as themselves — not via the MCP token. Accept runs the
+underlying route as that human. Reject dismisses it. The same user who
+queued the verb cannot Accept. There is no new admin console.
 
 ## Prove it locally (no extra test DB)
 
@@ -93,9 +99,9 @@ curl -s http://127.0.0.1:3005/api/agent/invoke \
   -d '{"verb":"neris_submit","args":{"id":1}}'
 # expect 202 and {"queued":true,"approval":{...}}
 
-# Officer/chief: list + accept or reject on the Dashboard, or:
+# Human officer session (Dashboard or this curl) — not the MCP token:
 curl -s http://127.0.0.1:3005/api/agent/approvals?status=pending \
-  -H "Authorization: Bearer $CHIEF_TOKEN"
+  -H "Authorization: Bearer $OFFICER_SESSION_TOKEN"
 ```
 
 Always-on unit tests: `server/src/tests/agentVerbs.test.js`

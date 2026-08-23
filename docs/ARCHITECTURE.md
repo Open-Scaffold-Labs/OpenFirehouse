@@ -136,7 +136,8 @@ narrative. Department agents use `server/src/utils/agentVerbRegistry.js`
 instead, exposed as a stdio MCP next to the install
 (`docs/AGENT-MCP.md`). Those verbs wrap existing JWT-gated routes.
 Legal-record writes (NERIS submit, notify chief, unit clear) land in
-`agent_approvals` for a chief/officer to accept on the Dashboard.
+`agent_approvals`. The requester cannot accept their own item; a
+different human officer accepts on the Dashboard.
 
 ## CAD integration
 

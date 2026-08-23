@@ -7,7 +7,7 @@
 
 const { pool } = require('../db');
 const { prepareInvocation } = require('./agentVerbRegistry');
-const { effectiveLevel } = require('../middleware/requireRole');
+const { authorizeResolve } = require('./agentApprovalAuth');
 
 const routers = {
   incidents: () => require('../routes/incidents'),
@@ -192,28 +192,13 @@ async function getApproval(id, departmentId) {
 }
 
 async function resolveApproval(parentReq, id, decision, note) {
-  if (effectiveLevel(parentReq.user) < 2) {
-    return {
-      ok: false,
-      status: 403,
-      error: 'This action requires officer authority.',
-      code: 'FORBIDDEN_ROLE',
-    };
-  }
   if (decision !== 'approved' && decision !== 'rejected') {
     return { ok: false, status: 400, error: 'decision must be approved or rejected', code: 'INVALID_ARGS' };
   }
 
   const existing = await getApproval(id, parentReq.user.department_id);
-  if (!existing) return { ok: false, status: 404, error: 'Approval not found' };
-  if (existing.status !== 'pending') {
-    return {
-      ok: false,
-      status: 409,
-      error: `This item is already ${existing.status}`,
-      code: 'ALREADY_RESOLVED',
-    };
-  }
+  const gate = authorizeResolve(parentReq.user, existing);
+  if (!gate.ok) return gate;
 
   if (decision === 'rejected') {
     const { rows } = await pool.query(
