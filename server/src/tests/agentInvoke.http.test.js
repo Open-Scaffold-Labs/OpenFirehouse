@@ -104,6 +104,17 @@ if (!TENANCY_TEST_DB) {
       assert.equal(afterUpdate.json.data.notes, notesBefore, 'narrative must be unchanged');
       assert.equal(afterUpdate.json.data.type, 'Vehicle Accident');
 
+      const nerisSneak = await api('POST', '/api/agent/invoke', member, {
+        verb: 'incident_update',
+        args: { id: incId, address: '9 Oak', neris_noaction: 'CANCELLED', neris_status: 'approved' },
+      });
+      assert.ok(nerisSneak.status < 400, `allowlisted address should execute: ${nerisSneak.status}`);
+      assert.ok((nerisSneak.json.droppedKeys || []).includes('neris_noaction'));
+      const afterSneak = await api('GET', `/api/incidents/${incId}`, chief);
+      assert.equal(afterSneak.json.data.address, '9 Oak');
+      assert.ok(afterSneak.json.data.neris_noaction == null, 'NERIS axis must not land on the incident');
+      assert.equal(afterSneak.json.data.neris_status, 'draft');
+
       const queued = await api('POST', '/api/agent/invoke', member, {
         verb: 'neris_submit', args: { id: incId },
       });

@@ -15,7 +15,7 @@ incident notes or NFIRS/NERIS narrative.
 | Verb | What happens |
 |---|---|
 | `incident_read` | Reads `GET /api/incidents` or `GET /api/incidents/:id` |
-| `incident_update` | Patches factual fields only. `notes` / narrative keys are stripped in code. |
+| `incident_update` | Patches only type, alarmLevel, address, units, personnel, disposition, injuries, date, time. Extra keys (including NERIS axis and notes) are dropped. |
 | `roster_read` | Reads `GET /api/members` |
 | `training_hours_read` | Reads `GET /api/training` |
 | `apparatus_status_read` | Reads `GET /api/units/status` |

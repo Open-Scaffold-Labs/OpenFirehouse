@@ -21,6 +21,12 @@ const LEGAL_RECORD_KEYS = [
   'notes', 'narrative', 'outcome_narrative', 'impediment_narrative', 'narrativeStatement', 'description',
 ];
 
+// Closed set for incident_update. A denylist is not enough: incUpdate also
+// allowlists NERIS axis fields (and notes). Extra keys must never ride through.
+const INCIDENT_UPDATE_ALLOWED = [
+  'type', 'alarmLevel', 'address', 'units', 'personnel', 'disposition', 'injuries', 'date', 'time',
+];
+
 function numId(value, label) {
   const n = Number(value);
   if (!Number.isInteger(n) || n <= 0) {
@@ -82,13 +88,22 @@ const VERBS = {
     prepare(args) {
       const id = numId(args.id, 'id');
       if (id.error) return id;
-      const body = { ...args };
-      delete body.id;
-      const droppedKeys = stripForbiddenKeys(body, LEGAL_RECORD_KEYS);
+      const body = {};
+      const droppedKeys = [];
+      for (const [key, value] of Object.entries(args || {})) {
+        if (key === 'id') continue;
+        if (INCIDENT_UPDATE_ALLOWED.includes(key)) body[key] = value;
+        else droppedKeys.push(key);
+      }
+      // Belt: even an allowlist slip must not carry narrative keys.
+      droppedKeys.push(...stripForbiddenKeys(body, LEGAL_RECORD_KEYS));
       if (!Object.keys(body).length) {
+        const legal = droppedKeys.some((k) => LEGAL_RECORD_KEYS.includes(k));
         return {
-          error: 'No allowed fields to update. Incident notes/narrative are officer-written only.',
-          code: 'LEGAL_RECORD_FORBIDDEN',
+          error: legal
+            ? 'No allowed fields to update. Incident notes/narrative are officer-written only.'
+            : 'No allowed fields to update. Only type, alarmLevel, address, units, personnel, disposition, injuries, date, and time are writable.',
+          code: legal ? 'LEGAL_RECORD_FORBIDDEN' : 'UNKNOWN_FIELD',
           status: 400,
           droppedKeys,
         };
@@ -308,6 +323,7 @@ function prepareInvocation(verbName, args, user) {
 module.exports = {
   VERBS,
   LEGAL_RECORD_KEYS,
+  INCIDENT_UPDATE_ALLOWED,
   catalog,
   mcpTools,
   prepareInvocation,

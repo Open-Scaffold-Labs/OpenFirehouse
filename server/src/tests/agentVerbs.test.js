@@ -5,13 +5,13 @@
  * Proves:
  *   1. Tool calls are authz-checked (no user / low role → refuse).
  *   2. Gated verbs are classified as approval (not an immediate write).
- *   3. incident_update strips notes/narrative and never forwards them.
+ *   3. incident_update allowlists factual fields only — extras/NERIS/notes never forward.
  *   4. The requester cannot accept their own queued gated verb (403).
  */
 const { test } = require('node:test');
 const assert = require('node:assert');
 const {
-  prepareInvocation, catalog, mcpTools, LEGAL_RECORD_KEYS, VERBS,
+  prepareInvocation, catalog, mcpTools, LEGAL_RECORD_KEYS, INCIDENT_UPDATE_ALLOWED, VERBS,
 } = require('../utils/agentVerbRegistry');
 const { authorizeResolve } = require('../utils/agentApprovalAuth');
 
@@ -102,6 +102,34 @@ test('incident_update strips notes/narrative and refuses a notes-only write', ()
   assert.equal(notesOnly.ok, false);
   assert.equal(notesOnly.code, 'LEGAL_RECORD_FORBIDDEN');
   assert.ok(notesOnly.droppedKeys.includes('notes'));
+});
+
+test('incident_update allowlist: extra and NERIS-axis keys never land on the PATCH body', () => {
+  assert.deepStrictEqual(INCIDENT_UPDATE_ALLOWED, [
+    'type', 'alarmLevel', 'address', 'units', 'personnel', 'disposition', 'injuries', 'date', 'time',
+  ]);
+
+  const sneaky = prepareInvocation('incident_update', {
+    id: 12,
+    type: 'Vehicle Fire',
+    neris_noaction: 'CANCELLED',
+    neris_incident_types: [{ value: 'NOEMERG||CANCELLED', primary: true }],
+    neris_status: 'approved',
+    neris_review: { action: 'approve' },
+    incidentNumber: 'HACK-1',
+    photos: ['x.jpg'],
+  }, member);
+  assert.equal(sneaky.ok, true);
+  assert.deepStrictEqual(sneaky.route.body, { type: 'Vehicle Fire' });
+  for (const key of ['neris_noaction', 'neris_incident_types', 'neris_status', 'neris_review', 'incidentNumber', 'photos']) {
+    assert.ok(sneaky.droppedKeys.includes(key), `${key} must be dropped`);
+    assert.ok(!(key in sneaky.route.body), `${key} must not land on the incident PATCH`);
+  }
+
+  const onlyNeris = prepareInvocation('incident_update', { id: 12, neris_noaction: 'CANCELLED' }, member);
+  assert.equal(onlyNeris.ok, false);
+  assert.equal(onlyNeris.code, 'UNKNOWN_FIELD');
+  assert.ok(!onlyNeris.route, 'no PATCH is prepared when only extra keys were sent');
 });
 
 test('legal-record key list stays locked to the AI-narrative guard set plus description', () => {
