@@ -103,9 +103,14 @@ test('incident_update strips notes/narrative and refuses a notes-only write', ()
 });
 
 test('legal-record key list stays locked to the AI-narrative guard set plus description', () => {
-  const { forbiddenResultKeys } = require('../utils/aiActionRegistry').ai_log_incident;
-  for (const key of forbiddenResultKeys) {
+  // Same closed set ai_log_incident.forbiddenResultKeys uses — listed here so
+  // this file never loads aiActionRegistry (which pulls in db/pg).
+  const aiLogIncidentForbidden = [
+    'notes', 'narrative', 'outcome_narrative', 'impediment_narrative', 'narrativeStatement',
+  ];
+  for (const key of aiLogIncidentForbidden) {
     assert.ok(LEGAL_RECORD_KEYS.includes(key), `missing ${key}`);
   }
-  assert.ok(VERBS.incident_update.gate === 'strip_legal_record');
+  assert.ok(LEGAL_RECORD_KEYS.includes('description'));
+  assert.equal(VERBS.incident_update.gate, 'strip_legal_record');
 });
