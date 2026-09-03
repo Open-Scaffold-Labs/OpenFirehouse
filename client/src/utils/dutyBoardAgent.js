@@ -9,14 +9,13 @@
 import {
   DUTY_BOARD_READ_VERBS,
   GATED_WRITE_VERBS,
-  invokeAgent,
   invokeRows,
-} from './askInvoke';
+} from './askVerbs';
 
 const WRITE_HINT = /\b(neris|submit|notify\s+chief|clear\s+unit|unit\s+clear|release\s+unit|mark\s+oos|out of service|update\s+incident|write\s+narrative|draft\s+narrative)\b/i;
 
 const INCIDENT_HINT = /\b(board|incident|call|dispatch|what's on|whats on|open medical|structure|on the air|run list|active call)\b/i;
-const ROSTER_HINT = /\b(staff|roster|minimum|crew|who'?s on|who is on|coverage|manpower|headcount|member)\b/i;
+const ROSTER_HINT = /\b(staff(?:ing)?|roster|minimums?|crew|who'?s on|who is on|coverage|manpower|headcount|members?)\b/i;
 const APPARATUS_HINT = /\b(apparatus|rig|engine|ladder|rescue|unit status|in service|in-service|oos|out of service)\b/i;
 const TRAINING_HINT = /\b(training|hours|ceu|losap|drill hours)\b/i;
 const OVERVIEW_HINT = /\b(overview|sitrep|status of (the )?(house|station)|how are we looking|full picture)\b/i;
@@ -181,7 +180,7 @@ export function formatDutyBoardReplies(plan, replies) {
  * @param {{ invoke?: typeof invokeAgent }} [opts]
  */
 export async function runDutyBoardTurn(message, opts = {}) {
-  const invoke = opts.invoke || invokeAgent;
+  const invoke = opts.invoke || (await import('./askInvoke')).invokeAgent;
   const plan = planDutyBoard(message);
   if (plan.kind !== 'reads') {
     return { plan, text: plan.text, replies: [] };

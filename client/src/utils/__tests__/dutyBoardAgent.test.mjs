@@ -1,6 +1,10 @@
+import { register } from 'node:module';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
+
+register('./_resolveExtensions.mjs', import.meta.url);
+
+const {
   CLOSEOUT_PLACEHOLDER,
   GATED_WRITE_REFUSAL,
   formatApparatus,
@@ -9,9 +13,9 @@ import {
   formatRoster,
   planDutyBoard,
   runDutyBoardTurn,
-} from '../dutyBoardAgent.js';
-import { DUTY_BOARD_READ_VERBS, GATED_WRITE_VERBS } from '../askInvoke.js';
-import { actingAsLine, actingAsRole } from '../actingAs.js';
+} = await import('../dutyBoardAgent.js');
+const { DUTY_BOARD_READ_VERBS, GATED_WRITE_VERBS } = await import('../askVerbs.js');
+const { actingAsLine, actingAsRole } = await import('../actingAs.js');
 
 test('Duty/Board maps board and staffing questions to read verbs only', () => {
   const board = planDutyBoard("What's on the board?");
