@@ -143,6 +143,8 @@ npx --workspace=server node --test src/tests/agentInvoke.http.test.js
 - Discover verbs via `GET /api/agent/verbs`.
 - Reads above are live. Gated writes must show “queued — waiting on
   Dashboard Accept,” never pretend NERIS or unit-clear already happened.
+- In-app chat face: [`docs/ASK-OPEN-FIREHOUSE.md`](ASK-OPEN-FIREHOUSE.md)
+  (stacked sibling PR).
 
 ## Run the stdio MCP server (optional, not required for Ask)
 

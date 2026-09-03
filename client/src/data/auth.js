@@ -120,6 +120,7 @@ export function seesAllCertAlerts(user) {
 export const PAGE_ACCESS = {
   // ── Everyone (level 1) ──────────────────────────────────────────────────
   dashboard:            1,
+  ask:                  1,   // Ask Open Firehouse — same session, every signed-in member
   roster:               1,
   schedule:             1,
   hours:                1,

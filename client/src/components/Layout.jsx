@@ -210,6 +210,7 @@ const NAV_GROUPS = [
 // page actually called Dashboard. A silent default is why nobody caught it.
 const ALL_ITEMS = [
   { id: 'calendar',      label: 'The Board'                },
+  { id: 'ask',           label: 'Ask Open Firehouse'       },
   { id: 'dashboard',     label: 'Dashboard'                },
   { id: 'messages',      label: 'Messages'                 },
   { id: 'command',       label: 'Incident Command Center'  },
@@ -550,6 +551,23 @@ export default function Layout({ children, activePage, onNavigate, settings, ale
           </div>
 
           <div className="ml-auto flex items-center gap-1 sm:gap-2">
+            {!isUnitSession(user) && canAccess(user, 'ask') && (
+              <button
+                type="button"
+                onClick={() => { handleNavigate('ask'); setSidebarOpen(false); }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold shadow-sm transition-colors ${
+                  activePage === 'ask'
+                    ? 'bg-white text-red-800'
+                    : 'bg-white text-red-800 hover:bg-red-50'
+                }`}
+                title="Ask Open Firehouse — chat as your signed-in badge"
+              >
+                <Sparkles size={14} aria-hidden="true" />
+                <span className="hidden sm:inline">Ask Open Firehouse</span>
+                <span className="sm:hidden">Ask</span>
+              </button>
+            )}
+
             {/* Messages button */}
             <button
               onClick={() => { handleNavigate('messages'); setSidebarOpen(false); }}

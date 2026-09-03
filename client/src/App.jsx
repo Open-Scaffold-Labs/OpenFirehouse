@@ -125,6 +125,7 @@ import { toneDispatch } from './utils/alertTones';
 import { supabase, dispatchTopic } from './utils/supabase';
 const OnboardingFlow = lazy(() => import('./components/OnboardingFlow'));
 const DepartmentSetupWizard = lazy(() => import('./components/DepartmentSetupWizard'));
+const AskOpenFirehouse = lazy(() => import('./components/AskOpenFirehouse'));
 const AssistantWidget = lazy(() => import('./components/AssistantWidget'));
 const DictationWidget = lazy(() => import('./components/DictationWidget'));
 const WorkflowPanel = lazy(() => import('./components/WorkflowPanel'));
@@ -187,6 +188,7 @@ export const RENDERABLE_PAGES = new Set([
   'schedule', 'settings', 'shift-trades', 'sogs', 'staffing-ai', 'stationlog', 'timesheets',
   'todays-crew', 'training', 'training-ai', 'training-catalog', 'training-compliance',
   'training-modules', 'training-plans', 'vacancy-fill', 'wellness', 'workflows',
+  'ask',
 ]);
 
 /**
@@ -805,6 +807,7 @@ export default function App() {
             userPrefs={userPrefs} onPrefsChange={(p) => { setUserPrefs(p); saveLocalPrefs(user.username, p); }}
             stations={stations} selectedStation={selectedStation} onStationChange={setSelectedStation}>
       <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="animate-spin h-8 w-8 border-4 border-red-600 border-t-transparent rounded-full" /></div>}>
+      {page === 'ask'        && <AskOpenFirehouse user={user} onNavigate={handleNavigate} onLogout={handleLogout} />}
       {page === 'dashboard'  && <Dashboard onNavigate={setPage} settings={settings} prefs={userPrefs} onRespond={setRespondingTo} user={user} selectedStation={selectedStation} unreadMessageCount={unreadMessageCount} />}
       {page === 'roster'      && <MemberRoster selectedStation={selectedStation} />}
       {page === 'recruitment' && <RecruitmentTracker user={user} />}

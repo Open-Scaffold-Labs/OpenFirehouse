@@ -139,7 +139,9 @@ routes. Immediate reads include incident, roster, today's duty/run
 list, the live Command Board, training hours, and apparatus status.
 Legal-record writes (NERIS submit, notify chief, unit clear) land in
 `agent_approvals`. The requester cannot accept their own item; a
-different human officer accepts on the Dashboard.
+different human officer accepts on the Dashboard. The in-app **Ask
+Open Firehouse** face (`docs/ASK-OPEN-FIREHOUSE.md`) is a signed-in
+client of the same `POST /api/agent/invoke` surface.
 
 ## CAD integration
 
