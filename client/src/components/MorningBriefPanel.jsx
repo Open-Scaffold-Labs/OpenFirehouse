@@ -85,7 +85,7 @@ export default function MorningBriefPanel({
         : 'bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden'}
       data-routine="morning-shift-brief"
     >
-      <div className={compact ? 'flex items-start justify-between gap-2' : 'flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-700'}>
+      <div className={compact ? 'space-y-2' : 'flex items-center justify-between gap-3 px-5 py-4 border-b border-gray-100 dark:border-gray-700'}>
         <div className="flex items-center gap-2 min-w-0">
           <Sunrise size={16} className="text-[#c41e3a] flex-shrink-0" aria-hidden="true" />
           <div className="min-w-0">
@@ -102,7 +102,7 @@ export default function MorningBriefPanel({
             type="button"
             onClick={runNow}
             disabled={busy}
-            className="flex-shrink-0 rounded-md bg-[#1e3a5f] px-2.5 py-1.5 text-[11px] font-bold text-white disabled:opacity-50"
+            className="w-full sm:w-auto rounded-md bg-[#1e3a5f] px-2.5 py-1.5 text-[11px] font-bold text-white disabled:opacity-50 whitespace-nowrap"
             data-testid="run-morning-brief-now"
           >
             {busy ? 'Reading…' : 'Run morning brief now'}
