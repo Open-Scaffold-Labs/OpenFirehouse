@@ -32,9 +32,11 @@ test('Ask client calls the live invoke contract, not a shadow API', () => {
   const invoke = read(INVOKE);
   assert.match(invoke, /\/api\/agent\/invoke/);
   assert.match(invoke, /\/api\/agent\/approvals/);
+  assert.match(invoke, /\/api\/agent\/routines\/morning-brief/);
   assert.doesNotMatch(invoke, /\/api\/ask\//);
   assert.match(read(AGENT), /invokeAgent|askInvoke/);
   assert.match(read(ASK_UI), /runDutyBoardTurn/);
+  assert.match(read(ASK_UI), /Run morning brief now|MorningBriefPanel/);
   const verbs = read(path.join(ROOT, 'client/src/utils/askVerbs.js'));
   assert.match(verbs, /board_read/);
   assert.match(verbs, /duty_read/);
@@ -43,7 +45,8 @@ test('Ask client calls the live invoke contract, not a shadow API', () => {
 });
 
 test('Ask UI copy never names the plumbing layer', () => {
-  for (const file of [ASK_UI, AGENT]) {
+  const PANEL = path.join(ROOT, 'client/src/components/MorningBriefPanel.jsx');
+  for (const file of [ASK_UI, AGENT, PANEL]) {
     const strings = uiStrings(read(file)).join('\n');
     assert.doesNotMatch(strings, /\bMCP\b/, `${file} leaked plumbing into a UI string`);
   }

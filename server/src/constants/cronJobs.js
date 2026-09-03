@@ -87,6 +87,13 @@ const CRON_JOBS = [
     // failure modes where our handler never runs.
     alsoWritesDomainLedger: 'fi_job_runs',
   },
+  {
+    name: 'morning_brief',
+    path: '/api/cron/morning-brief',
+    cadenceHours: 24,
+    label: 'Morning shift brief',
+    scope: 'per-department',
+  },
 ];
 
 const CRON_JOB_NAMES = CRON_JOBS.map((j) => j.name);

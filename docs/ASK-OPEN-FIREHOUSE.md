@@ -13,6 +13,13 @@ There is no bot login and no parallel database.
   user's token: `board_read` (Command Board), `duty_read` (today’s
   riding list), plus `incident_read`, `roster_read`,
   `training_hours_read`, and `apparatus_status_read`.
+- **Morning shift brief** is the first **routine** (scheduled watch).
+  It sits next to Ask — left-rail **Routines**, a right-rail card, and
+  the same card on the Dashboard — with **Run morning brief now** for
+  demo. It pulls `board_read`, `duty_read`, `roster_read`,
+  `apparatus_status_read`, and `incident_read` through the same invoke
+  session. Scheduled ticks stay silent when the house is calm. See
+  [`docs/ROUTINES.md`](ROUTINES.md).
 - **Incident closeout** and a dedicated **Training & Apparatus** mode
   are placeholders.
 - **Needs your Accept** lists pending `agent_approvals` and points

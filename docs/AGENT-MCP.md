@@ -145,6 +145,9 @@ npx --workspace=server node --test src/tests/agentInvoke.http.test.js
   Dashboard Accept,” never pretend NERIS or unit-clear already happened.
 - In-app chat face: [`docs/ASK-OPEN-FIREHOUSE.md`](ASK-OPEN-FIREHOUSE.md)
   (stacked sibling PR).
+- Morning shift brief (first routine): [`docs/ROUTINES.md`](ROUTINES.md).
+  Same invoke reads. `POST /api/agent/routines/morning-brief/run` is the
+  demo button. Cron is `GET /api/cron/morning-brief`.
 
 ## Run the stdio MCP server (optional, not required for Ask)
 

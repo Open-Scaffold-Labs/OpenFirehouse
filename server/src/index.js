@@ -142,6 +142,7 @@ app.use('/api/cron/neris-sweep',   require('./routes/cronNerisSweep'));
 // 3.1b — the permit expiry ladder. ⚠ Its 14:30 UTC schedule in vercel.json is a CORRECTNESS
 // constraint (the UTC day must equal every US department's local day); see the route header.
 app.use('/api/cron/permit-expiry', require('./routes/cronPermitExpiry'));
+app.use('/api/cron/morning-brief', require('./routes/cronMorningBrief'));
 // NOTE: /api/license runtime endpoints moved BEHIND requireAuth (post-login,
 // per-department gating) — see the authed mount below. Only the public license
 // retrieval page (/license) stays here.
@@ -1085,6 +1086,11 @@ if (require.main === module) {
   server.listen(PORT, () => {
     console.log(`Open Firehouse API listening on http://localhost:${PORT}`);
     console.log(`WebSocket radio feed available at ws://localhost:${PORT}/ws/radio`);
+    try {
+      require('./utils/morningBrief').startMorningBriefTicker();
+    } catch (err) {
+      console.warn('[morningBrief] ticker not started:', err.message);
+    }
   });
 }
 

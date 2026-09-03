@@ -42,3 +42,13 @@ export function acceptApproval(id, note) {
 export function rejectApproval(id, note) {
   return api.post(`/api/agent/approvals/${id}/reject`, note ? { note } : {});
 }
+
+/** Latest weekday morning brief for this department (same session JWT). */
+export function fetchMorningBrief() {
+  return api.get('/api/agent/routines/morning-brief');
+}
+
+/** Run the morning brief now as the signed-in badge — demo / preview path. */
+export function runMorningBriefNow() {
+  return api.post('/api/agent/routines/morning-brief/run', {});
+}

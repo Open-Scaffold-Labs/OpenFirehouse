@@ -7,6 +7,8 @@
  *   GET  /api/agent/approvals             — list queue (officer+)
  *   POST /api/agent/approvals/:id/accept  — execute a gated verb (officer+)
  *   POST /api/agent/approvals/:id/reject  — dismiss a gated verb (officer+)
+ *   GET  /api/agent/routines/morning-brief — latest weekday brief (any authed)
+ *   POST /api/agent/routines/morning-brief/run — Run now (signed-in badge)
  *
  * STABLE CONTRACT for in-app Ask Open Firehouse and the stdio MCP:
  *   POST /api/agent/invoke
@@ -27,6 +29,12 @@ const validateReq = require('../middleware/validate');
 const { requireOfficer } = require('../middleware/requireRole');
 const { catalog } = require('../utils/agentVerbRegistry');
 const { invoke, listApprovals, resolveApproval } = require('../utils/agentInvoke');
+const {
+  getMorningBrief,
+  runMorningBrief,
+  ROUTINE_NAME,
+  scheduleConfig,
+} = require('../utils/morningBrief');
 
 router.get('/verbs', (req, res) => {
   res.json({ data: catalog(), count: catalog().length });
@@ -97,6 +105,56 @@ router.post('/approvals/:id/reject', requireOfficer, validateReq({ params: idPar
   } catch (err) {
     console.error('POST /agent/approvals/:id/reject error:', err);
     res.status(500).json({ error: 'Failed to reject approval' });
+  }
+});
+
+router.get('/routines', (req, res) => {
+  res.json({
+    data: [{
+      id: ROUTINE_NAME,
+      label: 'Morning shift brief',
+      kind: 'scheduled_watch',
+      reads: ['board_read', 'duty_read', 'roster_read', 'apparatus_status_read', 'incident_read'],
+      writes: [],
+      schedule: scheduleConfig(),
+    }],
+  });
+});
+
+router.get('/routines/morning-brief', async (req, res) => {
+  try {
+    const out = await getMorningBrief(req.user.department_id);
+    res.json(out);
+  } catch (err) {
+    console.error('GET /agent/routines/morning-brief error:', err);
+    res.status(500).json({ error: 'Failed to load morning brief' });
+  }
+});
+
+router.post('/routines/morning-brief/run', async (req, res) => {
+  try {
+    const out = await runMorningBrief(req, { triggerKind: 'manual' });
+    if (!out.ok) {
+      return res.status(out.status || 400).json({ error: out.error, code: out.code });
+    }
+    res.json({
+      silent: out.silent,
+      unchanged: out.unchanged,
+      digest: out.digest,
+      facts: out.facts,
+      verbs: out.verbs,
+      run: {
+        id: out.run.id,
+        triggerKind: out.run.trigger_kind,
+        silent: out.run.silent,
+        actorName: out.run.actor_name,
+        actorRole: out.run.actor_role,
+        createdAt: out.run.created_at,
+      },
+    });
+  } catch (err) {
+    console.error('POST /agent/routines/morning-brief/run error:', err);
+    res.status(500).json({ error: 'Failed to run morning brief' });
   }
 });
 
