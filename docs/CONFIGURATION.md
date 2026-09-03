@@ -61,9 +61,11 @@ agent. Nobody outside the system gets notified.
 ## AI features
 
 OpenFirehouse uses LLM APIs for ~25 AI actions (incident command
-assistant, pre-plan summarizer, NFIRS narrative auto-fill, report
-writer, etc.). Without these keys, AI features are disabled but the
-rest of the product works normally.
+assistant, pre-plan summarizer, report writer, etc.). AI does not
+draft incident or NFIRS/NERIS narrative. Without these keys, AI
+features are disabled but the rest of the product works normally.
+A department-local MCP server (see [AGENT-MCP.md](AGENT-MCP.md))
+uses the same JWT/roles as the app — it does not need these keys.
 
 | Variable             | Default | Notes |
 | -------------------- | ------- | ----- |

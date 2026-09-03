@@ -1896,7 +1896,7 @@ Analyzes incident response data against NFPA 1710/1720 benchmarks. Officer acces
 - **Dashboard** — Real-time stats: average response time, total incidents, busiest periods
 - **Analyze** — Deep analysis of individual incidents with tactical observations and safety considerations
 - **Trends** — Multi-incident trend detection across volume, type, geography, and timing
-- **Narrative** — Auto-generates NFIRS-style incident narratives in third-person chronological format
+- **Narrative** — Officers write incident narratives themselves. The software does not auto-generate NFIRS/NERIS narrative.
 
 ---
 
@@ -1907,7 +1907,7 @@ Post-incident analysis engine for performance evaluation. Officer access.
 **Features**
 - Single-incident deep analysis comparing against NFPA 1710/1720 standards
 - Trend analysis across 100+ recent incidents for pattern recognition
-- NFIRS narrative auto-generation with proper terminology
+- Structured field review against NFPA 1710/1720 standards (narrative stays officer-written)
 - Quarterly goal recommendations and risk alerts
 
 ---

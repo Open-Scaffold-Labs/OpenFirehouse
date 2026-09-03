@@ -130,9 +130,16 @@ If `SEED_DEMO=true`, it then runs the ~70 demo-seed scripts.
 **AI features.** `server/src/utils/aiActionRegistry.js` defines ~25
 "AI actions" — server-side prompt templates that take some context
 (an incident, a pre-plan, a duty schedule), call the Anthropic or
-OpenAI API, and return a structured response. Each AI action has a
-route (`/api/ai/<action>`) and is gated by the user's role and by
-the relevant API key being configured.
+OpenAI API, and return a structured response. That catalog is **not**
+the fire-verb contract: it does not write incident notes or NFIRS
+narrative. Department agents use `server/src/utils/agentVerbRegistry.js`
+instead, exposed as `POST /api/agent/invoke` (stdio MCP and in-app
+Ask are clients of that path). Those verbs wrap existing JWT-gated
+routes. Immediate reads include incident, roster, today's duty/run
+list, the live Command Board, training hours, and apparatus status.
+Legal-record writes (NERIS submit, notify chief, unit clear) land in
+`agent_approvals`. The requester cannot accept their own item; a
+different human officer accepts on the Dashboard.
 
 ## CAD integration
 

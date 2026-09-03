@@ -4,10 +4,10 @@ import {
   AlertTriangle, CheckCircle2, Clock, TrendingUp,
   ChevronRight, Shield, Activity, Bell, Tv, SlidersHorizontal,
   Wrench, FileText, Scale, Package, Heart, Calendar,
-  BookOpen, ClipboardList, DollarSign, Siren,
+  BookOpen, ClipboardList, DollarSign, Siren, Check, X,
 } from 'lucide-react';
 import { api } from '../utils/api';
-import { canClearCalls } from '../data/auth';
+import { canClearCalls, isOfficerPlus } from '../data/auth';
 import UnitStatusBoard from './UnitStatusBoard';
 import ScreenErrorBoundary from './ScreenErrorBoundary';
 import WeatherWidget from './WeatherWidget';
@@ -286,6 +286,88 @@ function ActionScorecard({ summary, onNavigate }) {
               <p className="text-xs text-gray-500 dark:text-gray-400">{label}</p>
             </div>
           </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Agent approval queue (department MCP gated writes) ──────────────────────
+
+function AgentApprovalQueue() {
+  const [items, setItems] = useState([]);
+  const [busyId, setBusyId] = useState(null);
+  const [error, setError] = useState(null);
+
+  function load() {
+    api.get('/api/agent/approvals?status=pending')
+      .then((r) => setItems(Array.isArray(r?.data) ? r.data : []))
+      .catch(() => setItems([]));
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function resolve(id, action) {
+    setBusyId(id);
+    setError(null);
+    try {
+      await api.post(`/api/agent/approvals/${id}/${action}`, {});
+      setItems((prev) => prev.filter((x) => x.id !== id));
+    } catch (err) {
+      setError(err.message || `Failed to ${action}`);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  if (!items.length && !error) return null;
+
+  return (
+    <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-700">
+        <div className="flex items-center gap-2">
+          <Shield size={16} className="text-red-600 dark:text-red-400" />
+          <h2 className="text-sm font-bold text-gray-700 dark:text-gray-300">Agent approvals</h2>
+        </div>
+        {items.length > 0 && (
+          <span className="text-xs bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-full font-medium">
+            {items.length} pending
+          </span>
+        )}
+      </div>
+      {error && (
+        <p className="px-5 py-2 text-xs text-red-600 dark:text-red-400">{error}</p>
+      )}
+      <div className="divide-y divide-gray-50 dark:divide-gray-800">
+        {items.map((item) => (
+          <div key={item.id} className="px-5 py-3 flex items-start gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">{item.summary}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                {item.verb} · requested by {item.requested_by_name || item.requested_by_role || 'agent'}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                disabled={busyId === item.id}
+                onClick={() => resolve(item.id, 'accept')}
+                className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-300 hover:underline disabled:opacity-50"
+                aria-label={`Accept ${item.summary}`}
+              >
+                <Check size={13} /> Accept
+              </button>
+              <button
+                type="button"
+                disabled={busyId === item.id}
+                onClick={() => resolve(item.id, 'reject')}
+                className="inline-flex items-center gap-1 text-xs font-medium text-red-600 dark:text-red-400 hover:underline disabled:opacity-50"
+                aria-label={`Reject ${item.summary}`}
+              >
+                <X size={13} /> Reject
+              </button>
+            </div>
+          </div>
         ))}
       </div>
     </div>
@@ -642,6 +724,9 @@ export default function Dashboard({ onNavigate, settings, prefs, onRespond, user
 
       {/* ── Today's Calendar (the heart of the station) ── */}
       {show.calendar && <TodayCalendarStrip entries={todayEntries} onNavigate={onNavigate} />}
+
+      {/* ── Agent approval queue (officers+ — existing Dashboard, not a new console) ── */}
+      {(isOfficerPlus(user) || (Number(user?.roleLevel) || 0) >= 2) && <AgentApprovalQueue />}
 
       {/* ── Action Items Scorecard (officers+ only) ── */}
       {show.actionitems && summary && isOfficer && <ActionScorecard summary={summary} onNavigate={onNavigate} />}

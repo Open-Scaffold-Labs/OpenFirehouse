@@ -7070,6 +7070,41 @@ async function applyDepartmentExpand() {
     END $cronruns$;
   `);
 
+  // ── 0129 mirror: agent_approvals — department-local MCP human gate ──────────
+  // Gated fire verbs (NERIS submit, notify chief, unit clear/release) land here
+  // instead of writing the record. A chief/officer accepts or rejects on the
+  // existing Dashboard. Tenant-scoped; not a new admin console.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS public.agent_approvals (
+      id                 BIGSERIAL PRIMARY KEY,
+      department_id      INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+      verb               TEXT NOT NULL,
+      status             TEXT NOT NULL DEFAULT 'pending'
+                           CHECK (status IN ('pending','approved','rejected')),
+      payload            JSONB NOT NULL DEFAULT '{}'::jsonb,
+      summary            TEXT NOT NULL DEFAULT '',
+      requested_by       INTEGER,
+      requested_by_name  TEXT DEFAULT '',
+      requested_by_role  TEXT DEFAULT '',
+      resolved_by        INTEGER,
+      resolved_by_name   TEXT,
+      resolved_at        TIMESTAMPTZ,
+      resolve_note       TEXT,
+      created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_agent_approvals_dept_status ON public.agent_approvals (department_id, status, created_at DESC)');
+  await pool.query(`
+    DO $agentappr$
+    BEGIN
+      EXECUTE 'ALTER TABLE public.agent_approvals ENABLE ROW LEVEL SECURITY';
+      EXECUTE 'DROP POLICY IF EXISTS dept_isolation ON public.agent_approvals';
+      EXECUTE 'CREATE POLICY dept_isolation ON public.agent_approvals FOR ALL
+        USING (department_id = NULLIF(current_setting(''app.department_id'', true), '''')::int)
+        WITH CHECK (department_id = NULLIF(current_setting(''app.department_id'', true), '''')::int)';
+    END $agentappr$;
+  `);
+
   // AVL ingestion (0032, ADR-0003): per-dept hardware vehicle-location feeds.
   // Mirrors the CAD webhook model. Fresh-install mirror of docs/migrations/0032.
   await pool.query(`CREATE TABLE IF NOT EXISTS public.avl_connections (

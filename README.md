@@ -21,7 +21,7 @@
 
 **Live interactive incident command.** A real-time command board, apparatus tracking on a live map, an ICS org chart that builds itself, personnel accountability with PAR checks, and an AI-assisted radio log — on one screen. Text a tracking link to a mutual-aid department and they see your apparatus live, with no app and no login.
 
-**Daily station life, without the paperwork.** AI drafts NFIRS narratives in minutes, generates shift briefings, and ranks/texts vacancy-fill candidates when someone calls out. Certifications, LOSAP hours, and FTO milestones are tracked automatically.
+**Daily station life, without the paperwork.** AI can generate shift briefings and rank/text vacancy-fill candidates when someone calls out. Incident narratives and NFIRS/NERIS legal records stay officer-written — the software never drafts them. Certifications, LOSAP hours, and FTO milestones are tracked automatically.
 
 **An AI that knows the fire service.** A "Hey Firehouse" voice assistant and 26 purpose-built, context-aware AI actions that know your active incident, pre-plans, people, and apparatus. Bring your own Anthropic API key.
 
@@ -30,7 +30,7 @@
 | Surface | Headline features |
 |---|---|
 | **Incident Command** | Live animated Response Map, auto-building ICS org chart, Personnel Accountability + PAR, Commander Cam HUD, Live Share tracking links, GPS-tagged scene photos |
-| **AI Intelligence** | "Hey Firehouse" voice assistant, NFIRS narratives, AI shift briefings, staffing forecasts + burnout detection, NFPA training-gap analysis, auto vacancy fill |
+| **AI Intelligence** | "Hey Firehouse" voice assistant, AI shift briefings, staffing forecasts + burnout detection, NFPA training-gap analysis, auto vacancy fill. A department-local MCP exposes a small set of fire verbs (read incidents/roster/duty/board/training/apparatus; queue NERIS submit, notify-chief, and unit clear for a chief to accept on the Dashboard). |
 | **Station Operations** | Member portal, activity logger, FTO tracker (NFPA 1001 skills), Knox key management, TV wall display, NG911 console |
 | **Full platform** | Incident log + NFIRS, apparatus, roster, duty schedule, training compliance, hydrants, pre-incident plans, maintenance, budget + grants, SOG library, mutual aid, wellness + exposure tracking, fire inspections, GIS map, volunteer hours, bulletins, cadets, shift trades, offline caching |
 
@@ -85,7 +85,7 @@ Need terms outside the AGPL — e.g. shipping a closed fork or embedding OpenFir
 - **Client** — React 19, Vite 7, Tailwind 4, Recharts, Apple MapKit (maps), ~178 lazy-loaded views.
 - **Server** — Express + PostgreSQL via `pg` (no ORM; parameterized SQL), ~90 tables, ~574 endpoints, lazy DB init for serverless cold starts.
 - **Real-time** — Supabase Realtime (live dispatch), web-push notifications, Twilio SMS.
-- **AI** — Anthropic SDK; 26 AI actions in `server/src/utils/aiActionRegistry.js`.
+- **AI** — Anthropic SDK; 26 AI actions in `server/src/utils/aiActionRegistry.js` (prompt templates, not fire verbs). A department-local MCP (`docs/AGENT-MCP.md`) wraps existing JWT-gated routes with a member or service-account token (not a chief token in Claude Desktop); legal-record writes stay human-approved on the Dashboard.
 - **Auth** — JWT + bcrypt, role-based access, per-department data scoping.
 - **Offline** — PWA service-worker caching for station use without connectivity.
 
@@ -99,7 +99,8 @@ Deeper detail: [Architecture](docs/ARCHITECTURE.md) · [Data dictionary](docs/DA
 - [Configuration reference](docs/CONFIGURATION.md) — every environment variable
 - [Backup & restore](docs/BACKUP_AND_RESTORE.md) · [Upgrading](docs/UPGRADING.md) · [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Active911 / CAD setup](docs/CAD_SETUP_ACTIVE911.md) · [User manual](docs/user-guide.md)
-- [Customize with Cowork (no-code path)](CUSTOMIZE-WITH-COWORK.md)
+- [Customize with Cowork (branding / seed / SOPs)](CUSTOMIZE-WITH-COWORK.md)
+- [Department-local MCP (agent on the install)](docs/AGENT-MCP.md)
 
 **For developers & contributors**
 

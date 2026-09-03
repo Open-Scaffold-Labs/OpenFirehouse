@@ -51,9 +51,9 @@ new hardware to the station isn't realistic.
    - Trigger: "On dispatch"
 4. Save. Fire a test dispatch from Active911.
 5. Watch the OpenFirehouse Command Board live — the dispatch appears
-   within 1-2 seconds. A draft incident gets auto-created in
-   `olf_incidents` with AI-enriched narrative if the
-   `ANTHROPIC_API_KEY` env var is set.
+   within 1-2 seconds. A draft incident can be auto-created in
+   `olf_incidents` from CAD facts. Incident narrative stays
+   officer-written — AI does not draft it.
 
 ### Radio (manual entry)
 
@@ -197,10 +197,9 @@ Once a transcript or dispatch lands on `/api/radio/ingest` or
 - **Benchmark detection:** key phrases like "all clear," "primary
   search complete," "fire under control" are auto-recognized and
   surfaced on the Command Board.
-- **CAD auto-pipeline:** new dispatches create draft incidents in
-  `olf_incidents` with AI-generated narratives populated from the
-  dispatch text + the matching pre-incident plan if one exists for the
-  address.
+- **CAD auto-pipeline:** new dispatches can create draft incidents in
+  `olf_incidents` from dispatch facts and a matching pre-plan if one
+  exists. Narrative is not AI-generated — officers write it.
 - **NFIRS auto-completion:** when the chief opens the draft incident to
   finalize it, the NFIRS engine has already populated 47 fields across
   three tiers (direct mapping, lookup, AI inference).
