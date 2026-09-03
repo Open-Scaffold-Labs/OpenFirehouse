@@ -9,13 +9,17 @@
 import {
   DUTY_BOARD_READ_VERBS,
   GATED_WRITE_VERBS,
+  invokeData,
   invokeRows,
 } from './askVerbs';
 
 const WRITE_HINT = /\b(neris|submit|notify\s+chief|clear\s+unit|unit\s+clear|release\s+unit|mark\s+oos|out of service|update\s+incident|write\s+narrative|draft\s+narrative)\b/i;
 
-const INCIDENT_HINT = /\b(board|incident|call|dispatch|what's on|whats on|open medical|structure|on the air|run list|active call)\b/i;
-const ROSTER_HINT = /\b(staff(?:ing)?|roster|minimums?|crew|who'?s on|who is on|coverage|manpower|headcount|members?)\b/i;
+const BOARD_HINT = /\b(board|command board|active (call|incident)|what's on|whats on|on the air)\b/i;
+const DUTY_HINT = /\b(run list|riding list|who'?s riding|who is riding|on duty|duty (board|list|today)|today'?s duty)\b/i;
+const INCIDENT_HINT = /\b(incident|open (call|medical)|structure fire|dispatched calls?|call log)\b/i;
+const ROSTER_HINT = /\b(roster|members?|headcount)\b/i;
+const STAFFING_HINT = /\b(staff(?:ing)?|minimums?|coverage|manpower|crew|who'?s on|who is on)\b/i;
 const APPARATUS_HINT = /\b(apparatus|rig|engine|ladder|rescue|unit status|in service|in-service|oos|out of service)\b/i;
 const TRAINING_HINT = /\b(training|hours|ceu|losap|drill hours)\b/i;
 const OVERVIEW_HINT = /\b(overview|sitrep|status of (the )?(house|station)|how are we looking|full picture)\b/i;
@@ -23,7 +27,7 @@ const OVERVIEW_HINT = /\b(overview|sitrep|status of (the )?(house|station)|how a
 const CLOSED_DISPOSITION = /^(closed|cleared|complete|completed|cancelled|canceled|unfounded|refused)$/i;
 
 export const DUTY_BOARD_WELCOME =
-  'Duty / Board. Ask about open calls, the roster, or apparatus in service. I read as your badge. I do not write incident narrative or clear units.';
+  'Duty / Board. Ask about the Command Board, who is riding, the roster, or apparatus in service. I read as your badge. I do not write incident narrative or clear units.';
 
 export const CLOSEOUT_PLACEHOLDER =
   'Incident closeout is coming next. Duty / Board can read the board now. Unit clear and NERIS stay human-confirmed on the Dashboard — I will not write those from this chat.';
@@ -45,14 +49,16 @@ export function planDutyBoard(message) {
 
   const verbs = [];
   const overview = OVERVIEW_HINT.test(text);
+  if (overview || BOARD_HINT.test(text)) verbs.push('board_read');
+  if (overview || DUTY_HINT.test(text) || STAFFING_HINT.test(text)) verbs.push('duty_read');
   if (overview || INCIDENT_HINT.test(text)) verbs.push('incident_read');
-  if (overview || ROSTER_HINT.test(text)) verbs.push('roster_read');
+  if (overview || ROSTER_HINT.test(text) || STAFFING_HINT.test(text)) verbs.push('roster_read');
   if (overview || APPARATUS_HINT.test(text)) verbs.push('apparatus_status_read');
   if (overview || TRAINING_HINT.test(text)) verbs.push('training_hours_read');
 
   if (!verbs.length) {
-    // Default Duty/Board question → the board (open incidents).
-    verbs.push('incident_read');
+    // Default Duty/Board question → live Command Board (held draft verb).
+    verbs.push('board_read');
   }
 
   for (const v of verbs) {
@@ -85,6 +91,56 @@ function incidentLine(inc) {
   const alarm = inc.alarmLevel || inc.alarm_level;
   const bits = [num, type, addr, alarm, when].filter(Boolean);
   return bits.join(' · ');
+}
+
+function parsePayload(raw) {
+  if (!raw) return {};
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw) || {}; } catch { return {}; }
+  }
+  return typeof raw === 'object' ? raw : {};
+}
+
+export function formatCommandBoard(data) {
+  const board = Array.isArray(data) ? data[0] : data;
+  if (!board || typeof board !== 'object') return 'Board: no active command board.';
+  const type = board.incident_type || board.incidentType || board.type;
+  const addr = board.address || board.location || '';
+  if (!type && !addr) return 'Board: no active command board.';
+  const dispatched = board.dispatched_at || board.dispatchedAt || board.date;
+  let when = '';
+  if (dispatched) {
+    try { when = new Date(dispatched).toLocaleString(); } catch { when = String(dispatched); }
+  }
+  const units = board.units_count ?? board.unitsCount;
+  const people = board.personnel_count ?? board.personnelCount;
+  const first = board.first_on_scene_unit;
+  const bits = [type || 'Active call', addr];
+  if (when) bits.push(`dispatched ${when}`);
+  if (units != null) bits.push(`${units} units`);
+  if (people != null) bits.push(`${people} personnel`);
+  if (first) bits.push(`first on scene ${first}`);
+  return `Board: ACTIVE — ${bits.filter(Boolean).join(' · ')}.`;
+}
+
+export function formatDuty(data) {
+  if (!data) {
+    return 'Duty: no published run list for today. Check Daily Staffing to see who is riding.';
+  }
+  const payload = parsePayload(data.payload);
+  const crew = Array.isArray(payload.crew) ? payload.crew : [];
+  if (!crew.length) {
+    return 'Duty: published run list is empty. Check Daily Staffing for the riding board.';
+  }
+  const shown = crew.slice(0, 8).map((c) => {
+    const name = c.member_name || c.name || 'Member';
+    const pos = c.position_name || c.position || c.member_rank || '';
+    const rig = c.designation || c.apparatus
+      || (c.apparatus_id != null ? `Unit ${c.apparatus_id}` : '');
+    return [name, pos, rig].filter(Boolean).join(' · ');
+  });
+  const extra = crew.length > shown.length ? ` (+${crew.length - shown.length} more)` : '';
+  return `Duty: ${crew.length} riding.\n${shown.map((l) => `• ${l}`).join('\n')}${extra}`;
 }
 
 export function formatIncidents(rows) {
@@ -162,7 +218,19 @@ export function formatDutyBoardReplies(plan, replies) {
         chunks.push('Department tools are not on this install yet. Duty / Board needs the agent invoke route.');
         continue;
       }
+      if (reply.error?.code === 'STATION_REQUIRED' || /multiple stations|station_id/i.test(msg)) {
+        chunks.push('Duty: this department has more than one house. Name the station on Daily Staffing — I will not guess.');
+        continue;
+      }
       chunks.push(`${reply.verb.replace(/_/g, ' ')}: ${msg}`);
+      continue;
+    }
+    if (reply.verb === 'board_read') {
+      chunks.push(formatCommandBoard(invokeData(reply.out)));
+      continue;
+    }
+    if (reply.verb === 'duty_read') {
+      chunks.push(formatDuty(invokeData(reply.out)));
       continue;
     }
     const rows = invokeRows(reply.out);

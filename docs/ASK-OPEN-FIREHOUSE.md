@@ -8,9 +8,11 @@ There is no bot login and no parallel database.
 
 ## What this slice does
 
-- **Duty / Board** is the first live mode. It reads incidents, roster,
-  training hours, and apparatus status through `POST /api/agent/invoke`
-  with the signed-in user's token.
+- **Duty / Board** is the first live mode. It hangs on the held draft’s
+  immediate reads through `POST /api/agent/invoke` with the signed-in
+  user's token: `board_read` (Command Board), `duty_read` (today’s
+  riding list), plus `incident_read`, `roster_read`,
+  `training_hours_read`, and `apparatus_status_read`.
 - **Incident closeout** and a dedicated **Training & Apparatus** mode
   are placeholders.
 - **Needs your Accept** lists pending `agent_approvals` and points

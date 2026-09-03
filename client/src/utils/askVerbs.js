@@ -5,6 +5,8 @@
  */
 
 export const DUTY_BOARD_READ_VERBS = Object.freeze([
+  'board_read',
+  'duty_read',
   'incident_read',
   'roster_read',
   'training_hours_read',
@@ -18,12 +20,18 @@ export const GATED_WRITE_VERBS = Object.freeze([
   'incident_update',
 ]);
 
+/** Raw `result.data` from invoke (list, object, or null). */
+export function invokeData(out) {
+  const body = out?.result;
+  if (!body) return null;
+  return Object.prototype.hasOwnProperty.call(body, 'data') ? body.data : body;
+}
+
 /** Unwrap `{ data }` from an existing route body sitting on invoke.result. */
 export function invokeRows(out) {
-  const body = out?.result;
-  if (!body) return [];
-  if (Array.isArray(body.data)) return body.data;
-  if (body.data && typeof body.data === 'object') return [body.data];
-  if (Array.isArray(body)) return body;
+  const data = invokeData(out);
+  if (data == null) return [];
+  if (Array.isArray(data)) return data;
+  if (typeof data === 'object') return [data];
   return [];
 }

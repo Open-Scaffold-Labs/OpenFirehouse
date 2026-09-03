@@ -8,6 +8,8 @@ const {
   CLOSEOUT_PLACEHOLDER,
   GATED_WRITE_REFUSAL,
   formatApparatus,
+  formatCommandBoard,
+  formatDuty,
   formatDutyBoardReplies,
   formatIncidents,
   formatRoster,
@@ -20,15 +22,16 @@ const { actingAsLine, actingAsRole } = await import('../actingAs.js');
 test('Duty/Board maps board and staffing questions to read verbs only', () => {
   const board = planDutyBoard("What's on the board?");
   assert.equal(board.kind, 'reads');
-  assert.deepEqual(board.verbs, ['incident_read']);
+  assert.deepEqual(board.verbs, ['board_read']);
 
   const staff = planDutyBoard('Any staffing concerns?');
   assert.equal(staff.kind, 'reads');
+  assert.ok(staff.verbs.includes('duty_read'));
   assert.ok(staff.verbs.includes('roster_read'));
 
   const sitrep = planDutyBoard('Give me a sitrep');
-  assert.ok(sitrep.verbs.includes('incident_read'));
-  assert.ok(sitrep.verbs.includes('roster_read'));
+  assert.ok(sitrep.verbs.includes('board_read'));
+  assert.ok(sitrep.verbs.includes('duty_read'));
   assert.ok(sitrep.verbs.includes('apparatus_status_read'));
 });
 
@@ -55,6 +58,31 @@ test('Duty/Board never selects a gated write verb', () => {
 });
 
 test('formatters stay dense and do not invent legal narrative', () => {
+  const live = formatCommandBoard({
+    incident_type: 'Medical',
+    address: 'Oak St',
+    dispatched_at: '2026-05-20T08:12:00Z',
+    units_count: 2,
+  });
+  assert.match(live, /ACTIVE/);
+  assert.match(live, /Medical/);
+  assert.match(live, /Oak St/);
+  assert.doesNotMatch(live, /Heavy smoke|narrative/i);
+
+  const emptyBoard = formatCommandBoard(null);
+  assert.match(emptyBoard, /no active command board/i);
+
+  const duty = formatDuty({
+    payload: {
+      crew: [
+        { member_name: 'Capt. Rivera', position_name: 'Captain', designation: 'E-1' },
+        { member_name: 'FF Smith', position_name: 'Firefighter', designation: 'E-1' },
+      ],
+    },
+  });
+  assert.match(duty, /2 riding/);
+  assert.match(duty, /Capt\. Rivera/);
+
   const board = formatIncidents([
     { id: 1, incidentNumber: '25-0142', type: 'Medical', address: 'Oak St', date: '2026-05-20', time: '08:12' },
     { id: 2, incidentNumber: '25-0140', type: 'Still', address: '1 Main', disposition: 'closed' },
@@ -83,11 +111,14 @@ test('runDutyBoardTurn calls invoke with the planned read verbs', async () => {
   const called = [];
   const invoke = async (verb, args) => {
     called.push({ verb, args });
+    if (verb === 'board_read' || verb === 'duty_read') {
+      return { result: { data: null } };
+    }
     return { result: { data: [] } };
   };
   const turn = await runDutyBoardTurn("What's on the board?", { invoke });
-  assert.deepEqual(called.map((c) => c.verb), ['incident_read']);
-  assert.match(turn.text, /no incidents on file/i);
+  assert.deepEqual(called.map((c) => c.verb), ['board_read']);
+  assert.match(turn.text, /no active command board/i);
 });
 
 test('acting-as chip reflects the session role family', () => {
@@ -105,8 +136,8 @@ test('closeout placeholder is not a write path', () => {
 
 test('formatDutyBoardReplies stays silent on plumbing names', () => {
   const text = formatDutyBoardReplies(
-    { kind: 'reads', verbs: ['incident_read'] },
-    [{ verb: 'incident_read', ok: true, out: { result: { data: [] } } }],
+    { kind: 'reads', verbs: ['board_read'] },
+    [{ verb: 'board_read', ok: true, out: { result: { data: null } } }],
   );
   assert.doesNotMatch(text, /\bMCP\b/);
   assert.doesNotMatch(text, /invoke/i);

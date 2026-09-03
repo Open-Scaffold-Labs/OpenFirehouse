@@ -15,6 +15,7 @@ import { api } from './api';
 export {
   DUTY_BOARD_READ_VERBS,
   GATED_WRITE_VERBS,
+  invokeData,
   invokeRows,
 } from './askVerbs';
 

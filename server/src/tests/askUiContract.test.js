@@ -35,6 +35,11 @@ test('Ask client calls the live invoke contract, not a shadow API', () => {
   assert.doesNotMatch(invoke, /\/api\/ask\//);
   assert.match(read(AGENT), /invokeAgent|askInvoke/);
   assert.match(read(ASK_UI), /runDutyBoardTurn/);
+  const verbs = read(path.join(ROOT, 'client/src/utils/askVerbs.js'));
+  assert.match(verbs, /board_read/);
+  assert.match(verbs, /duty_read/);
+  assert.match(read(AGENT), /board_read/);
+  assert.match(read(AGENT), /duty_read/);
 });
 
 test('Ask UI copy never names the plumbing layer', () => {
