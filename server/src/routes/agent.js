@@ -8,6 +8,14 @@
  *   POST /api/agent/approvals/:id/accept  — execute a gated verb (officer+)
  *   POST /api/agent/approvals/:id/reject  — dismiss a gated verb (officer+)
  *
+ * STABLE CONTRACT for in-app Ask Open Firehouse and the stdio MCP:
+ *   POST /api/agent/invoke
+ *   Authorization: Bearer <signed-in session JWT — same token the UI already
+ *     stores as localStorage.fs_token and sends on every api.js request>
+ *   { "verb": "<catalog name>", "args": { ... } }
+ *
+ * Do not invent a second Ask-only API. Badge = capability. No superuser bot.
+ *
  * Mounted behind requireAuth. The MCP stdio process is a thin client of
  * POST /invoke. The Dashboard panel uses the approvals routes.
  */

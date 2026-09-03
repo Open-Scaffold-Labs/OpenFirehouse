@@ -30,7 +30,7 @@
 | Surface | Headline features |
 |---|---|
 | **Incident Command** | Live animated Response Map, auto-building ICS org chart, Personnel Accountability + PAR, Commander Cam HUD, Live Share tracking links, GPS-tagged scene photos |
-| **AI Intelligence** | "Hey Firehouse" voice assistant, AI shift briefings, staffing forecasts + burnout detection, NFPA training-gap analysis, auto vacancy fill. A department-local MCP exposes a small set of fire verbs (read incidents/roster/training/apparatus; queue NERIS submit, notify-chief, and unit clear for a chief to accept on the Dashboard). |
+| **AI Intelligence** | "Hey Firehouse" voice assistant, AI shift briefings, staffing forecasts + burnout detection, NFPA training-gap analysis, auto vacancy fill. A department-local MCP exposes a small set of fire verbs (read incidents/roster/duty/board/training/apparatus; queue NERIS submit, notify-chief, and unit clear for a chief to accept on the Dashboard). |
 | **Station Operations** | Member portal, activity logger, FTO tracker (NFPA 1001 skills), Knox key management, TV wall display, NG911 console |
 | **Full platform** | Incident log + NFIRS, apparatus, roster, duty schedule, training compliance, hydrants, pre-incident plans, maintenance, budget + grants, SOG library, mutual aid, wellness + exposure tracking, fire inspections, GIS map, volunteer hours, bulletins, cadets, shift trades, offline caching |
 

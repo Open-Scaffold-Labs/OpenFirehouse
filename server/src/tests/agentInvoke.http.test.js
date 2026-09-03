@@ -86,6 +86,19 @@ if (!TENANCY_TEST_DB) {
       const unauth = await api('POST', '/api/agent/invoke', null, { verb: 'incident_read', args: {} });
       assert.equal(unauth.status, 401, 'tool call without JWT is refused');
 
+      const verbs = await api('GET', '/api/agent/verbs', member);
+      assert.equal(verbs.status, 200);
+      const verbNames = (verbs.json.data || []).map((v) => v.name);
+      for (const name of ['incident_read', 'roster_read', 'training_hours_read', 'apparatus_status_read', 'duty_read', 'board_read']) {
+        assert.ok(verbNames.includes(name), `catalog must list ${name} for Ask UI`);
+      }
+
+      for (const verb of ['incident_read', 'roster_read', 'training_hours_read', 'apparatus_status_read', 'duty_read', 'board_read']) {
+        const read = await api('POST', '/api/agent/invoke', member, { verb, args: {} });
+        assert.ok(read.status < 400, `${verb} must execute for a signed-in JWT: ${read.status} ${JSON.stringify(read.json)}`);
+        assert.equal(read.json.queued, false, `${verb} is an immediate read, not a gated write`);
+      }
+
       const created = await api('POST', '/api/incidents', chief, {
         incidentNumber: `${MARK}-1`, date: '2026-08-23', type: 'Public Assist', address: '1 Main',
         notes: 'Officer-written narrative — must stay.',
@@ -93,6 +106,12 @@ if (!TENANCY_TEST_DB) {
       assert.equal(created.status, 201, 'seed incident');
       const incId = created.json.data.id;
       const notesBefore = created.json.data.notes;
+
+      const oneIncident = await api('POST', '/api/agent/invoke', member, {
+        verb: 'incident_read', args: { id: incId },
+      });
+      assert.ok(oneIncident.status < 400, `incident_read by id: ${oneIncident.status}`);
+      assert.equal(oneIncident.json.result && oneIncident.json.result.data && oneIncident.json.result.data.id, incId);
 
       const stripped = await api('POST', '/api/agent/invoke', member, {
         verb: 'incident_update',

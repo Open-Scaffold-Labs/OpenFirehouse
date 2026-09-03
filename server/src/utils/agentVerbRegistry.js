@@ -130,6 +130,55 @@ const VERBS = {
     },
   },
 
+  duty_read: {
+    description:
+      'Read today\'s published duty / run list (who is riding). Same snapshot Duty Board and Unit Status use.',
+    gate: 'none',
+    minLevel: 1,
+    minLevelLabel: 'member',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        date: { type: 'string', description: 'YYYY-MM-DD. Omit for today.' },
+        station_id: { type: 'integer', description: 'Required only in a multi-house department.' },
+      },
+    },
+    prepare(args) {
+      const query = {};
+      if (args.date != null && String(args.date).trim()) {
+        const date = String(args.date).trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+          return { error: 'date must be YYYY-MM-DD', code: 'INVALID_ARGS', status: 400 };
+        }
+        query.date = date;
+      }
+      if (args.station_id != null) {
+        const stationId = numId(args.station_id, 'station_id');
+        if (stationId.error) return stationId;
+        query.station_id = stationId.value;
+      }
+      return {
+        route: { router: 'runList', method: 'GET', url: '/today', query, body: {} },
+        summary: query.date ? `Read duty run list for ${query.date}` : "Read today's duty run list",
+      };
+    },
+  },
+
+  board_read: {
+    description:
+      'Read the live Command Board (active incident). Same GET /api/active-board the Duty/Command screens poll.',
+    gate: 'none',
+    minLevel: 1,
+    minLevelLabel: 'member',
+    inputSchema: { type: 'object', properties: {} },
+    prepare() {
+      return {
+        route: { router: 'activeBoard', method: 'GET', url: '/', body: {} },
+        summary: 'Read active command board',
+      };
+    },
+  },
+
   training_hours_read: {
     description: 'Read training records (includes hours) for this department.',
     gate: 'none',

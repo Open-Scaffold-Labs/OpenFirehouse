@@ -15,6 +15,8 @@ const routers = {
   training: () => require('../routes/training'),
   units: () => require('../routes/units'),
   messages: () => require('../routes/messages'),
+  runList: () => require('../routes/runList'),
+  activeBoard: () => require('../routes/activeBoard'),
 };
 
 function dispatchExisting(parentReq, route) {
@@ -23,13 +25,20 @@ function dispatchExisting(parentReq, route) {
     return Promise.resolve({ status: 500, body: { error: `No wrapper for router ${route.router}` } });
   }
   const router = load();
+  const query = route.query || {};
+  const qs = new URLSearchParams(
+    Object.fromEntries(
+      Object.entries(query).filter(([, v]) => v != null && v !== '').map(([k, v]) => [k, String(v)])
+    )
+  ).toString();
+  const url = qs ? `${route.url}?${qs}` : route.url;
   const req = {
     method: route.method,
-    url: route.url,
-    originalUrl: route.url,
+    url,
+    originalUrl: url,
     path: route.url,
     body: route.body || {},
-    query: route.query || {},
+    query,
     params: {},
     headers: parentReq.headers || {},
     user: parentReq.user,
@@ -55,10 +64,15 @@ function dispatchExisting(parentReq, route) {
       setHeader() { return this; },
       getHeader() { return undefined; },
     };
+    req.res = res;
     try {
       router(req, res, (err) => {
-        if (err) done(500, { error: err.message || 'Route error' });
-        else done(statusCode === 200 ? 404 : statusCode, { error: 'No matching route' });
+        if (err) {
+          const status = Number(err.status || err.statusCode) || 500;
+          done(status, { error: err.message || 'Route error', code: err.code });
+        } else {
+          done(statusCode === 200 ? 404 : statusCode, { error: 'No matching route' });
+        }
       });
     } catch (err) {
       done(500, { error: err.message || 'Dispatch failed' });

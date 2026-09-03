@@ -24,6 +24,8 @@ test('catalog is the first-slice verb set (not the LLM action list)', () => {
   assert.deepStrictEqual(names, [
     'apparatus_status_read',
     'apparatus_status_update',
+    'board_read',
+    'duty_read',
     'incident_read',
     'incident_update',
     'neris_submit',
@@ -78,6 +80,22 @@ test('reads and fact-only incident update are not approval-gated', () => {
   assert.equal(prepareInvocation('roster_read', {}, member).gate, 'none');
   assert.equal(prepareInvocation('training_hours_read', {}, member).gate, 'none');
   assert.equal(prepareInvocation('apparatus_status_read', {}, member).gate, 'none');
+  assert.equal(prepareInvocation('duty_read', {}, member).gate, 'none');
+  assert.equal(prepareInvocation('board_read', {}, member).gate, 'none');
+
+  const duty = prepareInvocation('duty_read', { date: '2026-09-03', station_id: 4 }, member);
+  assert.equal(duty.ok, true);
+  assert.equal(duty.route.router, 'runList');
+  assert.equal(duty.route.url, '/today');
+  assert.deepStrictEqual(duty.route.query, { date: '2026-09-03', station_id: 4 });
+
+  const badDate = prepareInvocation('duty_read', { date: '09/03/2026' }, member);
+  assert.equal(badDate.ok, false);
+  assert.equal(badDate.code, 'INVALID_ARGS');
+
+  const board = prepareInvocation('board_read', {}, member);
+  assert.equal(board.ok, true);
+  assert.equal(board.route.router, 'activeBoard');
 
   const update = prepareInvocation('incident_update', { id: 12, type: 'Vehicle Fire', address: '1 Main' }, member);
   assert.equal(update.ok, true);
