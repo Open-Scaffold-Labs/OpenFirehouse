@@ -7031,7 +7031,7 @@ async function applyDepartmentExpand() {
       -- looks for — the very failure this table detects, arriving through the back door.
       job_name     TEXT        NOT NULL
                      CHECK (job_name IN ('reconcile','retention','neris_sweep',
-                                         'report_delivery','permit_expiry')),
+                                         'report_delivery','permit_expiry','morning_brief')),
       started_at   TIMESTAMPTZ NOT NULL,
       finished_at  TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
       outcome      TEXT        NOT NULL CHECK (outcome IN ('success','failed')),
@@ -7069,6 +7069,28 @@ async function applyDepartmentExpand() {
       END IF;
     END $cronruns$;
   `);
+  // 0130: widen the 0128 closed set for the morning-brief routine. CREATE TABLE
+  // IF NOT EXISTS cannot rewrite a CHECK on an existing of_cron_runs.
+  await pool.query(`
+    DO $cronjob$
+    DECLARE r RECORD;
+    BEGIN
+      FOR r IN
+        SELECT c.conname
+          FROM pg_constraint c
+          JOIN pg_class t ON t.oid = c.conrelid
+         WHERE t.relname = 'of_cron_runs'
+           AND c.contype = 'c'
+           AND pg_get_constraintdef(c.oid) LIKE '%job_name%'
+      LOOP
+        EXECUTE format('ALTER TABLE public.of_cron_runs DROP CONSTRAINT IF EXISTS %I', r.conname);
+      END LOOP;
+      ALTER TABLE public.of_cron_runs
+        ADD CONSTRAINT of_cron_runs_job_name_check
+        CHECK (job_name IN ('reconcile','retention','neris_sweep',
+                            'report_delivery','permit_expiry','morning_brief'));
+    END $cronjob$;
+  `);
 
   // ── 0129 mirror: agent_approvals — department-local MCP human gate ──────────
   // Gated fire verbs (NERIS submit, notify chief, unit clear/release) land here
@@ -7103,6 +7125,37 @@ async function applyDepartmentExpand() {
         USING (department_id = NULLIF(current_setting(''app.department_id'', true), '''')::int)
         WITH CHECK (department_id = NULLIF(current_setting(''app.department_id'', true), '''')::int)';
     END $agentappr$;
+  `);
+
+  // ── 0130 mirror: agent_routine_runs — scheduled watches on the invoke plug ─
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS public.agent_routine_runs (
+      id             BIGSERIAL PRIMARY KEY,
+      department_id  INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+      routine_name   TEXT NOT NULL
+                       CHECK (routine_name IN ('morning_shift_brief')),
+      trigger_kind   TEXT NOT NULL
+                       CHECK (trigger_kind IN ('manual','scheduled')),
+      silent         BOOLEAN NOT NULL DEFAULT false,
+      fingerprint    TEXT NOT NULL DEFAULT '',
+      digest         TEXT NOT NULL DEFAULT '',
+      facts          JSONB NOT NULL DEFAULT '{}'::jsonb,
+      actor_id       INTEGER,
+      actor_name     TEXT DEFAULT '',
+      actor_role     TEXT DEFAULT '',
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_agent_routine_runs_dept_created ON public.agent_routine_runs (department_id, created_at DESC)');
+  await pool.query(`
+    DO $agentroutine$
+    BEGIN
+      EXECUTE 'ALTER TABLE public.agent_routine_runs ENABLE ROW LEVEL SECURITY';
+      EXECUTE 'DROP POLICY IF EXISTS dept_isolation ON public.agent_routine_runs';
+      EXECUTE 'CREATE POLICY dept_isolation ON public.agent_routine_runs FOR ALL
+        USING (department_id = NULLIF(current_setting(''app.department_id'', true), '''')::int)
+        WITH CHECK (department_id = NULLIF(current_setting(''app.department_id'', true), '''')::int)';
+    END $agentroutine$;
   `);
 
   // AVL ingestion (0032, ADR-0003): per-dept hardware vehicle-location feeds.

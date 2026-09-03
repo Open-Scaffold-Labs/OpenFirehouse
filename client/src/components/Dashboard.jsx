@@ -14,6 +14,7 @@ import WeatherWidget from './WeatherWidget';
 import DutyBoard from './DutyBoard';
 import AIActionButton from './AIActionButton';
 import { useAttentionCount } from '../hooks/useAttentionCount';
+import MorningBriefPanel from './MorningBriefPanel';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -725,7 +726,8 @@ export default function Dashboard({ onNavigate, settings, prefs, onRespond, user
       {/* ── Today's Calendar (the heart of the station) ── */}
       {show.calendar && <TodayCalendarStrip entries={todayEntries} onNavigate={onNavigate} />}
 
-      {/* ── Agent approval queue (officers+ — existing Dashboard, not a new console) ── */}
+      {/* ── Morning brief + agent approval queue (same Ask / invoke plug) ── */}
+      <MorningBriefPanel />
       {(isOfficerPlus(user) || (Number(user?.roleLevel) || 0) >= 2) && <AgentApprovalQueue />}
 
       {/* ── Action Items Scorecard (officers+ only) ── */}

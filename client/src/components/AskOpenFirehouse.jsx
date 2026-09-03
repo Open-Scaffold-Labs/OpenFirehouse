@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check, ChevronDown, ClipboardList, GraduationCap, Lock,
-  Send, Sparkles, Users,
+  Send, Sparkles, Sunrise, Users,
 } from 'lucide-react';
 import { ROLES, isOfficerPlus } from '../data/auth';
 import { actingAsInitials, actingAsLine, actingAsRole } from '../utils/actingAs';
@@ -20,6 +20,7 @@ import {
   listPendingApprovals,
   rejectApproval,
 } from '../utils/askInvoke';
+import MorningBriefPanel from './MorningBriefPanel';
 import {
   CLOSEOUT_PLACEHOLDER,
   DUTY_BOARD_WELCOME,
@@ -77,6 +78,7 @@ function approvalVerbLabel(verb) {
 
 export default function AskOpenFirehouse({ user, onNavigate, onLogout }) {
   const [mode, setMode] = useState('duty-board');
+  const [rail, setRail] = useState('agents');
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [actingOpen, setActingOpen] = useState(false);
@@ -171,6 +173,7 @@ export default function AskOpenFirehouse({ user, onNavigate, onLogout }) {
   }
 
   function selectMode(next) {
+    setRail('agents');
     setMode(next);
     if (next === 'incident-closeout') {
       setMessages((prev) => [...prev, {
@@ -264,7 +267,7 @@ export default function AskOpenFirehouse({ user, onNavigate, onLogout }) {
           <div className="px-2 space-y-1">
             {MODES.map((m) => {
               const Icon = m.icon;
-              const selected = mode === m.id;
+              const selected = rail === 'agents' && mode === m.id;
               return (
                 <button
                   key={m.id}
@@ -282,6 +285,23 @@ export default function AskOpenFirehouse({ user, onNavigate, onLogout }) {
               );
             })}
           </div>
+          <h2 className="px-4 pt-5 pb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+            Routines
+          </h2>
+          <div className="px-2 space-y-1">
+            <button
+              type="button"
+              onClick={() => setRail('morning-brief')}
+              className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm rounded-md border-l-2 ${
+                rail === 'morning-brief'
+                  ? 'bg-red-50 border-[#c41e3a] text-[#c41e3a] font-semibold'
+                  : 'border-transparent text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <Sunrise size={15} className="flex-shrink-0" />
+              <span className="truncate">Morning brief</span>
+            </button>
+          </div>
           <p className="mt-auto px-4 py-3 text-[10px] text-slate-400">
             Same session · {acting}
           </p>
@@ -295,14 +315,43 @@ export default function AskOpenFirehouse({ user, onNavigate, onLogout }) {
                 type="button"
                 onClick={() => selectMode(m.id)}
                 className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold ${
-                  mode === m.id ? 'bg-red-50 text-[#c41e3a]' : 'bg-slate-100 text-slate-600'
+                  rail === 'agents' && mode === m.id ? 'bg-red-50 text-[#c41e3a]' : 'bg-slate-100 text-slate-600'
                 }`}
               >
                 {m.label}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={() => setRail('morning-brief')}
+              className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold ${
+                rail === 'morning-brief' ? 'bg-red-50 text-[#c41e3a]' : 'bg-slate-100 text-slate-600'
+              }`}
+            >
+              Morning brief
+            </button>
           </div>
 
+          {rail === 'morning-brief' ? (
+            <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-4">
+              <p className="text-xs text-slate-500 mb-3 leading-snug">
+                A scheduled watch, not a chat persona. It reads the board, who is riding,
+                and apparatus OOS as your badge. It stays quiet when the house is calm.
+              </p>
+              <MorningBriefPanel
+                onRan={(out) => {
+                  if (out?.digest) {
+                    setMessages((prev) => [...prev, {
+                      id: `brief-${Date.now()}`,
+                      role: 'agent',
+                      text: out.digest,
+                      at: Date.now(),
+                    }]);
+                  }
+                }}
+              />
+            </div>
+          ) : (
           <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-4 space-y-4">
             <div className="flex items-center gap-3 text-[11px] text-slate-400">
               <span className="flex-1 h-px bg-slate-200" />
@@ -345,7 +394,9 @@ export default function AskOpenFirehouse({ user, onNavigate, onLogout }) {
             )}
             <div ref={bottomRef} />
           </div>
+          )}
 
+          {rail !== 'morning-brief' && (
           <div className="flex-shrink-0 px-3 sm:px-6 pb-4">
             <div className="bg-white border border-slate-200 rounded-2xl shadow-sm px-3 pt-3 pb-2">
               <textarea
@@ -393,9 +444,23 @@ export default function AskOpenFirehouse({ user, onNavigate, onLogout }) {
               </div>
             </div>
           </div>
+          )}
         </main>
 
         <aside className="hidden lg:flex w-72 flex-col border-l border-slate-200 bg-white">
+          <div className="px-3 pt-3">
+            <MorningBriefPanel compact onRan={(out) => {
+              if (out?.digest) {
+                setRail('morning-brief');
+                setMessages((prev) => [...prev, {
+                  id: `brief-${Date.now()}`,
+                  role: 'agent',
+                  text: out.digest,
+                  at: Date.now(),
+                }]);
+              }
+            }} />
+          </div>
           <div className="flex items-center justify-between px-4 pt-4 pb-2">
             <h2 className="text-sm font-bold text-slate-800">Needs your Accept</h2>
             {pendingCount > 0 && (

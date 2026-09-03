@@ -141,7 +141,9 @@ Legal-record writes (NERIS submit, notify chief, unit clear) land in
 `agent_approvals`. The requester cannot accept their own item; a
 different human officer accepts on the Dashboard. The in-app **Ask
 Open Firehouse** face (`docs/ASK-OPEN-FIREHOUSE.md`) is a signed-in
-client of the same `POST /api/agent/invoke` surface.
+client of the same `POST /api/agent/invoke` surface. The first
+**routine** (weekday morning shift brief) is a scheduled watch on that
+same plug — not a second product. See [`docs/ROUTINES.md`](ROUTINES.md).
 
 ## CAD integration
 

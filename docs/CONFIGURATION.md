@@ -72,6 +72,21 @@ uses the same JWT/roles as the app — it does not need these keys.
 | `ANTHROPIC_API_KEY`  | unset   | From [console.anthropic.com](https://console.anthropic.com). Used for the primary AI actions. |
 | `OPENAI_API_KEY`     | unset   | Used for a smaller subset of AI features and as a fallback. |
 
+## Morning shift brief (first routine)
+
+Same `POST /api/agent/invoke` reads as Ask. Not a second product. See
+[ROUTINES.md](ROUTINES.md).
+
+| Variable | Default | Notes |
+| -------- | ------- | ----- |
+| `MORNING_BRIEF_TZ` | `America/New_York` | House clock for the in-process ticker and “is it morning?” checks. |
+| `MORNING_BRIEF_HOUR` | `7` | Local hour (0–23) the weekday brief aims for. |
+| `OPENFIREHOUSE_ROUTINE_ACTOR` | first officer/chief | Username the **scheduled** tick runs as. Must be a real member of the department. Manual **Run morning brief now** always uses the signed-in JWT. |
+| `MORNING_BRIEF_INPROCESS` | unset | When `true` on a long-lived Node host (not Vercel), a one-minute ticker fires the brief at the local weekday hour. `OPENFIREHOUSE_DEMO=true` also enables it. |
+
+Vercel Cron path: `GET /api/cron/morning-brief` at `0 11 * * *` (11:00 UTC).
+The handler stays silent on Saturday and Sunday.
+
 Costs are pay-per-use. A typical small department spends \$5-\$20 per
 month on AI API costs.
 
