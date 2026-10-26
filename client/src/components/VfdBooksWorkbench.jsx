@@ -122,7 +122,7 @@ export default function VfdBooksWorkbench() {
       await loadAll();
       setFeedback({
         type: 'ok',
-        message: `Dual-Signer Gate satisfied! Voucher ${res?.data?.voucherNumber} sealed with @openscaffold/esign SHA-256 (${res?.data?.approvalSealSha256?.slice(0, 16)}…).`,
+        message: `Dual-Signer Gate satisfied! Voucher ${res?.data?.voucherNumber} sealed with cryptographic SHA-256 signature (${res?.data?.approvalSealSha256?.slice(0, 16)}…).`,
       });
     } catch (err) {
       setFeedback({ type: 'error', message: err?.message || 'Co-sign failed.' });
@@ -180,7 +180,7 @@ export default function VfdBooksWorkbench() {
     return (
       <div className="p-6 text-slate-300 flex items-center gap-3">
         <RefreshCw className="animate-spin" size={18} />
-        <span>Loading OpenFirehouse Volunteer Fire Department &amp; Fire District Books (@openscaffold/books v3.2)…</span>
+        <span>Loading Department Books &amp; Fund Accounting…</span>
       </div>
     );
   }
@@ -200,7 +200,7 @@ export default function VfdBooksWorkbench() {
           <div>
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-red-400">
               <Landmark size={15} />
-              <span>@openscaffold/books v3.2 · STD-14 Integer-Cent Engine · LO-2026-01 ESIGN</span>
+              <span>ASC 958 &amp; GASB 54 Fund Accounting · Dual-Signer Controls · Form 990 &amp; Audit Ready</span>
             </div>
             <h1 className="text-xl font-black text-white mt-1">
               Volunteer Fire Department &amp; Fire Protection District Books
@@ -497,7 +497,7 @@ export default function VfdBooksWorkbench() {
                         onClick={() => handleCoSignDisbursement(d.id)}
                         className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-bold text-[11px]"
                       >
-                        Co-Sign as Fire Chief (@openscaffold/esign)
+                        Co-Sign as Fire Chief
                       </button>
                     )}
                   </div>
