@@ -213,6 +213,7 @@ export const PAGE_ACCESS = {
   'staffing-ai':        2,   // AI staffing predictor
 
   // ── Chief/Admin only (level 3) ──────────────────────────────────────────
+  'vfd-books':          2,
   budget:               3,
   payroll:              3,
   timesheets:           3,

@@ -546,6 +546,7 @@ app.use('/api/crr-visits',            require('./routes/crrVisits'));
 app.use('/api/crr-programs',          require('./routes/crrPrograms'));
 app.use('/api/budget-lines',          require('./routes/budgetLines'));
 app.use('/api/budget-transactions',   require('./routes/budgetTransactions'));
+app.use('/api/vfd-books',             require('./routes/vfdBooks'));
 app.use('/api/nfirs-reports',         require('./routes/nfirsReports'));
 app.use('/api/station-config',        require('./routes/stationConfig'));
 app.use('/api/qualifications',        require('./routes/qualifications'));

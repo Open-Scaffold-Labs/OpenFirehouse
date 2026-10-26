@@ -42,6 +42,7 @@ const Narcotics = lazy(() => import('./components/Narcotics')); // 2.7 (0087, Da
 const SOGLibrary = lazy(() => import('./components/SOGLibrary'));
 const PublicDashboard = lazy(() => import('./components/PublicDashboard'));
 const BudgetTracker = lazy(() => import('./components/BudgetTracker'));
+const VfdBooksWorkbench = lazy(() => import('./components/VfdBooksWorkbench'));
 const WellnessTracker = lazy(() => import('./components/WellnessTracker'));
 const NFIRSReports = lazy(() => import('./components/NFIRSReports'));
 const FireInspections = lazy(() => import('./components/FireInspections'));
@@ -186,7 +187,7 @@ export const RENDERABLE_PAGES = new Set([
   'reconciliation', 'recruitment', 'report-writer', 'reports', 'retention', 'roster', 'scba',
   'schedule', 'settings', 'shift-trades', 'sogs', 'staffing-ai', 'stationlog', 'timesheets',
   'todays-crew', 'training', 'training-ai', 'training-catalog', 'training-compliance',
-  'training-modules', 'training-plans', 'vacancy-fill', 'wellness', 'workflows',
+  'training-modules', 'training-plans', 'vacancy-fill', 'vfd-books', 'wellness', 'workflows',
 ]);
 
 /**
@@ -901,6 +902,7 @@ export default function App() {
       {page === 'todays-crew'          && <TodaysCrew />}
       {page === 'db-admin'             && <DatabaseAdmin />}
       {page === 'workflows'            && <WorkflowPanel />}
+      {page === 'vfd-books'            && <VfdBooksWorkbench />}
       {page === 'live-dispatch'        && (() => { setTimeout(() => setPage('command'), 0); return null; })()}
       {/* P1-1 (2026-07-16): the removed legacy mockup pages redirect to the REAL feature
           (Prevention Center) instead of rendering a blank content area for a stale link. */}

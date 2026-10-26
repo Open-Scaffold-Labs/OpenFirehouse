@@ -143,6 +143,7 @@ const NAV_GROUPS = [
     id: 'finance',
     label: 'Finance & Compliance',
     items: [
+      { id: 'vfd-books',         label: 'VFD & District Books', icon: Landmark        },
       { id: 'budget',            label: 'Budget & Finance',     icon: Banknote        },
       { id: 'grants',            label: 'Grant Management',     icon: Landmark        },
       { id: 'fundraising',       label: 'Fundraising',          icon: PiggyBank       },
